@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { TipoTag } from '@/lib/types'
 import { createTag, deleteTag, mergeTags, updateTag } from '@/app/(app)/tags/actions'
 
@@ -161,6 +162,7 @@ function TagRow({
   const [nome, setNome] = useState(tag.nome)
   const [tipo, setTipo] = useState<TipoTag>(tag.tipo)
   const [isPending, startTransition] = useTransition()
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const dirty = nome !== tag.nome || tipo !== tag.tipo
 
   function handleSave() {
@@ -181,6 +183,7 @@ function TagRow({
         toast.success('Tag excluída')
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao excluir')
+        setDeleteOpen(false)
       }
     })
   }
@@ -211,10 +214,20 @@ function TagRow({
             Salvar
           </Button>
         )}
-        <Button size="sm" variant="ghost" onClick={handleDelete} disabled={isPending}>
+        <Button size="sm" variant="ghost" onClick={() => setDeleteOpen(true)} disabled={isPending}>
           Excluir
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={`Excluir a tag "${tag.nome}"?`}
+        description="Ela será removida de todas as séries e itens onde está aplicada."
+        confirmLabel="Excluir"
+        onConfirm={handleDelete}
+        isPending={isPending}
+      />
     </div>
   )
 }

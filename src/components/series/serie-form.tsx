@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   Select,
   SelectContent,
@@ -29,6 +30,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
   const [observacoes, setObservacoes] = useState(serie.observacoes ?? '')
   const [tagIds, setTagIds] = useState<Set<string>>(new Set(serie.tagIds))
   const [isPending, startTransition] = useTransition()
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   function toggleTag(id: string) {
     setTagIds((prev) => {
@@ -60,7 +62,6 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
   }
 
   function handleDelete() {
-    if (!confirm(`Excluir a série "${serie.nome}"? Os itens ficam avulsos (não são excluídos).`)) return
     startTransition(async () => {
       try {
         await deleteSerie(serie.id)
@@ -68,6 +69,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
         router.push('/colecao')
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao excluir')
+        setDeleteOpen(false)
       }
     })
   }
@@ -150,10 +152,20 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
         <Button onClick={handleSave} disabled={isPending}>
           {isPending ? 'Salvando...' : 'Salvar alterações'}
         </Button>
-        <Button variant="ghost" onClick={handleDelete} disabled={isPending} className="text-red-400">
+        <Button variant="ghost" onClick={() => setDeleteOpen(true)} disabled={isPending} className="text-red-400">
           Excluir série
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={`Excluir a série "${serie.nome}"?`}
+        description="Os itens ficam avulsos (não são excluídos)."
+        confirmLabel="Excluir"
+        onConfirm={handleDelete}
+        isPending={isPending}
+      />
     </div>
   )
 }

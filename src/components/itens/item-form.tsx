@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { BackButton } from '@/components/ui/back-button'
 import {
   Select,
   SelectContent,
@@ -54,6 +56,7 @@ export function ItemForm({
 
   const [isPending, startTransition] = useTransition()
   const [isUploading, startUpload] = useTransition()
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const tagsHerdadas = item?.tagsSerie ?? []
 
@@ -106,7 +109,6 @@ export function ItemForm({
 
   function handleDelete() {
     if (!item) return
-    if (!confirm(`Excluir "${item.titulo}"? Essa ação não pode ser desfeita.`)) return
     startTransition(async () => {
       try {
         await deleteItem(item.id)
@@ -114,6 +116,7 @@ export function ItemForm({
         router.push('/colecao')
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao excluir')
+        setDeleteOpen(false)
       }
     })
   }
@@ -136,6 +139,8 @@ export function ItemForm({
 
   return (
     <div className="flex flex-col gap-6">
+      <BackButton />
+
       <div className="flex gap-4">
         <div className="relative h-40 w-28 flex-shrink-0 overflow-hidden rounded-md bg-neutral-800">
           {capaUrl ? (
@@ -334,11 +339,23 @@ export function ItemForm({
           {isPending ? 'Salvando...' : item ? 'Salvar alterações' : 'Criar item'}
         </Button>
         {item && (
-          <Button variant="ghost" onClick={handleDelete} disabled={isPending} className="text-red-400">
+          <Button variant="ghost" onClick={() => setDeleteOpen(true)} disabled={isPending} className="text-red-400">
             Excluir item
           </Button>
         )}
       </div>
+
+      {item && (
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title={`Excluir "${item.titulo}"?`}
+          description="Essa ação não pode ser desfeita."
+          confirmLabel="Excluir"
+          onConfirm={handleDelete}
+          isPending={isPending}
+        />
+      )}
     </div>
   )
 }

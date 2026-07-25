@@ -4,6 +4,7 @@ import { listarItens } from '@/lib/queries'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { SerieForm } from '@/components/series/serie-form'
 import { ItemCard } from '@/components/itens/item-card'
+import { BackButton } from '@/components/ui/back-button'
 
 export default async function SeriePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -31,6 +32,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="flex flex-col gap-6">
+      <BackButton />
       <div>
         <h1 className="text-2xl font-semibold">{serie.nome}</h1>
         <p className="text-sm text-neutral-500">
