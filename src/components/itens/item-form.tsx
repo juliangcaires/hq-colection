@@ -19,8 +19,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { createItem, deleteItem, updateItem, uploadCapaManual } from '@/app/(app)/itens/actions'
+import {
+  aplicarCapaEscolhida,
+  createItem,
+  deleteItem,
+  updateItem,
+  uploadCapaManual,
+} from '@/app/(app)/itens/actions'
 import type { EstadoItem, ItemComRelacoes, TagLite, TipoObra } from '@/lib/types'
+import type { CandidatoCapa } from '@/lib/capa-busca'
 
 type SerieOpcao = { id: string; nome: string }
 
@@ -57,6 +64,9 @@ export function ItemForm({
   const [isPending, startTransition] = useTransition()
   const [isUploading, startUpload] = useTransition()
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [buscandoCapa, setBuscandoCapa] = useState(false)
+  const [candidatos, setCandidatos] = useState<CandidatoCapa[] | null>(null)
+  const [aplicandoCandidato, startAplicarCandidato] = useTransition()
 
   const tagsHerdadas = item?.tagsSerie ?? []
 
@@ -137,6 +147,50 @@ export function ItemForm({
     })
   }
 
+  async function handleBuscarCapaAutomatica() {
+    if (!item) return
+    setBuscandoCapa(true)
+    setCandidatos(null)
+    try {
+      const res = await fetch('/api/capa/buscar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId: item.id, isbn: isbn || null, titulo, tipo }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao buscar capa')
+      } else if (data.status === 'aplicada') {
+        toast.success('Capa encontrada e aplicada automaticamente')
+        router.refresh()
+      } else if (data.status === 'candidatos') {
+        setCandidatos(data.candidatos)
+      } else {
+        toast.info(
+          'Nenhuma capa encontrada automaticamente — cobertura de edição brasileira é irregular. Envie uma foto.'
+        )
+      }
+    } catch {
+      toast.error('Erro ao buscar capa')
+    } finally {
+      setBuscandoCapa(false)
+    }
+  }
+
+  function handleEscolherCandidato(url: string) {
+    if (!item) return
+    startAplicarCandidato(async () => {
+      try {
+        await aplicarCapaEscolhida(item.id, url)
+        toast.success('Capa aplicada')
+        setCandidatos(null)
+        router.refresh()
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Erro ao aplicar capa')
+      }
+    })
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <BackButton />
@@ -164,6 +218,14 @@ export function ItemForm({
               <Button
                 variant="outline"
                 size="sm"
+                onClick={handleBuscarCapaAutomatica}
+                disabled={buscandoCapa}
+              >
+                {buscandoCapa ? 'Buscando...' : 'Buscar capa automaticamente'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
               >
@@ -176,6 +238,32 @@ export function ItemForm({
           )}
         </div>
       </div>
+
+      {candidatos && candidatos.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-lg border border-neutral-800 bg-neutral-900 p-3">
+          <p className="text-sm text-neutral-300">
+            Encontrei {candidatos.length} candidato(s) — escolha a capa certa:
+          </p>
+          <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
+            {candidatos.map((c, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={`${c.url}-${i}`}
+                src={c.url}
+                alt={c.label}
+                title={c.label}
+                onClick={() => handleEscolherCandidato(c.url)}
+                className={`aspect-[2/3] cursor-pointer rounded border-2 border-transparent object-cover transition hover:border-neutral-400 ${
+                  aplicandoCandidato ? 'pointer-events-none opacity-50' : ''
+                }`}
+              />
+            ))}
+          </div>
+          <Button variant="ghost" size="sm" className="w-fit" onClick={() => setCandidatos(null)}>
+            Cancelar
+          </Button>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="titulo">Título</Label>

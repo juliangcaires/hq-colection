@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { adquirirInputSchema, itemInputSchema, type AdquirirInput, type ItemInput } from '@/lib/schemas'
+import { baixarEPersistirCapa } from '@/lib/capa-busca'
 
 function revalidateListagens(itemId?: string) {
   revalidatePath('/colecao')
@@ -152,6 +153,26 @@ export async function uploadCapaManual(itemId: string, formData: FormData) {
     .update({ capa_url: path, capa_origem: 'foto' })
     .eq('id', itemId)
   if (updateError) throw new Error(updateError.message)
+
+  revalidateListagens(itemId)
+}
+
+/** Aplica a capa que o usuário escolheu na grade de candidatos (busca automática, Fase 2). */
+export async function aplicarCapaEscolhida(itemId: string, url: string) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Não autenticado')
+
+  const path = await baixarEPersistirCapa(supabase, user.id, itemId, url)
+  if (!path) throw new Error('Não foi possível baixar essa imagem')
+
+  const { error } = await supabase
+    .from('itens')
+    .update({ capa_url: path, capa_origem: 'api' })
+    .eq('id', itemId)
+  if (error) throw new Error(error.message)
 
   revalidateListagens(itemId)
 }

@@ -39,6 +39,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
 
   const [numeroVolume, setNumeroVolume] = useState('')
   const [titulo, setTitulo] = useState('')
+  const [isbn, setIsbn] = useState('')
   const [prioridade, setPrioridade] = useState('0')
 
   const [tagOpen, setTagOpen] = useState(false)
@@ -101,15 +102,25 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
           tipo = serieSelecionada.tipo
         }
 
-        await createItem({
+        const itemId = await createItem({
           titulo: tituloFinal,
           serie_id: serieId,
           numero_volume: numeroVolume ? Number(numeroVolume) : null,
           tipo,
+          isbn: isbn.trim() || null,
           estado: 'desejo',
           prioridade: Number(prioridade) || 0,
           tagIds: tagsExtras.map((t) => t.id),
         })
+
+        // Busca de capa em background — não trava o fechamento do modal.
+        // Só resulta em algo automático quando há ISBN (busca por título é
+        // ambígua e fica para o usuário escolher na página do item).
+        fetch('/api/capa/buscar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemId, isbn: isbn.trim() || null, titulo: tituloFinal, tipo }),
+        }).catch(() => {})
 
         toast.success('Adicionado à lista de desejos')
         onDone()
@@ -224,6 +235,13 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
           onChange={(e) => setTitulo(e.target.value)}
           placeholder={serieSelecionada ? 'auto-gerado' : 'ex: Eternauta'}
         />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="isbn">
+          ISBN <span className="text-neutral-500">(opcional — melhora a chance de achar a capa sozinho)</span>
+        </Label>
+        <Input id="isbn" value={isbn} onChange={(e) => setIsbn(e.target.value)} placeholder="ex: 9788545..." />
       </div>
 
       <div className="flex flex-col gap-1.5">
