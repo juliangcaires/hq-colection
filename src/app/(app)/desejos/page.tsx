@@ -5,14 +5,20 @@ import { listarItens } from '@/lib/queries'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { ColecaoFilters } from '@/components/itens/colecao-filters'
 import { AdquirirButton } from '@/components/itens/adquirir-button'
+import { parseTagsPorTipoDaUrl } from '@/lib/tags-por-tipo'
 import type { TipoObra } from '@/lib/types'
 
 type SearchParams = {
   busca?: string
   tipo?: string
-  editora?: string
   serie?: string
-  tag?: string
+  editora?: string
+  personagem?: string
+  arco?: string
+  selo?: string
+  autor?: string
+  universo?: string
+  outro?: string
 }
 
 export default async function DesejosPage({
@@ -23,22 +29,20 @@ export default async function DesejosPage({
   const params = await searchParams
   const supabase = await createClient()
 
-  const [itens, { data: seriesData }, { data: tagsData }, { data: editorasData }] = await Promise.all([
+  const [itens, { data: seriesData }, { data: tagsData }] = await Promise.all([
     listarItens(
       supabase,
       {
         estado: 'desejo',
         tipo: (params.tipo as TipoObra) || undefined,
-        editora: params.editora || undefined,
         serieId: params.serie || undefined,
         busca: params.busca || undefined,
-        tagId: params.tag || undefined,
+        tagsPorTipo: parseTagsPorTipoDaUrl(params),
       },
       { column: 'prioridade', ascending: false }
     ),
-    supabase.from('series').select('id, nome').order('nome'),
+    supabase.from('series').select('id, nome, serie_tags(tag_id)').order('nome'),
     supabase.from('tags').select('id, nome, tipo, cor').order('nome'),
-    supabase.from('series').select('editora').not('editora', 'is', null),
   ])
 
   const capaMap = await getSignedCapaUrls(
@@ -46,9 +50,11 @@ export default async function DesejosPage({
     itens.map((i) => i.capa_url)
   )
 
-  const editoras = Array.from(
-    new Set((editorasData ?? []).map((e) => e.editora as string).filter(Boolean))
-  ).sort()
+  const series = (seriesData ?? []).map((s) => ({
+    id: s.id,
+    nome: s.nome,
+    tagIds: (s.serie_tags ?? []).map((st: { tag_id: string }) => st.tag_id),
+  }))
 
   return (
     <div className="flex flex-col gap-6">
@@ -57,13 +63,7 @@ export default async function DesejosPage({
         <p className="text-sm text-neutral-500">{itens.length} item(ns), por prioridade</p>
       </div>
 
-      <ColecaoFilters
-        editoras={editoras}
-        series={seriesData ?? []}
-        tags={tagsData ?? []}
-        mostrarEstado={false}
-        mostrarAgrupar={false}
-      />
+      <ColecaoFilters series={series} tags={tagsData ?? []} mostrarEstado={false} mostrarAgrupar={false} />
 
       {itens.length === 0 ? (
         <p className="text-sm text-neutral-500">Nada na lista de desejos com esses filtros.</p>

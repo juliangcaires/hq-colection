@@ -11,9 +11,8 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
   const item = await listarItem(supabase, id)
   if (!item) notFound()
 
-  const [{ data: seriesData }, { data: tagsData }, capaMap] = await Promise.all([
+  const [{ data: seriesData }, capaMap] = await Promise.all([
     supabase.from('series').select('id, nome').order('nome'),
-    supabase.from('tags').select('id, nome, tipo, cor').order('nome'),
     getSignedCapaUrls(supabase, [item.capa_url]),
   ])
 
@@ -21,7 +20,7 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="mx-auto max-w-2xl">
-      <ItemForm item={item} capaUrl={capaUrl} series={seriesData ?? []} allTags={tagsData ?? []} />
+      <ItemForm item={item} capaUrl={capaUrl} series={seriesData ?? []} />
     </div>
   )
 }

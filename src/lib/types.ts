@@ -20,7 +20,6 @@ export type Serie = {
   user_id: string
   nome: string
   tipo: TipoObra
-  editora: string | null
   total_volumes: number | null
   em_publicacao: boolean
   observacoes: string | null
@@ -52,7 +51,7 @@ export type Item = {
 }
 
 export type ItemComRelacoes = Item & {
-  serie: Pick<Serie, 'id' | 'nome' | 'editora' | 'tipo'> | null
+  serie: Pick<Serie, 'id' | 'nome' | 'tipo'> | null
   /** tags marcadas diretamente no item */
   tagsItem: Tag[]
   /** tags herdadas da série (vazio se não houver série) */

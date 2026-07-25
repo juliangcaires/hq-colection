@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { TagTypeCombobox } from '@/components/tags/tag-type-combobox'
 import {
   Select,
   SelectContent,
@@ -18,40 +18,33 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { deleteSerie, updateSerie } from '@/app/(app)/series/actions'
-import type { Serie, TagLite, TipoObra } from '@/lib/types'
+import { agruparTagsPorTipo, TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
+import type { Serie, TagLite, TipoObra, TipoTag } from '@/lib/types'
 
 export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[] }; allTags: TagLite[] }) {
   const router = useRouter()
   const [nome, setNome] = useState(serie.nome)
   const [tipo, setTipo] = useState<TipoObra>(serie.tipo)
-  const [editora, setEditora] = useState(serie.editora ?? '')
   const [totalVolumes, setTotalVolumes] = useState(serie.total_volumes?.toString() ?? '')
   const [emPublicacao, setEmPublicacao] = useState(serie.em_publicacao)
   const [observacoes, setObservacoes] = useState(serie.observacoes ?? '')
-  const [tagIds, setTagIds] = useState<Set<string>>(new Set(serie.tagIds))
+  const [tagsPorTipo, setTagsPorTipo] = useState<Record<TipoTag, TagLite[]>>(() =>
+    agruparTagsPorTipo(serie.tagIds, allTags)
+  )
   const [isPending, startTransition] = useTransition()
   const [deleteOpen, setDeleteOpen] = useState(false)
-
-  function toggleTag(id: string) {
-    setTagIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
 
   function handleSave() {
     startTransition(async () => {
       try {
+        const tagIds = Object.values(tagsPorTipo).flatMap((tags) => tags.map((t) => t.id))
         await updateSerie(serie.id, {
           nome: nome.trim(),
           tipo,
-          editora: editora || null,
           total_volumes: totalVolumes ? Number(totalVolumes) : null,
           em_publicacao: emPublicacao,
           observacoes: observacoes || null,
-          tagIds: Array.from(tagIds),
+          tagIds,
         })
         toast.success('Série atualizada')
         router.refresh()
@@ -81,8 +74,8 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
         <Input id="nome" value={nome} onChange={(e) => setNome(e.target.value)} />
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <div className="flex flex-col gap-1.5">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label>Tipo</Label>
           <Select
             items={[
@@ -92,7 +85,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
             value={tipo}
             onValueChange={(v) => v && setTipo(v as TipoObra)}
           >
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -101,11 +94,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="editora">Editora</Label>
-          <Input id="editora" value={editora} onChange={(e) => setEditora(e.target.value)} />
-        </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="total">Total de volumes</Label>
           <Input
             id="total"
@@ -129,22 +118,21 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
         <Textarea id="obs" value={observacoes} onChange={(e) => setObservacoes(e.target.value)} rows={2} />
       </div>
 
-      <div className="flex flex-col gap-2">
-        <Label>Tags (valem para todos os volumes desta série)</Label>
-        <div className="flex flex-wrap gap-1.5">
-          {allTags.map((t) => {
-            const active = tagIds.has(t.id)
-            return (
-              <Badge
-                key={t.id}
-                variant={active ? 'default' : 'outline'}
-                className="cursor-pointer text-xs"
-                onClick={() => toggleTag(t.id)}
-              >
-                {t.nome}
-              </Badge>
-            )
-          })}
+      <div className="flex flex-col gap-3 border-t border-neutral-800 pt-3">
+        <p className="text-xs text-neutral-500">
+          Tags desta série — valem para todos os volumes dela (herança automática)
+        </p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {TIPOS_TAG_DEDICADOS.map(({ tipo: tipoTag, label, multiple }) => (
+            <TagTypeCombobox
+              key={tipoTag}
+              tipo={tipoTag}
+              label={label}
+              multiple={multiple}
+              value={tagsPorTipo[tipoTag]}
+              onChange={(tags) => setTagsPorTipo((prev) => ({ ...prev, [tipoTag]: tags }))}
+            />
+          ))}
         </div>
       </div>
 

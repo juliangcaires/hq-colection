@@ -16,6 +16,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { TagTypeCombobox } from '@/components/tags/tag-type-combobox'
 import { buscarSeries, createSerie } from '@/app/(app)/series/actions'
 import { buscarTags } from '@/app/(app)/tags/actions'
 import { createItem } from '@/app/(app)/itens/actions'
@@ -25,11 +26,12 @@ type SerieOption = {
   id: string
   nome: string
   tipo: TipoObra
-  editora: string | null
   tags: TagLite[]
 }
 
 export function QuickAddForm({ onDone }: { onDone: () => void }) {
+  const [editoraSelecionada, setEditoraSelecionada] = useState<TagLite[]>([])
+
   const [serieOpen, setSerieOpen] = useState(false)
   const [serieQuery, setSerieQuery] = useState('')
   const [serieResults, setSerieResults] = useState<SerieOption[]>([])
@@ -51,10 +53,10 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      buscarSeries(serieQuery).then(setSerieResults).catch(() => {})
+      buscarSeries(serieQuery, editoraSelecionada[0]?.id).then(setSerieResults).catch(() => {})
     }, 250)
     return () => clearTimeout(t)
-  }, [serieQuery])
+  }, [serieQuery, editoraSelecionada])
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -95,7 +97,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
             nome: serieSelecionada.nome,
             tipo: 'hq',
             em_publicacao: true,
-            tagIds: [],
+            tagIds: editoraSelecionada.map((t) => t.id),
           })
         } else if (serieSelecionada) {
           serieId = serieSelecionada.id
@@ -132,8 +134,19 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <TagTypeCombobox
+        tipo="editora"
+        label="Editora"
+        multiple={false}
+        value={editoraSelecionada}
+        onChange={setEditoraSelecionada}
+        placeholder="Buscar editora (opcional)..."
+      />
+
       <div className="flex flex-col gap-1.5">
-        <Label>Série</Label>
+        <Label>
+          Série {editoraSelecionada.length > 0 && <span className="text-neutral-500">(dessa editora)</span>}
+        </Label>
         <Popover open={serieOpen} onOpenChange={setSerieOpen}>
           <PopoverTrigger
             className={cn(buttonVariants({ variant: 'outline' }), 'w-full justify-start font-normal')}
@@ -174,7 +187,6 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
                       }}
                     >
                       {s.nome}
-                      {s.editora && <span className="ml-2 text-xs text-neutral-500">{s.editora}</span>}
                     </CommandItem>
                   ))}
                 </CommandGroup>

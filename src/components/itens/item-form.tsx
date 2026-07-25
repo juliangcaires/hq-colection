@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { BackButton } from '@/components/ui/back-button'
+import { TagTypeCombobox } from '@/components/tags/tag-type-combobox'
 import {
   Select,
   SelectContent,
@@ -26,7 +27,8 @@ import {
   updateItem,
   uploadCapaManual,
 } from '@/app/(app)/itens/actions'
-import type { EstadoItem, ItemComRelacoes, TagLite, TipoObra } from '@/lib/types'
+import { agruparTagsPorTipo, TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
+import type { EstadoItem, ItemComRelacoes, TagLite, TipoObra, TipoTag } from '@/lib/types'
 import type { CandidatoCapa } from '@/lib/capa-busca'
 
 type SerieOpcao = { id: string; nome: string }
@@ -35,12 +37,10 @@ export function ItemForm({
   item,
   capaUrl,
   series,
-  allTags,
 }: {
   item?: ItemComRelacoes
   capaUrl: string | null
   series: SerieOpcao[]
-  allTags: TagLite[]
 }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -57,8 +57,11 @@ export function ItemForm({
   const [dataAquisicao, setDataAquisicao] = useState(item?.data_aquisicao ?? '')
   const [nota, setNota] = useState(item?.nota?.toString() ?? '')
   const [observacoes, setObservacoes] = useState(item?.observacoes ?? '')
-  const [tagsItemIds, setTagsItemIds] = useState<Set<string>>(
-    new Set((item?.tagsItem ?? []).map((t) => t.id))
+  const [tagsPorTipo, setTagsPorTipo] = useState<Record<TipoTag, TagLite[]>>(() =>
+    agruparTagsPorTipo(
+      (item?.tagsItem ?? []).map((t) => t.id),
+      item?.tagsItem ?? []
+    )
   )
 
   const [isPending, startTransition] = useTransition()
@@ -69,15 +72,6 @@ export function ItemForm({
   const [aplicandoCandidato, startAplicarCandidato] = useTransition()
 
   const tagsHerdadas = item?.tagsSerie ?? []
-
-  function toggleTag(id: string) {
-    setTagsItemIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
 
   function handleSave() {
     if (!titulo.trim()) {
@@ -99,7 +93,7 @@ export function ItemForm({
           data_aquisicao: dataAquisicao || null,
           nota: nota ? Number(nota) : null,
           observacoes: observacoes || null,
-          tagIds: Array.from(tagsItemIds),
+          tagIds: Object.values(tagsPorTipo).flatMap((tags) => tags.map((t) => t.id)),
         }
         if (item) {
           await updateItem(item.id, input)
@@ -271,14 +265,14 @@ export function ItemForm({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label>Série</Label>
           <Select
             items={[{ value: '__nenhuma__', label: 'Avulso (sem série)' }, ...series.map((s) => ({ value: s.id, label: s.nome }))]}
             value={serieId || '__nenhuma__'}
             onValueChange={(v) => setSerieId(v === '__nenhuma__' ? '' : v ?? '')}
           >
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Avulso" />
             </SelectTrigger>
             <SelectContent>
@@ -296,14 +290,14 @@ export function ItemForm({
             </Link>
           )}
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="numero">Número / volume</Label>
           <Input id="numero" value={numeroVolume} onChange={(e) => setNumeroVolume(e.target.value)} />
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label>Tipo</Label>
           <Select
             items={[
@@ -313,7 +307,7 @@ export function ItemForm({
             value={tipo}
             onValueChange={(v) => v && setTipo(v as TipoObra)}
           >
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -322,7 +316,7 @@ export function ItemForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label>Estado</Label>
           <Select
             items={[
@@ -333,7 +327,7 @@ export function ItemForm({
             value={estado}
             onValueChange={(v) => v && setEstado(v as EstadoItem)}
           >
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -343,7 +337,7 @@ export function ItemForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="prioridade">Prioridade</Label>
           <Input
             id="prioridade"
@@ -361,15 +355,15 @@ export function ItemForm({
 
       {estado !== 'desejo' && (
         <div className="grid grid-cols-3 gap-3">
-          <div className="flex flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="preco">Preço</Label>
             <Input id="preco" type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="loja">Loja</Label>
             <Input id="loja" value={loja} onChange={(e) => setLoja(e.target.value)} />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="data">Data aquisição</Label>
             <Input
               id="data"
@@ -393,8 +387,7 @@ export function ItemForm({
         <Textarea id="obs" value={observacoes ?? ''} onChange={(e) => setObservacoes(e.target.value)} rows={3} />
       </div>
 
-      <div className="flex flex-col gap-2">
-        <Label>Tags</Label>
+      <div className="flex flex-col gap-3 border-t border-neutral-800 pt-3">
         {tagsHerdadas.length > 0 && (
           <div className="flex flex-wrap gap-1">
             <span className="text-xs text-neutral-500">herdadas da série:</span>
@@ -405,20 +398,18 @@ export function ItemForm({
             ))}
           </div>
         )}
-        <div className="flex flex-wrap gap-1.5">
-          {allTags.map((t) => {
-            const active = tagsItemIds.has(t.id)
-            return (
-              <Badge
-                key={t.id}
-                variant={active ? 'default' : 'outline'}
-                className="cursor-pointer text-xs"
-                onClick={() => toggleTag(t.id)}
-              >
-                {t.nome}
-              </Badge>
-            )
-          })}
+        <p className="text-xs text-neutral-500">Tags específicas deste item (além das herdadas da série)</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {TIPOS_TAG_DEDICADOS.map(({ tipo: tipoTag, label, multiple }) => (
+            <TagTypeCombobox
+              key={tipoTag}
+              tipo={tipoTag}
+              label={label}
+              multiple={multiple}
+              value={tagsPorTipo[tipoTag]}
+              onChange={(tags) => setTagsPorTipo((prev) => ({ ...prev, [tipoTag]: tags }))}
+            />
+          ))}
         </div>
       </div>
 

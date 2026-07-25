@@ -4,16 +4,22 @@ import { listarItens } from '@/lib/queries'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { ColecaoFilters } from '@/components/itens/colecao-filters'
 import { ItemCard } from '@/components/itens/item-card'
+import { parseTagsPorTipoDaUrl } from '@/lib/tags-por-tipo'
 import type { EstadoItem, TipoObra } from '@/lib/types'
 
 type SearchParams = {
   busca?: string
   estado?: string
   tipo?: string
-  editora?: string
   serie?: string
-  tag?: string
   agrupar?: string
+  editora?: string
+  personagem?: string
+  arco?: string
+  selo?: string
+  autor?: string
+  universo?: string
+  outro?: string
 }
 
 export default async function ColecaoPage({
@@ -24,18 +30,16 @@ export default async function ColecaoPage({
   const params = await searchParams
   const supabase = await createClient()
 
-  const [itens, { data: seriesData }, { data: tagsData }, { data: editorasData }] = await Promise.all([
+  const [itens, { data: seriesData }, { data: tagsData }] = await Promise.all([
     listarItens(supabase, {
       estado: (params.estado as EstadoItem) || undefined,
       tipo: (params.tipo as TipoObra) || undefined,
-      editora: params.editora || undefined,
       serieId: params.serie || undefined,
       busca: params.busca || undefined,
-      tagId: params.tag || undefined,
+      tagsPorTipo: parseTagsPorTipoDaUrl(params),
     }),
-    supabase.from('series').select('id, nome').order('nome'),
+    supabase.from('series').select('id, nome, serie_tags(tag_id)').order('nome'),
     supabase.from('tags').select('id, nome, tipo, cor').order('nome'),
-    supabase.from('series').select('editora').not('editora', 'is', null),
   ])
 
   const capaMap = await getSignedCapaUrls(
@@ -43,9 +47,11 @@ export default async function ColecaoPage({
     itens.map((i) => i.capa_url)
   )
 
-  const editoras = Array.from(
-    new Set((editorasData ?? []).map((e) => e.editora as string).filter(Boolean))
-  ).sort()
+  const series = (seriesData ?? []).map((s) => ({
+    id: s.id,
+    nome: s.nome,
+    tagIds: (s.serie_tags ?? []).map((st: { tag_id: string }) => st.tag_id),
+  }))
 
   const agrupar = params.agrupar === '1'
 
@@ -56,7 +62,7 @@ export default async function ColecaoPage({
         <p className="text-sm text-neutral-500">{itens.length} item(ns)</p>
       </div>
 
-      <ColecaoFilters editoras={editoras} series={seriesData ?? []} tags={tagsData ?? []} />
+      <ColecaoFilters series={series} tags={tagsData ?? []} />
 
       {itens.length === 0 ? (
         <p className="text-sm text-neutral-500">Nenhum item encontrado com esses filtros.</p>

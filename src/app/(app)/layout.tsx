@@ -7,6 +7,7 @@ const NAV_LINKS = [
   { href: '/', label: 'Início' },
   { href: '/colecao', label: 'Coleção' },
   { href: '/desejos', label: 'Desejos' },
+  { href: '/series', label: 'Séries' },
   { href: '/tags', label: 'Tags' },
 ]
 
@@ -50,7 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 pb-24">{children}</main>
 
       <QuickAddButton />
     </div>

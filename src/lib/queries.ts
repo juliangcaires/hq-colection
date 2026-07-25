@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { EstadoItem, ItemComRelacoes, Tag, TipoObra } from '@/lib/types'
+import type { EstadoItem, ItemComRelacoes, Tag, TipoObra, TipoTag } from '@/lib/types'
 
 const ITEM_SELECT =
-  '*, serie:series(id, nome, editora, tipo, em_publicacao, serie_tags(tags(id, nome, tipo, cor, user_id, created_at))), item_tags(tags(id, nome, tipo, cor, user_id, created_at))'
+  '*, serie:series(id, nome, tipo, em_publicacao, serie_tags(tags(id, nome, tipo, cor, user_id, created_at))), item_tags(tags(id, nome, tipo, cor, user_id, created_at))'
 
 type RawItemRow = {
   id: string
@@ -26,7 +26,6 @@ type RawItemRow = {
   serie: {
     id: string
     nome: string
-    editora: string | null
     tipo: TipoObra
     em_publicacao: boolean
     serie_tags: { tags: Tag | null }[] | null
@@ -42,9 +41,7 @@ function toItemComRelacoes(row: RawItemRow): ItemComRelacoes {
 
   return {
     ...row,
-    serie: row.serie
-      ? { id: row.serie.id, nome: row.serie.nome, editora: row.serie.editora, tipo: row.serie.tipo }
-      : null,
+    serie: row.serie ? { id: row.serie.id, nome: row.serie.nome, tipo: row.serie.tipo } : null,
     tagsItem: tagsDoItem,
     tagsSerie: tagsDaSerie,
     tagsEfetivas: Array.from(map.values()),
@@ -54,10 +51,11 @@ function toItemComRelacoes(row: RawItemRow): ItemComRelacoes {
 export type FiltrosItens = {
   estado?: EstadoItem
   tipo?: TipoObra
-  editora?: string
   serieId?: string
   busca?: string
-  tagId?: string
+  /** Para cada tipo com ids preenchidos: item precisa ter PELO MENOS UMA dessas tags (OR dentro do tipo).
+   *  Entre tipos diferentes, todos os filtros preenchidos precisam ser satisfeitos (AND entre tipos). */
+  tagsPorTipo?: Partial<Record<TipoTag, string[]>>
 }
 
 export async function listarItens(
@@ -80,11 +78,12 @@ export async function listarItens(
 
   let itens = ((data ?? []) as unknown as RawItemRow[]).map(toItemComRelacoes)
 
-  if (filtros.editora) {
-    itens = itens.filter((i) => i.serie?.editora === filtros.editora)
-  }
-  if (filtros.tagId) {
-    itens = itens.filter((i) => i.tagsEfetivas.some((t) => t.id === filtros.tagId))
+  if (filtros.tagsPorTipo) {
+    for (const ids of Object.values(filtros.tagsPorTipo)) {
+      if (!ids || ids.length === 0) continue
+      const idSet = new Set(ids)
+      itens = itens.filter((i) => i.tagsEfetivas.some((t) => idSet.has(t.id)))
+    }
   }
 
   return itens

@@ -11,9 +11,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import type { TagLite, TipoObra } from '@/lib/types'
+import { TagTypeFilter } from '@/components/itens/tag-type-filter'
+import { TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
+import type { TagLite, TipoObra, TipoTag } from '@/lib/types'
 
-type SerieOpcao = { id: string; nome: string }
+type SerieOpcao = { id: string; nome: string; tagIds: string[] }
 
 const ESTADO_ITEMS = [
   { value: 'todos', label: 'Todos os estados' },
@@ -28,14 +30,17 @@ const TIPO_ITEMS = [
   { value: 'manga', label: 'Mangá' },
 ]
 
+function idsDoParam(searchParams: URLSearchParams, key: string): string[] {
+  const raw = searchParams.get(key)
+  return raw ? raw.split(',').filter(Boolean) : []
+}
+
 export function ColecaoFilters({
-  editoras,
   series,
   tags,
   mostrarEstado = true,
   mostrarAgrupar = true,
 }: {
-  editoras: string[]
   series: SerieOpcao[]
   tags: TagLite[]
   mostrarEstado?: boolean
@@ -65,18 +70,14 @@ export function ColecaoFilters({
   }, [busca])
 
   const agrupar = searchParams.get('agrupar') === '1'
+  const editoraIds = idsDoParam(searchParams, 'editora')
+  const editoraId = editoraIds[0]
 
-  const editoraItems = [
-    { value: 'todas', label: 'Todas editoras' },
-    ...editoras.map((e) => ({ value: e, label: e })),
-  ]
   const serieItems = [
     { value: 'todas', label: 'Todas séries' },
-    ...series.map((s) => ({ value: s.id, label: s.nome })),
-  ]
-  const tagItems = [
-    { value: 'todas', label: 'Todas tags' },
-    ...tags.map((t) => ({ value: t.id, label: t.nome })),
+    ...series
+      .filter((s) => !editoraId || s.tagIds.includes(editoraId))
+      .map((s) => ({ value: s.id, label: s.nome })),
   ]
 
   return (
@@ -125,23 +126,6 @@ export function ColecaoFilters({
       </Select>
 
       <Select
-        items={editoraItems}
-        value={searchParams.get('editora') ?? 'todas'}
-        onValueChange={(v) => setParam('editora', v === 'todas' ? null : v)}
-      >
-        <SelectTrigger className="w-36">
-          <SelectValue placeholder="Editora" />
-        </SelectTrigger>
-        <SelectContent>
-          {editoraItems.map((i) => (
-            <SelectItem key={i.value} value={i.value}>
-              {i.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select
         items={serieItems}
         value={searchParams.get('serie') ?? 'todas'}
         onValueChange={(v) => setParam('serie', v === 'todas' ? null : v)}
@@ -158,22 +142,20 @@ export function ColecaoFilters({
         </SelectContent>
       </Select>
 
-      <Select
-        items={tagItems}
-        value={searchParams.get('tag') ?? 'todas'}
-        onValueChange={(v) => setParam('tag', v === 'todas' ? null : v)}
-      >
-        <SelectTrigger className="w-36">
-          <SelectValue placeholder="Tag" />
-        </SelectTrigger>
-        <SelectContent>
-          {tagItems.map((i) => (
-            <SelectItem key={i.value} value={i.value}>
-              {i.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {TIPOS_TAG_DEDICADOS.map(({ tipo, label, multiple }) => {
+        const key = tipo as TipoTag
+        const selectedIds = idsDoParam(searchParams, key)
+        return (
+          <TagTypeFilter
+            key={key}
+            label={label}
+            multiple={multiple}
+            options={tags.filter((t) => t.tipo === key)}
+            selectedIds={selectedIds}
+            onChange={(ids) => setParam(key, ids.length > 0 ? ids.join(',') : null)}
+          />
+        )
+      })}
 
       {mostrarAgrupar && (
         <Button

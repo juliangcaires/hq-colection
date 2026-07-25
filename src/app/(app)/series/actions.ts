@@ -19,7 +19,6 @@ export async function createSerie(input: SerieInput) {
       user_id: user.id,
       nome: parsed.nome,
       tipo: parsed.tipo,
-      editora: parsed.editora || null,
       total_volumes: parsed.total_volumes ?? null,
       em_publicacao: parsed.em_publicacao,
       observacoes: parsed.observacoes || null,
@@ -37,6 +36,7 @@ export async function createSerie(input: SerieInput) {
 
   revalidatePath('/colecao')
   revalidatePath('/desejos')
+  revalidatePath('/series')
   return serie.id as string
 }
 
@@ -49,7 +49,6 @@ export async function updateSerie(id: string, input: SerieInput) {
     .update({
       nome: parsed.nome,
       tipo: parsed.tipo,
-      editora: parsed.editora || null,
       total_volumes: parsed.total_volumes ?? null,
       em_publicacao: parsed.em_publicacao,
       observacoes: parsed.observacoes || null,
@@ -69,6 +68,7 @@ export async function updateSerie(id: string, input: SerieInput) {
 
   revalidatePath('/colecao')
   revalidatePath('/desejos')
+  revalidatePath('/series')
   revalidatePath(`/serie/${id}`)
 }
 
@@ -78,24 +78,59 @@ export async function deleteSerie(id: string) {
   if (error) throw new Error(error.message)
   revalidatePath('/colecao')
   revalidatePath('/desejos')
+  revalidatePath('/series')
 }
 
 type BuscarSerieRow = {
   id: string
   nome: string
   tipo: 'hq' | 'manga'
-  editora: string | null
   total_volumes: number | null
   serie_tags:
     | { tag_id: string; tags: { id: string; nome: string; tipo: TipoTag; cor: string | null } | null }[]
     | null
 }
 
-export async function buscarSeries(query: string) {
+function mapSerieRow(s: BuscarSerieRow) {
+  return {
+    id: s.id,
+    nome: s.nome,
+    tipo: s.tipo,
+    total_volumes: s.total_volumes,
+    tags: (s.serie_tags ?? [])
+      .map((st) => st.tags)
+      .filter((t): t is NonNullable<typeof t> => Boolean(t)),
+  }
+}
+
+/** Busca séries por nome; se editoraTagId for informado, restringe às séries com essa tag de editora (cascata). */
+export async function buscarSeries(query: string, editoraTagId?: string) {
   const supabase = await createClient()
+
+  if (editoraTagId) {
+    const { data, error } = await supabase
+      .from('serie_tags')
+      .select('series(id, nome, tipo, total_volumes, serie_tags(tag_id, tags(id, nome, tipo, cor)))')
+      .eq('tag_id', editoraTagId)
+      .limit(200)
+    if (error) throw new Error(error.message)
+
+    type Row = { series: BuscarSerieRow | null }
+    let series = ((data ?? []) as unknown as Row[])
+      .map((r) => r.series)
+      .filter((s): s is BuscarSerieRow => Boolean(s))
+
+    if (query.trim()) {
+      const q = query.trim().toLowerCase()
+      series = series.filter((s) => s.nome.toLowerCase().includes(q))
+    }
+    series.sort((a, b) => a.nome.localeCompare(b.nome))
+    return series.slice(0, 20).map(mapSerieRow)
+  }
+
   let request = supabase
     .from('series')
-    .select('id, nome, tipo, editora, total_volumes, serie_tags(tag_id, tags(id, nome, tipo, cor))')
+    .select('id, nome, tipo, total_volumes, serie_tags(tag_id, tags(id, nome, tipo, cor))')
     .order('nome')
     .limit(20)
 
@@ -106,16 +141,21 @@ export async function buscarSeries(query: string) {
   const { data, error } = await request
   if (error) throw new Error(error.message)
 
-  const rows = (data ?? []) as unknown as BuscarSerieRow[]
+  return ((data ?? []) as unknown as BuscarSerieRow[]).map(mapSerieRow)
+}
 
-  return rows.map((s) => ({
-    id: s.id,
-    nome: s.nome,
-    tipo: s.tipo,
-    editora: s.editora,
-    total_volumes: s.total_volumes,
-    tags: (s.serie_tags ?? [])
-      .map((st) => st.tags)
-      .filter((t): t is NonNullable<typeof t> => Boolean(t)),
-  }))
+export async function listarSeries(query: string) {
+  const supabase = await createClient()
+  let request = supabase
+    .from('series')
+    .select('id, nome, tipo, total_volumes, em_publicacao')
+    .order('nome')
+
+  if (query.trim()) {
+    request = request.ilike('nome', `%${query.trim()}%`)
+  }
+
+  const { data, error } = await request
+  if (error) throw new Error(error.message)
+  return data ?? []
 }

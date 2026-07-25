@@ -21,7 +21,6 @@ export const tagInputSchema = z.object({
 export const serieInputSchema = z.object({
   nome: z.string().trim().min(1, 'Nome obrigatório').max(200),
   tipo: tipoObraSchema.default('hq'),
-  editora: z.string().trim().max(120).optional().nullable(),
   total_volumes: z.coerce.number().int().positive().optional().nullable(),
   em_publicacao: z.coerce.boolean().default(true),
   observacoes: z.string().trim().max(2000).optional().nullable(),

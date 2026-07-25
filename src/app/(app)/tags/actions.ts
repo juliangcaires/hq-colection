@@ -13,12 +13,15 @@ export async function createTag(input: { nome: string; tipo: TipoTag }) {
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Não autenticado')
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('tags')
     .insert({ user_id: user.id, nome: parsed.nome, tipo: parsed.tipo })
+    .select('id')
+    .single()
 
   if (error) throw new Error(error.message)
   revalidatePath('/tags')
+  return data.id as string
 }
 
 export async function updateTag(id: string, input: { nome: string; tipo: TipoTag }) {
@@ -48,6 +51,21 @@ export async function deleteTag(id: string) {
 export async function buscarTags(query: string) {
   const supabase = await createClient()
   let request = supabase.from('tags').select('id, nome, tipo, cor').order('nome').limit(30)
+  if (query.trim()) request = request.ilike('nome', `%${query.trim()}%`)
+  const { data, error } = await request
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+/** Busca tags restritas a um tipo — usada pelos selects dedicados (editora, personagem, arco, ...). */
+export async function buscarTagsPorTipo(tipo: TipoTag, query: string) {
+  const supabase = await createClient()
+  let request = supabase
+    .from('tags')
+    .select('id, nome, tipo, cor')
+    .eq('tipo', tipo)
+    .order('nome')
+    .limit(30)
   if (query.trim()) request = request.ilike('nome', `%${query.trim()}%`)
   const { data, error } = await request
   if (error) throw new Error(error.message)
