@@ -10,6 +10,12 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  experimental: {
+    serverActions: {
+      // Padrão é 1MB — foto de capa tirada direto do celular passa disso fácil.
+      bodySizeLimit: "10mb",
+    },
+  },
 };
 
 export default nextConfig;
