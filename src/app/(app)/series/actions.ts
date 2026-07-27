@@ -4,7 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
-import { itensDaSerieSchema, serieInputSchema, type SerieInput } from '@/lib/schemas'
+import {
+  itensComNumeroSchema,
+  itensDaSerieSchema,
+  serieInputSchema,
+  type SerieInput,
+} from '@/lib/schemas'
 import type { EstadoItem, TipoObra, TipoTag } from '@/lib/types'
 
 export async function createSerie(input: SerieInput) {
@@ -23,6 +28,7 @@ export async function createSerie(input: SerieInput) {
       tipo: parsed.tipo,
       total_volumes: parsed.total_volumes ?? null,
       em_publicacao: parsed.em_publicacao,
+      tem_numeracao: parsed.tem_numeracao,
       observacoes: parsed.observacoes || null,
     })
     .select('id')
@@ -53,6 +59,7 @@ export async function updateSerie(id: string, input: SerieInput) {
       tipo: parsed.tipo,
       total_volumes: parsed.total_volumes ?? null,
       em_publicacao: parsed.em_publicacao,
+      tem_numeracao: parsed.tem_numeracao,
       observacoes: parsed.observacoes || null,
     })
     .eq('id', id)
@@ -160,19 +167,65 @@ export type ItemCandidato = {
   serie: { id: string; nome: string } | null
 }
 
+export type FiltrosCandidatos = {
+  serieId: string
+  query: string
+  incluirComSerie: boolean
+  tipo?: TipoObra
+  /** Mesma semântica da coleção: OR dentro de um tipo, AND entre tipos diferentes. */
+  tagsPorTipo?: Partial<Record<TipoTag, string[]>>
+}
+
+/**
+ * Ids dos itens que satisfazem o filtro de tags, resolvido em `item_tags` antes
+ * da consulta principal — do contrário o teto de `LIMITE_CANDIDATOS` cairia
+ * sobre a lista sem filtro e esconderia itens que casam.
+ * `null` = sem filtro de tag; array vazio = nada casa.
+ */
+async function idsPorTags(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tagsPorTipo: Partial<Record<TipoTag, string[]>> | undefined
+): Promise<string[] | null> {
+  const grupos = Object.values(tagsPorTipo ?? {}).filter(
+    (ids): ids is string[] => Array.isArray(ids) && ids.length > 0
+  )
+  if (grupos.length === 0) return null
+
+  const { data, error } = await supabase
+    .from('item_tags')
+    .select('item_id, tag_id')
+    .in('tag_id', grupos.flat())
+  if (error) throw new Error(error.message)
+
+  const tagsDoItem = new Map<string, Set<string>>()
+  for (const { item_id, tag_id } of (data ?? []) as { item_id: string; tag_id: string }[]) {
+    const atual = tagsDoItem.get(item_id) ?? new Set<string>()
+    atual.add(tag_id)
+    tagsDoItem.set(item_id, atual)
+  }
+
+  const ids: string[] = []
+  for (const [itemId, tags] of tagsDoItem) {
+    if (grupos.every((grupo) => grupo.some((tagId) => tags.has(tagId)))) ids.push(itemId)
+  }
+  return ids
+}
+
 /**
  * Itens da coleção que podem ser agrupados nesta série. Por padrão só os avulsos
  * (`serie_id is null`); com `incluirComSerie`, também os que estão em outra série
  * (que seriam MOVIDOS). Nunca lista os que já pertencem a `serieId`.
  */
 export async function buscarItensParaSerie(
-  serieId: string,
-  query: string,
-  incluirComSerie: boolean
+  filtros: FiltrosCandidatos
 ): Promise<{ itens: ItemCandidato[]; truncado: boolean }> {
+  const { query, incluirComSerie, tipo, tagsPorTipo } = filtros
   // Validado antes de entrar na string de filtro do PostgREST logo abaixo.
-  const id = z.string().uuid().parse(serieId)
+  const id = z.string().uuid().parse(filtros.serieId)
   const supabase = await createClient()
+
+  const idsDeTags = await idsPorTags(supabase, tagsPorTipo)
+  if (idsDeTags !== null && idsDeTags.length === 0) return { itens: [], truncado: false }
 
   let request = supabase
     .from('itens')
@@ -191,6 +244,16 @@ export async function buscarItensParaSerie(
     request = request.ilike('titulo', `%${query.trim()}%`)
   }
 
+  if (tipo) request = request.eq('tipo', tipo)
+
+  // Cortado no mesmo teto da consulta para a URL do PostgREST não estourar; se
+  // passar disso a lista já vinha truncada de qualquer jeito.
+  let cortadoPorTags = false
+  if (idsDeTags !== null) {
+    cortadoPorTags = idsDeTags.length > LIMITE_CANDIDATOS
+    request = request.in('id', idsDeTags.slice(0, LIMITE_CANDIDATOS))
+  }
+
   const { data, error } = await request
   if (error) throw new Error(error.message)
 
@@ -207,7 +270,7 @@ export async function buscarItensParaSerie(
       ...resto,
       capaUrl: capaMap.get(capa_url ?? '') ?? null,
     })),
-    truncado: rows.length === LIMITE_CANDIDATOS,
+    truncado: rows.length === LIMITE_CANDIDATOS || cortadoPorTags,
   }
 }
 
@@ -225,16 +288,37 @@ function revalidateSeriesEListagens(serieIds: (string | null)[]) {
 export type ResumoInclusao = {
   incluidos: number
   ignorados: number
-  /** Números de volume repetidos dentro da série — não existe unique no banco, só dá para avisar. */
+  /** Números repetidos numa série NÃO numerada — sem unique no banco, só dá para avisar. */
   volumesDuplicados: number[]
 }
 
-/** Agrupa vários itens já existentes na coleção sob uma série. Não mexe em `numero_volume`. */
+/** Números que aparecem mais de uma vez na lista, em ordem crescente. */
+function numerosRepetidos(numeros: number[]): number[] {
+  const vistos = new Set<number>()
+  const repetidos = new Set<number>()
+  for (const n of numeros) {
+    if (vistos.has(n)) repetidos.add(n)
+    else vistos.add(n)
+  }
+  return Array.from(repetidos).sort((a, b) => a - b)
+}
+
+/**
+ * Agrupa vários itens já existentes na coleção sob uma série.
+ *
+ * Se a série tem `tem_numeracao`, cada item precisa vir com `numero` e o número
+ * grava junto — sem número, ou com número repetido (entre os enviados ou contra
+ * um volume que já está na série), nada é salvo. A regra mora aqui porque o
+ * banco não tem unique de `(serie_id, numero_volume)`: a coluna é nullable e
+ * numeric de propósito, para séries não numeradas e edições 1.5.
+ * Séries sem a flag continuam como antes: só `serie_id`, número intocado.
+ */
 export async function adicionarItensASerie(
   serieId: string,
-  itemIds: string[]
+  itens: { itemId: string; numero: number | null }[]
 ): Promise<ResumoInclusao> {
-  const parsed = itensDaSerieSchema.parse({ serieId, itemIds })
+  const parsed = itensComNumeroSchema.parse({ serieId, itens })
+  const itemIds = parsed.itens.map((i) => i.itemId)
   const supabase = await createClient()
   const {
     data: { user },
@@ -243,50 +327,105 @@ export async function adicionarItensASerie(
 
   const { data: serie, error: serieError } = await supabase
     .from('series')
-    .select('id')
+    .select('id, tem_numeracao')
     .eq('id', parsed.serieId)
     .maybeSingle()
   if (serieError) throw new Error(serieError.message)
   if (!serie) throw new Error('Série não encontrada')
 
+  const temNumeracao = Boolean((serie as { tem_numeracao: boolean }).tem_numeracao)
+
+  if (temNumeracao) {
+    if (parsed.itens.some((i) => i.numero === null)) {
+      throw new Error('Esta série é numerada: informe o número de todos os volumes marcados.')
+    }
+
+    const repetidosNoEnvio = numerosRepetidos(parsed.itens.map((i) => i.numero as number))
+    if (repetidosNoEnvio.length > 0) {
+      throw new Error(`Número repetido entre os volumes marcados: ${repetidosNoEnvio.join(', ')}`)
+    }
+
+    // Volumes que já estão na série e NÃO estão sendo reenviados (esses podem
+    // estar sendo renumerados, então não conflitam consigo mesmos).
+    const { data: jaNaSerie, error: jaNaSerieError } = await supabase
+      .from('itens')
+      .select('id, numero_volume')
+      .eq('serie_id', parsed.serieId)
+      .not('numero_volume', 'is', null)
+    if (jaNaSerieError) throw new Error(jaNaSerieError.message)
+
+    const enviados = new Set(itemIds)
+    const ocupados = new Set(
+      ((jaNaSerie ?? []) as { id: string; numero_volume: number }[])
+        .filter((i) => !enviados.has(i.id))
+        .map((i) => Number(i.numero_volume))
+    )
+    const colidindo = parsed.itens
+      .map((i) => i.numero as number)
+      .filter((n) => ocupados.has(n))
+    if (colidindo.length > 0) {
+      throw new Error(
+        `Número já usado por outro volume da série: ${Array.from(new Set(colidindo)).join(', ')}`
+      )
+    }
+  }
+
   // As páginas das séries de origem também ficam desatualizadas quando um volume sai delas.
   const { data: antes, error: antesError } = await supabase
     .from('itens')
     .select('serie_id')
-    .in('id', parsed.itemIds)
+    .in('id', itemIds)
   if (antesError) throw new Error(antesError.message)
   const seriesDeOrigem = ((antes ?? []) as { serie_id: string | null }[]).map((i) => i.serie_id)
 
   // Sem `user_id` no update: a RLS `itens_owner` já restringe ao dono (mesmo padrão de updateItem).
-  const { data: atualizados, error } = await supabase
-    .from('itens')
-    .update({ serie_id: parsed.serieId })
-    .in('id', parsed.itemIds)
-    .select('id')
-  if (error) throw new Error(error.message)
+  let incluidos: number
+  if (temNumeracao) {
+    // Número varia por linha, então o update em massa não serve.
+    const resultados = await Promise.all(
+      parsed.itens.map((i) =>
+        supabase
+          .from('itens')
+          .update({ serie_id: parsed.serieId, numero_volume: i.numero })
+          .eq('id', i.itemId)
+          .select('id')
+      )
+    )
+    const falha = resultados.find((r) => r.error)
+    if (falha?.error) throw new Error(falha.error.message)
+    incluidos = resultados.reduce((total, r) => total + (r.data ?? []).length, 0)
+  } else {
+    const { data: atualizados, error } = await supabase
+      .from('itens')
+      .update({ serie_id: parsed.serieId })
+      .in('id', itemIds)
+      .select('id')
+    if (error) throw new Error(error.message)
+    incluidos = (atualizados ?? []).length
+  }
 
-  const incluidos = (atualizados ?? []).length
+  // Só faz sentido avisar em série não numerada: na numerada a duplicidade já
+  // foi barrada antes de escrever.
+  let volumesDuplicados: number[] = []
+  if (!temNumeracao) {
+    const { data: volumes, error: volumesError } = await supabase
+      .from('itens')
+      .select('numero_volume')
+      .eq('serie_id', parsed.serieId)
+      .not('numero_volume', 'is', null)
+    if (volumesError) throw new Error(volumesError.message)
 
-  const { data: volumes, error: volumesError } = await supabase
-    .from('itens')
-    .select('numero_volume')
-    .eq('serie_id', parsed.serieId)
-    .not('numero_volume', 'is', null)
-  if (volumesError) throw new Error(volumesError.message)
-
-  const vistos = new Set<number>()
-  const duplicados = new Set<number>()
-  for (const { numero_volume } of (volumes ?? []) as { numero_volume: number }[]) {
-    if (vistos.has(numero_volume)) duplicados.add(numero_volume)
-    else vistos.add(numero_volume)
+    volumesDuplicados = numerosRepetidos(
+      ((volumes ?? []) as { numero_volume: number }[]).map((v) => Number(v.numero_volume))
+    )
   }
 
   revalidateSeriesEListagens([parsed.serieId, ...seriesDeOrigem])
 
   return {
     incluidos,
-    ignorados: parsed.itemIds.length - incluidos,
-    volumesDuplicados: Array.from(duplicados).sort((a, b) => a - b),
+    ignorados: itemIds.length - incluidos,
+    volumesDuplicados,
   }
 }
 

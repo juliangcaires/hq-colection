@@ -4,6 +4,7 @@ import { listarItens } from '@/lib/queries'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { ColecaoFilters } from '@/components/itens/colecao-filters'
 import { ItemCard } from '@/components/itens/item-card'
+import { ScrollRestore } from '@/components/itens/scroll-restore'
 import { parseTagsPorTipoDaUrl } from '@/lib/tags-por-tipo'
 import type { EstadoItem, TipoObra } from '@/lib/types'
 
@@ -59,6 +60,7 @@ export default async function ColecaoPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <ScrollRestore />
       <div>
         <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground">Coleção</h1>
         <p className="text-sm text-muted-foreground">{itens.length} item(ns)</p>

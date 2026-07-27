@@ -58,6 +58,7 @@ export function SeriesManager({ initialSeries }: { initialSeries: SerieRow[] }) 
           nome: novoNome.trim(),
           tipo: novoTipo,
           em_publicacao: true,
+          tem_numeracao: false,
           tagIds: [],
         })
         toast.success('Série criada')

@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { TagTypeFilter } from '@/components/itens/tag-type-filter'
+import { OpcaoFilter } from '@/components/itens/opcao-filter'
 import { TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
 import type { TagLite, TipoObra, TipoTag } from '@/lib/types'
 
@@ -76,12 +76,9 @@ export function ColecaoFilters({
   const editoraIds = idsDoParam(searchParams, 'editora')
   const editoraId = editoraIds[0]
 
-  const serieItems = [
-    { value: 'todas', label: 'Todas séries' },
-    ...series
-      .filter((s) => !editoraId || s.tagIds.includes(editoraId))
-      .map((s) => ({ value: s.id, label: s.nome })),
-  ]
+  // Cascata: com uma editora escolhida, só as séries dela entram na lista.
+  const seriesVisiveis = series.filter((s) => !editoraId || s.tagIds.includes(editoraId))
+  const serieId = searchParams.get('serie')
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3">
@@ -128,28 +125,23 @@ export function ColecaoFilters({
         </SelectContent>
       </Select>
 
-      <Select
-        items={serieItems}
-        value={searchParams.get('serie') ?? 'todas'}
-        onValueChange={(v) => setParam('serie', v === 'todas' ? null : v)}
-      >
-        <SelectTrigger className="w-40">
-          <SelectValue placeholder="Série" />
-        </SelectTrigger>
-        <SelectContent>
-          {serieItems.map((i) => (
-            <SelectItem key={i.value} value={i.value}>
-              {i.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <OpcaoFilter
+        label="Série"
+        multiple={false}
+        options={seriesVisiveis}
+        selectedIds={serieId ? [serieId] : []}
+        onChange={(ids) => setParam('serie', ids[0] ?? null)}
+        limparLabel="Todas séries"
+        // O nome sai da lista COMPLETA: se a cascata por editora esconder a série
+        // escolhida, o filtro continua ativo e precisa continuar se identificando.
+        nomeSelecionado={(id) => series.find((s) => s.id === id)?.nome}
+      />
 
       {TIPOS_TAG_DEDICADOS.map(({ tipo, label, multiple }) => {
         const key = tipo as TipoTag
         const selectedIds = idsDoParam(searchParams, key)
         return (
-          <TagTypeFilter
+          <OpcaoFilter
             key={key}
             label={label}
             multiple={multiple}

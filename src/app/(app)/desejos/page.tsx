@@ -5,6 +5,7 @@ import { listarItens } from '@/lib/queries'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { ColecaoFilters } from '@/components/itens/colecao-filters'
 import { AdquirirButton } from '@/components/itens/adquirir-button'
+import { ScrollRestore } from '@/components/itens/scroll-restore'
 import { parseTagsPorTipoDaUrl } from '@/lib/tags-por-tipo'
 import type { TipoObra } from '@/lib/types'
 
@@ -60,6 +61,7 @@ export default async function DesejosPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <ScrollRestore />
       <div>
         <h1 className="text-2xl font-semibold">Lista de desejos</h1>
         <p className="text-sm text-neutral-500">{itens.length} item(ns), por prioridade</p>

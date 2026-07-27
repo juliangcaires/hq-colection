@@ -22,6 +22,8 @@ export type Serie = {
   tipo: TipoObra
   total_volumes: number | null
   em_publicacao: boolean
+  /** Série numerada: exige `numero_volume` único em todo volume incluído por "Adicionar volumes". */
+  tem_numeracao: boolean
   observacoes: string | null
   /** memória de busca de capa — o que já deu certo num volume desta série */
   busca_termo: string | null

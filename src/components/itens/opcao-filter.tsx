@@ -5,28 +5,49 @@ import { buttonVariants } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import type { TagLite } from '@/lib/types'
 
-export function TagTypeFilter({
+/** Só o que o filtro precisa da opção — `TagLite` e `{ id, nome }` de série satisfazem os dois. */
+export type Opcao = { id: string; nome: string }
+
+/**
+ * Filtro em combobox (digitável) para uma lista já carregada em memória — a
+ * filtragem por digitação é a do cmdk, sem ida ao servidor. Serve tanto para
+ * tags quanto para séries.
+ */
+export function OpcaoFilter({
   label,
   options,
   selectedIds,
   onChange,
   multiple,
+  /** Rótulo do item que limpa a seleção (ex. "Todas séries"). Só faz sentido em single. */
+  limparLabel,
+  /** Resolve o rótulo do trigger. Útil quando `options` está filtrada por outro
+   *  filtro (cascata) e a opção selecionada pode não estar mais na lista. */
+  nomeSelecionado,
 }: {
   label: string
-  options: TagLite[]
+  options: Opcao[]
   selectedIds: string[]
   onChange: (ids: string[]) => void
   multiple: boolean
+  limparLabel?: string
+  nomeSelecionado?: (id: string) => string | undefined
 }) {
   const [open, setOpen] = useState(false)
 
-  if (options.length === 0) return null
+  if (options.length === 0 && selectedIds.length === 0) return null
 
   const selected = options.filter((o) => selectedIds.includes(o.id))
+  const primeiroNome =
+    selected[0]?.nome ?? (selectedIds[0] ? nomeSelecionado?.(selectedIds[0]) : undefined)
+
   const triggerLabel =
-    selected.length === 0 ? label : multiple ? `${label}: ${selected.length}` : selected[0].nome
+    selectedIds.length === 0
+      ? label
+      : multiple
+        ? `${label}: ${selectedIds.length}`
+        : (primeiroNome ?? label)
 
   function toggle(id: string) {
     if (multiple) {
@@ -41,7 +62,7 @@ export function TagTypeFilter({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(
-          buttonVariants({ variant: selected.length > 0 ? 'secondary' : 'outline' }),
+          buttonVariants({ variant: selectedIds.length > 0 ? 'secondary' : 'outline' }),
           'justify-start font-normal'
         )}
       >
@@ -53,6 +74,18 @@ export function TagTypeFilter({
           <CommandList>
             <CommandEmpty>Nada encontrado</CommandEmpty>
             <CommandGroup>
+              {limparLabel && !multiple && (
+                <CommandItem
+                  value={limparLabel}
+                  onSelect={() => {
+                    onChange([])
+                    setOpen(false)
+                  }}
+                >
+                  {selectedIds.length === 0 ? '✓ ' : ''}
+                  {limparLabel}
+                </CommandItem>
+              )}
               {options.map((o) => (
                 <CommandItem key={o.id} value={o.nome} onSelect={() => toggle(o.id)}>
                   {selectedIds.includes(o.id) ? '✓ ' : ''}

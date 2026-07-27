@@ -52,8 +52,10 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         </p>
         {volumesFaltantes.length > 0 && (
           <p className="mt-2 text-sm text-amber-400">
-            <span className="font-medium">Faltam {volumesFaltantes.length}:</span>{' '}
-            {faltantesExibidos.join(', ')}
+            <span className="font-medium">
+              {volumesFaltantes.length === 1 ? 'Falta 1:' : `Faltam ${volumesFaltantes.length}:`}
+            </span>{' '}
+            {faltantesExibidos.map((n) => `#${n}`).join(', ')}
             {faltantesOcultos > 0 ? ` e mais ${faltantesOcultos}` : ''}
           </p>
         )}
@@ -64,7 +66,15 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
       <div>
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="font-heading text-sm font-semibold text-foreground/90">Volumes</h2>
-          <AdicionarVolumesDialog serieId={id} serieNome={serie.nome} />
+          <AdicionarVolumesDialog
+            serieId={id}
+            serieNome={serie.nome}
+            temNumeracao={Boolean(serie.tem_numeracao)}
+            numerosOcupados={itens
+              .map((i) => i.numero_volume)
+              .filter((n): n is number => n !== null)}
+            tags={allTags ?? []}
+          />
         </div>
         {itens.length === 0 ? (
           <p className="text-sm text-muted-foreground">

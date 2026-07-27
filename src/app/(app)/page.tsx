@@ -91,7 +91,11 @@ export default async function Home() {
                       <span className="text-muted-foreground"> · {TIPO_LABEL[serie.tipo]}</span>
                     </span>
                     <span className="shrink-0 text-xs text-chart-3">
-                      falta {serie.faltantes.length === 1 ? serie.faltantes[0] : `${serie.faltantes.length}`}
+                      {/* Com um furo só mostramos QUAL volume falta (com #), com vários a quantidade —
+                          sem o # os dois casos se leem como quantidade ("falta 4" para o volume #4). */}
+                      {serie.faltantes.length === 1
+                        ? `falta o #${serie.faltantes[0]}`
+                        : `faltam ${serie.faltantes.length}`}
                     </span>
                   </Link>
                 </li>

@@ -27,6 +27,9 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
   const [tipo, setTipo] = useState<TipoObra>(serie.tipo)
   const [totalVolumes, setTotalVolumes] = useState(serie.total_volumes?.toString() ?? '')
   const [emPublicacao, setEmPublicacao] = useState(serie.em_publicacao)
+  // `Boolean(...)` porque a coluna é nova: antes da migration rodar o campo vem
+  // undefined e o Checkbox viraria não-controlado.
+  const [temNumeracao, setTemNumeracao] = useState(Boolean(serie.tem_numeracao))
   const [observacoes, setObservacoes] = useState(serie.observacoes ?? '')
   const [tagsPorTipo, setTagsPorTipo] = useState<Record<TipoTag, TagLite[]>>(() =>
     agruparTagsPorTipo(serie.tagIds, allTags)
@@ -43,6 +46,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
           tipo,
           total_volumes: totalVolumes ? Number(totalVolumes) : null,
           em_publicacao: emPublicacao,
+          tem_numeracao: temNumeracao,
           observacoes: observacoes || null,
           tagIds,
         })
@@ -106,11 +110,27 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Checkbox checked={emPublicacao} onCheckedChange={(v) => setEmPublicacao(Boolean(v))} id="em_pub" />
-        <Label htmlFor="em_pub" className="font-normal">
-          Ainda em publicação
-        </Label>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <Checkbox checked={emPublicacao} onCheckedChange={(v) => setEmPublicacao(Boolean(v))} id="em_pub" />
+          <Label htmlFor="em_pub" className="font-normal">
+            Ainda em publicação
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            checked={temNumeracao}
+            onCheckedChange={(v) => setTemNumeracao(Boolean(v))}
+            id="tem_num"
+          />
+          <Label htmlFor="tem_num" className="font-normal">
+            Tem numeração
+          </Label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Com numeração ligada, &ldquo;Adicionar volumes&rdquo; passa a exigir o número de cada volume
+          marcado, sem repetir número dentro da série.
+        </p>
       </div>
 
       <div className="flex flex-col gap-1.5">

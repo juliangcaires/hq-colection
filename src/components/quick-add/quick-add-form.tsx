@@ -131,6 +131,8 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
             nome: serieSelecionada.nome,
             tipo: tipoSelecionado,
             em_publicacao: true,
+            // Liga-se depois, na tela da série — exigir número aqui travaria a inclusão rápida.
+            tem_numeracao: false,
             tagIds: editoraSelecionada.map((t) => t.id),
           })
         } else if (serieSelecionada) {
