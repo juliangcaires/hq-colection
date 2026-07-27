@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -60,6 +61,7 @@ type SerieOption = {
 }
 
 export function QuickAddForm({ onDone }: { onDone: () => void }) {
+  const router = useRouter()
   const [editoraSelecionada, setEditoraSelecionada] = useState<TagLite[]>([])
 
   const [serieOpen, setSerieOpen] = useState(false)
@@ -147,16 +149,31 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
           tagIds: tagsExtras.map((t) => t.id),
         })
 
-        // Busca de capa em background — não trava o fechamento do modal.
-        // Só resulta em algo automático quando há ISBN (busca por título é
-        // ambígua e fica para o usuário escolher na página do item).
-        fetch('/api/capa/buscar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ itemId, isbn: isbn.trim() || null, titulo: tituloFinal, tipo }),
-        }).catch(() => {})
-
-        toast.success(ESTADO_LABEL_TOAST[estado])
+        // Busca de capa — a resposta agora é lida: candidatos não são mais
+        // descartados em silêncio quando não há ISBN.
+        try {
+          const res = await fetch('/api/capa/buscar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ itemId, isbn: isbn.trim() || null, titulo: tituloFinal, tipo }),
+          })
+          const data: { status?: string } = await res.json()
+          if (data.status === 'aplicada') {
+            toast.success(`${ESTADO_LABEL_TOAST[estado]} — capa encontrada automaticamente`)
+          } else if (data.status === 'candidatos') {
+            toast.success(ESTADO_LABEL_TOAST[estado], {
+              description: 'Encontrei possíveis capas',
+              action: {
+                label: 'Escolher capa',
+                onClick: () => router.push(`/item/${itemId}`),
+              },
+            })
+          } else {
+            toast.success(ESTADO_LABEL_TOAST[estado])
+          }
+        } catch {
+          toast.success(ESTADO_LABEL_TOAST[estado])
+        }
         onDone()
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao adicionar item')

@@ -29,7 +29,7 @@ import {
 } from '@/app/(app)/itens/actions'
 import { agruparTagsPorTipo, TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
 import type { EstadoItem, ItemComRelacoes, TagLite, TipoObra, TipoTag } from '@/lib/types'
-import type { CandidatoCapa } from '@/lib/capa-busca'
+import { descreverFalhaProvedor, type CandidatoCapa, type ResultadoProvedor } from '@/lib/capa-busca'
 
 type SerieOpcao = { id: string; nome: string }
 
@@ -151,18 +151,28 @@ export function ItemForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ itemId: item.id, isbn: isbn || null, titulo, tipo }),
       })
-      const data = await res.json()
+      const data: {
+        status?: string
+        error?: string
+        candidatos?: CandidatoCapa[]
+        diagnostico?: ResultadoProvedor[]
+      } = await res.json()
       if (!res.ok) {
         toast.error(data.error || 'Erro ao buscar capa')
       } else if (data.status === 'aplicada') {
         toast.success('Capa encontrada e aplicada automaticamente')
         router.refresh()
       } else if (data.status === 'candidatos') {
-        setCandidatos(data.candidatos)
+        setCandidatos(data.candidatos ?? [])
       } else {
-        toast.info(
-          'Nenhuma capa encontrada automaticamente — cobertura de edição brasileira é irregular. Envie uma foto.'
-        )
+        const falhaFonte = data.diagnostico && descreverFalhaProvedor(data.diagnostico)
+        if (falhaFonte) {
+          toast.error(falhaFonte)
+        } else {
+          toast.info(
+            'Nenhuma capa encontrada automaticamente — cobertura de edição brasileira é irregular. Envie uma foto.'
+          )
+        }
       }
     } catch {
       toast.error('Erro ao buscar capa')
@@ -171,11 +181,11 @@ export function ItemForm({
     }
   }
 
-  function handleEscolherCandidato(url: string) {
+  function handleEscolherCandidato(candidato: CandidatoCapa) {
     if (!item) return
     startAplicarCandidato(async () => {
       try {
-        await aplicarCapaEscolhida(item.id, url)
+        await aplicarCapaEscolhida(item.id, candidato)
         toast.success('Capa aplicada')
         setCandidatos(null)
         router.refresh()
@@ -246,7 +256,7 @@ export function ItemForm({
                 src={c.url}
                 alt={c.label}
                 title={c.label}
-                onClick={() => handleEscolherCandidato(c.url)}
+                onClick={() => handleEscolherCandidato(c)}
                 className={`aspect-[2/3] cursor-pointer rounded border-2 border-transparent object-cover transition hover:border-neutral-400 ${
                   aplicandoCandidato ? 'pointer-events-none opacity-50' : ''
                 }`}

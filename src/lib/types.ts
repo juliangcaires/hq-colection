@@ -23,6 +23,11 @@ export type Serie = {
   total_volumes: number | null
   em_publicacao: boolean
   observacoes: string | null
+  /** memória de busca de capa — o que já deu certo num volume desta série */
+  busca_termo: string | null
+  busca_provedor: string | null
+  busca_ref: string | null
+  busca_atualizado_em: string | null
   created_at: string
   updated_at: string
 }

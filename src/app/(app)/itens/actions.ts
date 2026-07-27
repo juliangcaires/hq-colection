@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { adquirirInputSchema, itemInputSchema, type AdquirirInput, type ItemInput } from '@/lib/schemas'
-import { baixarEPersistirCapa } from '@/lib/capa-busca'
+import { baixarEPersistirCapa, type CandidatoCapa } from '@/lib/capa-busca'
+import { normalizarTermoBusca } from '@/lib/capa-termo'
 
 function revalidateListagens(itemId?: string) {
   revalidatePath('/colecao')
@@ -158,21 +159,37 @@ export async function uploadCapaManual(itemId: string, formData: FormData) {
 }
 
 /** Aplica a capa que o usuário escolheu na grade de candidatos (busca automática, Fase 2). */
-export async function aplicarCapaEscolhida(itemId: string, url: string) {
+export async function aplicarCapaEscolhida(itemId: string, candidato: CandidatoCapa) {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Não autenticado')
 
-  const path = await baixarEPersistirCapa(supabase, user.id, itemId, url)
+  const path = await baixarEPersistirCapa(supabase, user.id, itemId, candidato.url)
   if (!path) throw new Error('Não foi possível baixar essa imagem')
 
-  const { error } = await supabase
+  const { data: item, error } = await supabase
     .from('itens')
     .update({ capa_url: path, capa_origem: 'api' })
     .eq('id', itemId)
+    .select('titulo, numero_volume, serie:series(id, nome)')
+    .single<{ titulo: string; numero_volume: number | null; serie: { id: string; nome: string } | null }>()
   if (error) throw new Error(error.message)
+
+  // Grava o que funcionou nesta série — o próximo volume reaproveita em vez de buscar do zero.
+  if (item?.serie) {
+    const termo = normalizarTermoBusca(item.titulo, item.serie.nome, item.numero_volume)
+    await supabase
+      .from('series')
+      .update({
+        busca_termo: termo.termo,
+        busca_provedor: candidato.provedor,
+        busca_ref: candidato.ref ?? null,
+        busca_atualizado_em: new Date().toISOString(),
+      })
+      .eq('id', item.serie.id)
+  }
 
   revalidateListagens(itemId)
 }

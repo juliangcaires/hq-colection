@@ -2,7 +2,13 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { baixarEPersistirCapa, buscarCapaPorIsbn } from '@/lib/capa-busca'
+import {
+  baixarEPersistirCapa,
+  buscarCapaPorIsbn,
+  buscarCapaPorMemoria,
+  type MemoriaSerie,
+  type Provedor,
+} from '@/lib/capa-busca'
 import type { EstadoItem, TipoObra, TipoTag, Tag } from '@/lib/types'
 
 export type RascunhoRow = {
@@ -50,6 +56,24 @@ export async function importarCsv(rows: RascunhoRow[]): Promise<ResumoImportacao
 
   const serieCache = new Map<string, string>()
   const tagCache = new Map<string, string>()
+  const memoriaSerieCache = new Map<string, MemoriaSerie>()
+
+  async function obterMemoriaSerie(serieId: string): Promise<MemoriaSerie> {
+    const cached = memoriaSerieCache.get(serieId)
+    if (cached) return cached
+    const { data } = await supabase
+      .from('series')
+      .select('busca_termo, busca_provedor, busca_ref')
+      .eq('id', serieId)
+      .maybeSingle<{ busca_termo: string | null; busca_provedor: Provedor | null; busca_ref: string | null }>()
+    const memoria: MemoriaSerie = {
+      termo: data?.busca_termo ?? null,
+      provedor: data?.busca_provedor ?? null,
+      ref: data?.busca_ref ?? null,
+    }
+    memoriaSerieCache.set(serieId, memoria)
+    return memoria
+  }
 
   async function resolverSerie(nome: string, tipo: TipoObra): Promise<string> {
     const key = nome.trim().toLowerCase()
@@ -137,13 +161,18 @@ export async function importarCsv(rows: RascunhoRow[]): Promise<ResumoImportacao
       const seloRow = row.selo?.trim().toLowerCase() || null
 
       if (serieId) {
-        const { data: existente } = await supabase
+        let queryDuplicata = supabase
           .from('itens')
           .select('id')
           .eq('user_id', user.id)
           .eq('serie_id', serieId)
-          .eq('numero_volume', numeroVolume)
-          .maybeSingle()
+        // numeroVolume pode ser null — `.eq(col, null)` nunca casa no PostgREST,
+        // então sem isso linhas sem volume nunca eram dedupadas.
+        queryDuplicata =
+          numeroVolume === null
+            ? queryDuplicata.is('numero_volume', null)
+            : queryDuplicata.eq('numero_volume', numeroVolume)
+        const { data: existente } = await queryDuplicata.maybeSingle()
         if (existente) {
           resumo.itensIgnorados++
           continue
@@ -222,10 +251,41 @@ export async function importarCsv(rows: RascunhoRow[]): Promise<ResumoImportacao
 
       resumo.itensCriados++
 
+      let capaAplicada = false
+
       if (row.isbn?.trim()) {
-        const url = await buscarCapaPorIsbn(row.isbn.trim())
-        if (url) {
-          const path = await baixarEPersistirCapa(supabase, user.id, item.id, url)
+        const resultado = await buscarCapaPorIsbn(row.isbn.trim())
+        if (resultado) {
+          const path = await baixarEPersistirCapa(supabase, user.id, item.id, resultado.url)
+          if (path) {
+            await supabase.from('itens').update({ capa_url: path, capa_origem: 'api' }).eq('id', item.id)
+            resumo.capasAplicadas++
+            capaAplicada = true
+            if (serieId) {
+              await supabase
+                .from('series')
+                .update({
+                  busca_termo: row.serie?.trim() || titulo,
+                  busca_provedor: resultado.provedor,
+                  busca_ref: null,
+                  busca_atualizado_em: new Date().toISOString(),
+                })
+                .eq('id', serieId)
+              memoriaSerieCache.delete(serieId)
+            }
+          }
+        }
+      }
+
+      // Sem ISBN (ou ISBN não achou): se a série já tem um provedor com busca
+      // por volume exato (MangaDex), aproveita em vez de deixar sem capa.
+      // Não faz busca livre por título aqui — ambígua demais para aplicar
+      // sem revisão, e queima quota de graça num lote grande.
+      if (!capaAplicada && serieId) {
+        const memoria = await obterMemoriaSerie(serieId)
+        const candidato = await buscarCapaPorMemoria(memoria, numeroVolume)
+        if (candidato) {
+          const path = await baixarEPersistirCapa(supabase, user.id, item.id, candidato.url)
           if (path) {
             await supabase.from('itens').update({ capa_url: path, capa_origem: 'api' }).eq('id', item.id)
             resumo.capasAplicadas++
