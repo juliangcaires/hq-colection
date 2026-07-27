@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EstadoItem, ItemComRelacoes, Tag, TipoObra, TipoTag } from '@/lib/types'
-import { calcularVolumesFaltantes } from '@/lib/volumes'
+import { calcularVolumesFaltantes, type VolumeParaFuros } from '@/lib/volumes'
 
 const ITEM_SELECT =
   '*, serie:series(id, nome, tipo, em_publicacao, serie_tags(tags(id, nome, tipo, cor, user_id, created_at))), item_tags(tags(id, nome, tipo, cor, user_id, created_at))'
@@ -148,15 +148,16 @@ export async function listarSeriesComFuros(
 ): Promise<SerieComFuros[]> {
   const [{ data: series, error: errSeries }, { data: itens, error: errItens }] = await Promise.all([
     supabase.from('series').select('id, nome, tipo, total_volumes'),
-    supabase.from('itens').select('serie_id, numero_volume').not('serie_id', 'is', null),
+    // `estado` entra porque volume em `desejo` não conta como possuído no cálculo de furos.
+    supabase.from('itens').select('serie_id, numero_volume, estado').not('serie_id', 'is', null),
   ])
   if (errSeries) throw new Error(errSeries.message)
   if (errItens) throw new Error(errItens.message)
 
-  const volumesPorSerie = new Map<string, (number | null)[]>()
-  for (const item of (itens ?? []) as { serie_id: string; numero_volume: number | null }[]) {
+  const volumesPorSerie = new Map<string, VolumeParaFuros[]>()
+  for (const item of (itens ?? []) as ({ serie_id: string } & VolumeParaFuros)[]) {
     const lista = volumesPorSerie.get(item.serie_id) ?? []
-    lista.push(item.numero_volume)
+    lista.push({ numero_volume: item.numero_volume, estado: item.estado })
     volumesPorSerie.set(item.serie_id, lista)
   }
 

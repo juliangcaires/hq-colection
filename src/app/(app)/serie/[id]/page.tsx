@@ -34,10 +34,9 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
 
   const tagIds = (serie.serie_tags ?? []).map((st: { tag_id: string }) => st.tag_id)
 
-  const volumesFaltantes = calcularVolumesFaltantes(
-    itens.map((i) => i.numero_volume),
-    serie.total_volumes
-  )
+  const volumesFaltantes = calcularVolumesFaltantes(itens, serie.total_volumes)
+  const possuidos = itens.filter((i) => i.estado !== 'desejo').length
+  const desejados = itens.length - possuidos
   const faltantesExibidos = volumesFaltantes.slice(0, MAX_FALTANTES_EXIBIDOS)
   const faltantesOcultos = volumesFaltantes.length - faltantesExibidos.length
 
@@ -47,8 +46,11 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
       <div>
         <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground">{serie.nome}</h1>
         <p className="text-sm text-muted-foreground">
-          {itens.length} volume(ns) na coleção
+          {/* Só os adquiridos contam aqui, senão a conta não fecha com os furos:
+              um volume só desejado apareceria ao mesmo tempo como tido e faltante. */}
+          {possuidos} volume(ns) na coleção
           {serie.total_volumes ? ` de ${serie.total_volumes}` : ''}
+          {desejados > 0 ? ` · ${desejados} na lista de desejos` : ''}
         </p>
         {volumesFaltantes.length > 0 && (
           <p className="mt-2 text-sm text-amber-400">
