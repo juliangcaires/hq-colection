@@ -11,7 +11,7 @@ export function BackButton() {
       variant="ghost"
       size="sm"
       onClick={() => router.back()}
-      className="-ml-2 w-fit text-neutral-400"
+      className="-ml-2 w-fit text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" />
       Voltar

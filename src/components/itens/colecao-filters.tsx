@@ -81,7 +81,7 @@ export function ColecaoFilters({
   ]
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 p-3">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3">
       <Input
         placeholder="Buscar por título..."
         value={busca}

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EstadoItem, ItemComRelacoes, Tag, TipoObra, TipoTag } from '@/lib/types'
+import { calcularVolumesFaltantes } from '@/lib/volumes'
 
 const ITEM_SELECT =
   '*, serie:series(id, nome, tipo, em_publicacao, serie_tags(tags(id, nome, tipo, cor, user_id, created_at))), item_tags(tags(id, nome, tipo, cor, user_id, created_at))'
@@ -98,4 +99,78 @@ export async function listarItem(
   if (error) throw new Error(error.message)
   if (!data) return null
   return toItemComRelacoes(data as unknown as RawItemRow)
+}
+
+export type ItemRecente = {
+  id: string
+  titulo: string
+  tipo: TipoObra
+  estado: EstadoItem
+  created_at: string
+  serie: { id: string; nome: string } | null
+}
+
+/** Últimos itens adicionados à coleção (por created_at), para o dashboard. Consulta leve, sem tags/capa. */
+export async function listarUltimosItens(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any>,
+  limite = 5
+): Promise<ItemRecente[]> {
+  const { data, error } = await supabase
+    .from('itens')
+    .select('id, titulo, tipo, estado, created_at, serie:series(id, nome)')
+    .order('created_at', { ascending: false })
+    .limit(limite)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []) as unknown as ItemRecente[]
+}
+
+export type SerieComFuros = {
+  id: string
+  nome: string
+  tipo: TipoObra
+  faltantes: number[]
+}
+
+/**
+ * Séries do usuário que têm furos (volumes faltantes), para o atalho "o que
+ * comprar a seguir" do dashboard. Duas consultas leves (sem tags/capa) — sem
+ * N+1: busca todas as séries e todos os itens com serie_id de uma vez e
+ * agrupa em memória, reaproveitando `calcularVolumesFaltantes`.
+ */
+export async function listarSeriesComFuros(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any>,
+  limite = 5
+): Promise<SerieComFuros[]> {
+  const [{ data: series, error: errSeries }, { data: itens, error: errItens }] = await Promise.all([
+    supabase.from('series').select('id, nome, tipo, total_volumes'),
+    supabase.from('itens').select('serie_id, numero_volume').not('serie_id', 'is', null),
+  ])
+  if (errSeries) throw new Error(errSeries.message)
+  if (errItens) throw new Error(errItens.message)
+
+  const volumesPorSerie = new Map<string, (number | null)[]>()
+  for (const item of (itens ?? []) as { serie_id: string; numero_volume: number | null }[]) {
+    const lista = volumesPorSerie.get(item.serie_id) ?? []
+    lista.push(item.numero_volume)
+    volumesPorSerie.set(item.serie_id, lista)
+  }
+
+  const resultado: SerieComFuros[] = []
+  for (const serie of (series ?? []) as {
+    id: string
+    nome: string
+    tipo: TipoObra
+    total_volumes: number | null
+  }[]) {
+    const faltantes = calcularVolumesFaltantes(volumesPorSerie.get(serie.id) ?? [], serie.total_volumes)
+    if (faltantes.length > 0) {
+      resultado.push({ id: serie.id, nome: serie.nome, tipo: serie.tipo, faltantes })
+    }
+  }
+
+  resultado.sort((a, b) => a.faltantes.length - b.faltantes.length)
+  return resultado.slice(0, limite)
 }

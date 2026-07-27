@@ -20,32 +20,32 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b border-neutral-800 bg-neutral-950/90 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-6">
-            <Link href="/" className="text-lg font-semibold">
+            <Link href="/" className="font-heading text-lg font-semibold tracking-tight text-foreground">
               Minha Coleção
             </Link>
-            <nav className="hidden gap-4 text-sm text-neutral-400 sm:flex">
+            <nav className="hidden gap-5 text-sm text-muted-foreground sm:flex">
               {NAV_LINKS.map((link) => (
-                <Link key={link.href} href={link.href} className="hover:text-neutral-100">
+                <Link key={link.href} href={link.href} className="transition-colors hover:text-foreground">
                   {link.label}
                 </Link>
               ))}
             </nav>
           </div>
           <div className="flex items-center gap-3">
-            <span className="hidden text-xs text-neutral-500 sm:inline">{user?.email}</span>
+            <span className="hidden text-xs text-muted-foreground sm:inline">{user?.email}</span>
             <form action={signOut}>
-              <button className="rounded border border-neutral-700 px-3 py-1.5 text-sm">
+              <button className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
                 Sair
               </button>
             </form>
           </div>
         </div>
-        <nav className="flex gap-4 overflow-x-auto border-t border-neutral-800 px-4 py-2 text-sm text-neutral-400 sm:hidden">
+        <nav className="flex gap-4 overflow-x-auto border-t border-border px-4 py-2 text-sm text-muted-foreground sm:hidden">
           {NAV_LINKS.map((link) => (
-            <Link key={link.href} href={link.href} className="whitespace-nowrap hover:text-neutral-100">
+            <Link key={link.href} href={link.href} className="whitespace-nowrap transition-colors hover:text-foreground">
               {link.label}
             </Link>
           ))}

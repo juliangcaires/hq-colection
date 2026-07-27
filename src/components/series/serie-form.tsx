@@ -68,7 +68,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+    <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="nome">Nome</Label>
         <Input id="nome" value={nome} onChange={(e) => setNome(e.target.value)} />
@@ -118,8 +118,8 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
         <Textarea id="obs" value={observacoes} onChange={(e) => setObservacoes(e.target.value)} rows={2} />
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-neutral-800 pt-3">
-        <p className="text-xs text-neutral-500">
+      <div className="flex flex-col gap-3 border-t border-border pt-3">
+        <p className="text-xs text-muted-foreground">
           Tags desta série — valem para todos os volumes dela (herança automática)
         </p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -140,7 +140,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
         <Button onClick={handleSave} disabled={isPending}>
           {isPending ? 'Salvando...' : 'Salvar alterações'}
         </Button>
-        <Button variant="ghost" onClick={() => setDeleteOpen(true)} disabled={isPending} className="text-red-400">
+        <Button variant="ghost" onClick={() => setDeleteOpen(true)} disabled={isPending} className="text-destructive">
           Excluir série
         </Button>
       </div>

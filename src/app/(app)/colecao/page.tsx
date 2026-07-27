@@ -58,14 +58,14 @@ export default async function ColecaoPage({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold">Coleção</h1>
-        <p className="text-sm text-neutral-500">{itens.length} item(ns)</p>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground">Coleção</h1>
+        <p className="text-sm text-muted-foreground">{itens.length} item(ns)</p>
       </div>
 
       <ColecaoFilters series={series} tags={tagsData ?? []} />
 
       {itens.length === 0 ? (
-        <p className="text-sm text-neutral-500">Nenhum item encontrado com esses filtros.</p>
+        <p className="text-sm text-muted-foreground">Nenhum item encontrado com esses filtros.</p>
       ) : agrupar ? (
         <ColecaoAgrupada itens={itens} capaMap={capaMap} />
       ) : (
@@ -98,9 +98,9 @@ function ColecaoAgrupada({
     <div className="flex flex-col gap-8">
       {Array.from(grupos.values()).map((grupo) => (
         <div key={grupo.nome} className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-300">
+          <h2 className="font-heading text-sm font-semibold text-foreground/90">
             {grupo.serieId ? (
-              <Link href={`/serie/${grupo.serieId}`} className="hover:underline">
+              <Link href={`/serie/${grupo.serieId}`} className="hover:text-primary hover:underline">
                 {grupo.nome}
               </Link>
             ) : (
