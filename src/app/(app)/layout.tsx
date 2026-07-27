@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { href: '/desejos', label: 'Desejos' },
   { href: '/series', label: 'Séries' },
   { href: '/tags', label: 'Tags' },
+  { href: '/importar', label: 'Importar' },
 ]
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
