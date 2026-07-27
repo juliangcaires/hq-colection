@@ -43,6 +43,12 @@ export const itemInputSchema = z.object({
   tagIds: z.array(z.string().uuid()).default([]),
 })
 
+/** Vincular/desvincular vários itens de uma série de uma vez. */
+export const itensDaSerieSchema = z.object({
+  serieId: z.string().uuid(),
+  itemIds: z.array(z.string().uuid()).min(1, 'Selecione ao menos um item').max(500),
+})
+
 export const adquirirInputSchema = z.object({
   preco: z.coerce.number().nonnegative().optional().nullable(),
   loja: z.string().trim().max(120).optional().nullable(),
@@ -50,6 +56,7 @@ export const adquirirInputSchema = z.object({
 })
 
 export type TagInput = z.infer<typeof tagInputSchema>
+export type ItensDaSerieInput = z.infer<typeof itensDaSerieSchema>
 export type SerieInput = z.infer<typeof serieInputSchema>
 export type ItemInput = z.infer<typeof itemInputSchema>
 export type AdquirirInput = z.infer<typeof adquirirInputSchema>

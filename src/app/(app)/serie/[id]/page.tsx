@@ -4,7 +4,8 @@ import { listarItens } from '@/lib/queries'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { calcularVolumesFaltantes } from '@/lib/volumes'
 import { SerieForm } from '@/components/series/serie-form'
-import { ItemCard } from '@/components/itens/item-card'
+import { AdicionarVolumesDialog } from '@/components/series/adicionar-volumes-dialog'
+import { VolumesGrid } from '@/components/series/volumes-grid'
 import { BackButton } from '@/components/ui/back-button'
 
 const MAX_FALTANTES_EXIBIDOS = 30
@@ -61,15 +62,17 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
       <SerieForm serie={{ ...serie, tagIds }} allTags={allTags ?? []} />
 
       <div>
-        <h2 className="font-heading mb-3 text-sm font-semibold text-foreground/90">Volumes</h2>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="font-heading text-sm font-semibold text-foreground/90">Volumes</h2>
+          <AdicionarVolumesDialog serieId={id} serieNome={serie.nome} />
+        </div>
         {itens.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum volume desta série na sua coleção ainda.</p>
+          <p className="text-sm text-muted-foreground">
+            Nenhum volume desta série na sua coleção ainda. Use &ldquo;Adicionar volumes&rdquo; para
+            agrupar itens que você já tem.
+          </p>
         ) : (
-          <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-            {itens.map((item) => (
-              <ItemCard key={item.id} item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
-            ))}
-          </div>
+          <VolumesGrid serieId={id} itens={itens} capas={Array.from(capaMap.entries())} />
         )}
       </div>
     </div>
