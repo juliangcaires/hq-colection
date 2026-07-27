@@ -70,8 +70,11 @@ body {
   --accent: #1e1a2b;
   --accent-foreground: #f1eef7;
   --destructive: #d16a5c;
-  --border: #1e1a2b;
-  --input: #1e1a2b;
+  /* Não podem ser iguais a --popover/--secondary/--accent (#1e1a2b): senão todo
+     traço some dentro de Dialog, Popover, Select e Command, que usam bg-popover.
+     --input é mais claro que --border de propósito — campo é affordance, borda é estrutura. */
+  --border: #2b2540;
+  --input: #4e4569;
   --ring: #8b6cf5;
   --chart-1: #8b6cf5;
   --chart-2: #2fbf9a;
@@ -105,8 +108,11 @@ body {
   --accent: #1e1a2b;
   --accent-foreground: #f1eef7;
   --destructive: #d16a5c;
-  --border: #1e1a2b;
-  --input: #1e1a2b;
+  /* Não podem ser iguais a --popover/--secondary/--accent (#1e1a2b): senão todo
+     traço some dentro de Dialog, Popover, Select e Command, que usam bg-popover.
+     --input é mais claro que --border de propósito — campo é affordance, borda é estrutura. */
+  --border: #2b2540;
+  --input: #4e4569;
   --ring: #8b6cf5;
   --chart-1: #8b6cf5;
   --chart-2: #2fbf9a;
