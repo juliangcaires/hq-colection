@@ -16,11 +16,41 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { TagTypeCombobox } from '@/components/tags/tag-type-combobox'
 import { buscarSeries, createSerie } from '@/app/(app)/series/actions'
 import { buscarTags } from '@/app/(app)/tags/actions'
 import { createItem } from '@/app/(app)/itens/actions'
-import type { TagLite, TipoObra } from '@/lib/types'
+import type { EstadoItem, TagLite, TipoObra } from '@/lib/types'
+
+const ESTADO_ITEMS = [
+  { value: 'desejo', label: 'Desejo' },
+  { value: 'comprado', label: 'Comprado' },
+  { value: 'lido', label: 'Lido' },
+]
+
+const TIPO_ITEMS = [
+  { value: 'hq', label: 'HQ' },
+  { value: 'manga', label: 'Mangá' },
+]
+
+const ESTADO_LABEL_BOTAO: Record<EstadoItem, string> = {
+  desejo: 'Adicionar à lista de desejos',
+  comprado: 'Adicionar à coleção',
+  lido: 'Adicionar à coleção',
+}
+
+const ESTADO_LABEL_TOAST: Record<EstadoItem, string> = {
+  desejo: 'Adicionado à lista de desejos',
+  comprado: 'Adicionado à coleção',
+  lido: 'Adicionado à coleção',
+}
 
 type SerieOption = {
   id: string
@@ -43,6 +73,8 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
   const [titulo, setTitulo] = useState('')
   const [isbn, setIsbn] = useState('')
   const [prioridade, setPrioridade] = useState('0')
+  const [estado, setEstado] = useState<EstadoItem>('desejo')
+  const [tipoSelecionado, setTipoSelecionado] = useState<TipoObra>('hq')
 
   const [tagOpen, setTagOpen] = useState(false)
   const [tagQuery, setTagQuery] = useState('')
@@ -90,12 +122,12 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
     startTransition(async () => {
       try {
         let serieId: string | null = null
-        let tipo: TipoObra = 'hq'
+        let tipo: TipoObra = tipoSelecionado
 
         if (serieSelecionada && 'novo' in serieSelecionada) {
           serieId = await createSerie({
             nome: serieSelecionada.nome,
-            tipo: 'hq',
+            tipo: tipoSelecionado,
             em_publicacao: true,
             tagIds: editoraSelecionada.map((t) => t.id),
           })
@@ -110,7 +142,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
           numero_volume: numeroVolume ? Number(numeroVolume) : null,
           tipo,
           isbn: isbn.trim() || null,
-          estado: 'desejo',
+          estado,
           prioridade: Number(prioridade) || 0,
           tagIds: tagsExtras.map((t) => t.id),
         })
@@ -124,13 +156,17 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
           body: JSON.stringify({ itemId, isbn: isbn.trim() || null, titulo: tituloFinal, tipo }),
         }).catch(() => {})
 
-        toast.success('Adicionado à lista de desejos')
+        toast.success(ESTADO_LABEL_TOAST[estado])
         onDone()
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao adicionar item')
       }
     })
   }
+
+  // Tipo só é escolhido manualmente quando não há série existente selecionada
+  // (série já traz o tipo dela); ao criar série nova, o tipo escolhido aqui é o dela.
+  const tipoEditavel = !serieSelecionada || 'novo' in serieSelecionada
 
   return (
     <div className="flex flex-col gap-4">
@@ -211,6 +247,45 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
                 {t.nome}
               </Badge>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label>Estado</Label>
+          <Select items={ESTADO_ITEMS} value={estado} onValueChange={(v) => setEstado(v as EstadoItem)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ESTADO_ITEMS.map((i) => (
+                <SelectItem key={i.value} value={i.value}>
+                  {i.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {tipoEditavel && (
+          <div className="flex flex-col gap-1.5">
+            <Label>Tipo</Label>
+            <Select
+              items={TIPO_ITEMS}
+              value={tipoSelecionado}
+              onValueChange={(v) => setTipoSelecionado(v as TipoObra)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TIPO_ITEMS.map((i) => (
+                  <SelectItem key={i.value} value={i.value}>
+                    {i.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
       </div>
@@ -310,7 +385,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
       </div>
 
       <Button onClick={handleSubmit} disabled={isPending}>
-        {isPending ? 'Salvando...' : 'Adicionar à lista de desejos'}
+        {isPending ? 'Salvando...' : ESTADO_LABEL_BOTAO[estado]}
       </Button>
     </div>
   )

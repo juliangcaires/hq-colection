@@ -12,6 +12,7 @@ type SearchParams = {
   busca?: string
   tipo?: string
   serie?: string
+  capa?: string
   editora?: string
   personagem?: string
   arco?: string
@@ -37,6 +38,7 @@ export default async function DesejosPage({
         tipo: (params.tipo as TipoObra) || undefined,
         serieId: params.serie || undefined,
         busca: params.busca || undefined,
+        semCapa: params.capa === 'sem',
         tagsPorTipo: parseTagsPorTipoDaUrl(params),
       },
       { column: 'prioridade', ascending: false }

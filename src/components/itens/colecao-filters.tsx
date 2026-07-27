@@ -40,11 +40,13 @@ export function ColecaoFilters({
   tags,
   mostrarEstado = true,
   mostrarAgrupar = true,
+  mostrarSemCapa = true,
 }: {
   series: SerieOpcao[]
   tags: TagLite[]
   mostrarEstado?: boolean
   mostrarAgrupar?: boolean
+  mostrarSemCapa?: boolean
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -70,6 +72,7 @@ export function ColecaoFilters({
   }, [busca])
 
   const agrupar = searchParams.get('agrupar') === '1'
+  const semCapa = searchParams.get('capa') === 'sem'
   const editoraIds = idsDoParam(searchParams, 'editora')
   const editoraId = editoraIds[0]
 
@@ -164,6 +167,16 @@ export function ColecaoFilters({
           onClick={() => setParam('agrupar', agrupar ? null : '1')}
         >
           Agrupar por série
+        </Button>
+      )}
+
+      {mostrarSemCapa && (
+        <Button
+          variant={semCapa ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={() => setParam('capa', semCapa ? null : 'sem')}
+        >
+          Sem capa
         </Button>
       )}
 

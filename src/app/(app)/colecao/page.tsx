@@ -13,6 +13,7 @@ type SearchParams = {
   tipo?: string
   serie?: string
   agrupar?: string
+  capa?: string
   editora?: string
   personagem?: string
   arco?: string
@@ -36,6 +37,7 @@ export default async function ColecaoPage({
       tipo: (params.tipo as TipoObra) || undefined,
       serieId: params.serie || undefined,
       busca: params.busca || undefined,
+      semCapa: params.capa === 'sem',
       tagsPorTipo: parseTagsPorTipoDaUrl(params),
     }),
     supabase.from('series').select('id, nome, serie_tags(tag_id)').order('nome'),

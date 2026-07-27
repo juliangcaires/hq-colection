@@ -54,6 +54,7 @@ export type FiltrosItens = {
   tipo?: TipoObra
   serieId?: string
   busca?: string
+  semCapa?: boolean
   /** Para cada tipo com ids preenchidos: item precisa ter PELO MENOS UMA dessas tags (OR dentro do tipo).
    *  Entre tipos diferentes, todos os filtros preenchidos precisam ser satisfeitos (AND entre tipos). */
   tagsPorTipo?: Partial<Record<TipoTag, string[]>>
@@ -73,6 +74,7 @@ export async function listarItens(
   if (filtros.tipo) query = query.eq('tipo', filtros.tipo)
   if (filtros.serieId) query = query.eq('serie_id', filtros.serieId)
   if (filtros.busca) query = query.ilike('titulo', `%${filtros.busca}%`)
+  if (filtros.semCapa) query = query.is('capa_url', null)
 
   const { data, error } = await query
   if (error) throw new Error(error.message)
