@@ -1,4 +1,9 @@
-import { signIn, signUp } from './actions'
+import Link from 'next/link'
+import { AuthShell } from '@/components/auth/auth-shell'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { signIn } from './actions'
 
 export default async function LoginPage({
   searchParams,
@@ -8,54 +13,44 @@ export default async function LoginPage({
   const params = await searchParams
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Minha Coleção</h1>
-        <p className="text-sm text-neutral-400">HQs e mangás — uso pessoal</p>
-      </div>
-
-      {params.error && (
-        <p className="rounded border border-red-900 bg-red-950 px-3 py-2 text-sm text-red-300">
-          {params.error}
-        </p>
-      )}
-      {params.message && (
-        <p className="rounded border border-emerald-900 bg-emerald-950 px-3 py-2 text-sm text-emerald-300">
-          {params.message}
-        </p>
-      )}
-
-      <form className="flex flex-col gap-3">
-        <input
-          name="email"
-          type="email"
-          placeholder="E-mail"
-          required
-          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-500"
-        />
-        <input
-          name="password"
-          type="password"
-          placeholder="Senha"
-          required
-          minLength={6}
-          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-500"
-        />
-        <div className="flex gap-2">
-          <button
-            formAction={signIn}
-            className="flex-1 rounded bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-900"
-          >
-            Entrar
-          </button>
-          <button
-            formAction={signUp}
-            className="flex-1 rounded border border-neutral-700 px-3 py-2 text-sm font-medium"
-          >
+    <AuthShell
+      title="Entrar"
+      description="Acesse sua coleção pessoal de HQs e mangás."
+      footer={
+        <>
+          Não tem conta?{' '}
+          <Link href="/criar-conta" className="font-medium text-primary hover:underline">
             Criar conta
-          </button>
+          </Link>
+        </>
+      }
+    >
+      <form action={signIn} className="flex flex-col gap-4">
+        {params.error && (
+          <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {params.error}
+          </p>
+        )}
+        {params.message && (
+          <p className="rounded-lg border border-chart-2/30 bg-chart-2/10 px-3 py-2 text-sm text-chart-2">
+            {params.message}
+          </p>
+        )}
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="email">E-mail</Label>
+          <Input id="email" name="email" type="email" placeholder="voce@email.com" required className="h-10" />
         </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="password">Senha</Label>
+          <Input id="password" name="password" type="password" placeholder="••••••••" required minLength={6} className="h-10" />
+        </div>
+
+        <Button type="submit" className="mt-2 h-10 w-full">
+          Entrar
+        </Button>
       </form>
-    </main>
+    </AuthShell>
   )
 }
