@@ -5,6 +5,7 @@ import type { ItemComRelacoes } from '@/lib/types'
 export function ItemCard({ item, capaUrl }: { item: ItemComRelacoes; capaUrl: string | null }) {
   const isDesejo = item.estado === 'desejo'
   const isLido = item.estado === 'lido'
+  const mostrarNumero = Boolean(item.serie?.tem_numeracao) && item.numero_volume !== null
 
   return (
     <Link href={`/item/${item.id}`} className="group flex flex-col gap-1.5">
@@ -34,7 +35,15 @@ export function ItemCard({ item, capaUrl }: { item: ItemComRelacoes; capaUrl: st
       </div>
       <div className="flex flex-col">
         <span className="truncate text-sm font-medium text-foreground">{item.titulo}</span>
-        {item.serie && <span className="truncate text-xs text-muted-foreground">{item.serie.nome}</span>}
+        {item.serie && (
+          <span className="truncate text-xs text-muted-foreground">
+            {item.serie.nome}
+            {/* Só em série numerada: nas demais o número não significa ordem e só confundiria. */}
+            {mostrarNumero && (
+              <span className="ml-1 font-medium text-foreground/80">#{item.numero_volume}</span>
+            )}
+          </span>
+        )}
       </div>
     </Link>
   )

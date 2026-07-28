@@ -3,7 +3,7 @@ import type { EstadoItem, ItemComRelacoes, Tag, TipoObra, TipoTag } from '@/lib/
 import { calcularVolumesFaltantes, type VolumeParaFuros } from '@/lib/volumes'
 
 const ITEM_SELECT =
-  '*, serie:series(id, nome, tipo, em_publicacao, serie_tags(tags(id, nome, tipo, cor, user_id, created_at))), item_tags(tags(id, nome, tipo, cor, user_id, created_at))'
+  '*, serie:series(id, nome, tipo, em_publicacao, tem_numeracao, serie_tags(tags(id, nome, tipo, cor, user_id, created_at))), item_tags(tags(id, nome, tipo, cor, user_id, created_at))'
 
 type RawItemRow = {
   id: string
@@ -29,6 +29,7 @@ type RawItemRow = {
     nome: string
     tipo: TipoObra
     em_publicacao: boolean
+    tem_numeracao: boolean
     serie_tags: { tags: Tag | null }[] | null
   } | null
   item_tags: { tags: Tag | null }[] | null
@@ -42,7 +43,15 @@ function toItemComRelacoes(row: RawItemRow): ItemComRelacoes {
 
   return {
     ...row,
-    serie: row.serie ? { id: row.serie.id, nome: row.serie.nome, tipo: row.serie.tipo } : null,
+    serie: row.serie
+      ? {
+          id: row.serie.id,
+          nome: row.serie.nome,
+          tipo: row.serie.tipo,
+          // `Boolean(...)` porque a coluna é nova: numa base sem a migration vem undefined.
+          tem_numeracao: Boolean(row.serie.tem_numeracao),
+        }
+      : null,
     tagsItem: tagsDoItem,
     tagsSerie: tagsDaSerie,
     tagsEfetivas: Array.from(map.values()),

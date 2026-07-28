@@ -58,7 +58,7 @@ export type Item = {
 }
 
 export type ItemComRelacoes = Item & {
-  serie: Pick<Serie, 'id' | 'nome' | 'tipo'> | null
+  serie: Pick<Serie, 'id' | 'nome' | 'tipo' | 'tem_numeracao'> | null
   /** tags marcadas diretamente no item */
   tagsItem: Tag[]
   /** tags herdadas da série (vazio se não houver série) */
