@@ -52,3 +52,35 @@ export function calcularVolumesFaltantes(
   }
   return faltantes
 }
+
+/**
+ * A série está completa: tem um total declarado e você já adquiriu tudo.
+ *
+ * Independente de `em_publicacao` — "encerrada" é uma decisão sua sobre a série,
+ * "completa" é um fato sobre a sua estante. As duas coisas podem valer juntas
+ * (coleção fechada e completa) ou separadas (série que ainda sai e você está em
+ * dia; série encerrada com furos).
+ *
+ * A contagem de adquiridos é exigida nos dois casos porque `calcularVolumesFaltantes`
+ * devolve `[]` quando nenhum volume tem número inteiro — sozinha, ela marcaria
+ * como completa até uma série vazia.
+ */
+export function serieEstaCompleta({
+  totalVolumes,
+  temNumeracao,
+  volumes,
+}: {
+  totalVolumes: number | null | undefined
+  temNumeracao: boolean
+  volumes: VolumeParaFuros[]
+}): boolean {
+  if (!totalVolumes || totalVolumes <= 0) return false
+
+  const adquiridos = volumes.filter((v) => v.estado !== 'desejo').length
+  if (adquiridos < totalVolumes) return false
+
+  // Série numerada tem como provar que não há furo; sem numeração, a contagem
+  // é tudo o que existe.
+  if (!temNumeracao) return true
+  return calcularVolumesFaltantes(volumes, totalVolumes).length === 0
+}

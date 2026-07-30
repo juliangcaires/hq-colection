@@ -145,6 +145,23 @@ export type SerieComFuros = {
 }
 
 /**
+ * Indexa por série o resultado de uma consulta rasa de volumes
+ * (`select('serie_id, numero_volume, estado')`), que é como o dashboard e a
+ * tela de Séries evitam N+1: uma consulta só para todos os itens, agrupada aqui.
+ */
+export function agruparVolumesPorSerie(
+  itens: ({ serie_id: string } & VolumeParaFuros)[]
+): Map<string, VolumeParaFuros[]> {
+  const porSerie = new Map<string, VolumeParaFuros[]>()
+  for (const item of itens) {
+    const lista = porSerie.get(item.serie_id) ?? []
+    lista.push({ numero_volume: item.numero_volume, estado: item.estado })
+    porSerie.set(item.serie_id, lista)
+  }
+  return porSerie
+}
+
+/**
  * Séries do usuário que têm furos (volumes faltantes), para o atalho "o que
  * comprar a seguir" do dashboard. Duas consultas leves (sem tags/capa) — sem
  * N+1: busca todas as séries e todos os itens com serie_id de uma vez e
@@ -163,12 +180,9 @@ export async function listarSeriesComFuros(
   if (errSeries) throw new Error(errSeries.message)
   if (errItens) throw new Error(errItens.message)
 
-  const volumesPorSerie = new Map<string, VolumeParaFuros[]>()
-  for (const item of (itens ?? []) as ({ serie_id: string } & VolumeParaFuros)[]) {
-    const lista = volumesPorSerie.get(item.serie_id) ?? []
-    lista.push({ numero_volume: item.numero_volume, estado: item.estado })
-    volumesPorSerie.set(item.serie_id, lista)
-  }
+  const volumesPorSerie = agruparVolumesPorSerie(
+    (itens ?? []) as ({ serie_id: string } & VolumeParaFuros)[]
+  )
 
   const resultado: SerieComFuros[] = []
   for (const serie of (series ?? []) as {

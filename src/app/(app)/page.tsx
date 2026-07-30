@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { listarSeriesComFuros, listarUltimosItens } from '@/lib/queries'
+import { ScrollRestore } from '@/components/ui/scroll-restore'
 
 const TIPO_LABEL: Record<'hq' | 'manga', string> = { hq: 'HQ', manga: 'Mangá' }
 
@@ -31,6 +32,7 @@ export default async function Home() {
 
   return (
     <div className="flex flex-col gap-6">
+      <ScrollRestore />
       <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground">Início</h1>
       {/* grid-cols-1 explícito: sem ele a coluna implícita é `auto` e o conteúdo
           largo (títulos com nowrap) estoura a largura da tela no mobile. */}

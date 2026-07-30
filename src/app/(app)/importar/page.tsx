@@ -1,8 +1,10 @@
 import { ImportarUploader } from '@/components/importar/importar-uploader'
+import { ScrollRestore } from '@/components/ui/scroll-restore'
 
 export default function ImportarPage() {
   return (
     <div className="flex flex-col gap-6">
+      <ScrollRestore />
       <div>
         <h1 className="text-2xl font-semibold">Importar</h1>
         <p className="max-w-2xl text-sm text-neutral-500">

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { TagsManager } from '@/components/tags/tags-manager'
+import { ScrollRestore } from '@/components/ui/scroll-restore'
 
 export default async function TagsPage() {
   const supabase = await createClient()
@@ -11,6 +12,7 @@ export default async function TagsPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <ScrollRestore />
       <div>
         <h1 className="text-2xl font-semibold">Tags</h1>
         <p className="text-sm text-neutral-500">

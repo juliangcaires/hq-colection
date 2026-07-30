@@ -1,11 +1,13 @@
 import { listarSeries } from './actions'
 import { SeriesManager } from '@/components/series/series-manager'
+import { ScrollRestore } from '@/components/ui/scroll-restore'
 
 export default async function SeriesPage() {
   const series = await listarSeries('')
 
   return (
     <div className="flex flex-col gap-6">
+      <ScrollRestore />
       <div>
         <h1 className="text-2xl font-semibold">Séries</h1>
         <p className="text-sm text-neutral-500">

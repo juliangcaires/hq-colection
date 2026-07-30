@@ -4,7 +4,7 @@ import { listarItens } from '@/lib/queries'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { ColecaoFilters } from '@/components/itens/colecao-filters'
 import { ItemCard } from '@/components/itens/item-card'
-import { ScrollRestore } from '@/components/itens/scroll-restore'
+import { ScrollRestore } from '@/components/ui/scroll-restore'
 import { parseTagsPorTipoDaUrl } from '@/lib/tags-por-tipo'
 import type { EstadoItem, TipoObra } from '@/lib/types'
 

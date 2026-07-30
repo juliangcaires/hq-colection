@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
+import { agruparVolumesPorSerie } from '@/lib/queries'
+import { calcularVolumesFaltantes, serieEstaCompleta, type VolumeParaFuros } from '@/lib/volumes'
 import {
   itensComNumeroSchema,
   itensDaSerieSchema,
@@ -447,18 +449,90 @@ export async function removerItensDaSerie(serieId: string, itemIds: string[]): P
   return (data ?? []).length
 }
 
-export async function listarSeries(query: string) {
+export type ResumoVolumesDaSerie = {
+  total_volumes: number | null
+  tem_numeracao: boolean
+  /** Números inteiros já usados por volumes desta série. */
+  numerosOcupados: number[]
+  /** Furos, para o atalho "preencher os que faltam". */
+  faltantes: number[]
+}
+
+/**
+ * O que a inserção rápida precisa saber para criar vários volumes de uma série.
+ *
+ * É uma action à parte, chamada só quando a caixinha é marcada, para não inflar
+ * a resposta de `buscarSeries` — que roda a cada tecla digitada no combobox.
+ */
+export async function resumoVolumesDaSerie(serieId: string): Promise<ResumoVolumesDaSerie> {
+  const supabase = await createClient()
+
+  const [{ data: serie, error: errSerie }, { data: itens, error: errItens }] = await Promise.all([
+    supabase
+      .from('series')
+      .select('total_volumes, tem_numeracao')
+      .eq('id', serieId)
+      .maybeSingle(),
+    supabase.from('itens').select('numero_volume, estado').eq('serie_id', serieId),
+  ])
+  if (errSerie) throw new Error(errSerie.message)
+  if (errItens) throw new Error(errItens.message)
+  if (!serie) throw new Error('Série não encontrada')
+
+  const volumes = (itens ?? []) as VolumeParaFuros[]
+
+  return {
+    total_volumes: serie.total_volumes,
+    tem_numeracao: Boolean(serie.tem_numeracao),
+    numerosOcupados: volumes
+      .map((v) => v.numero_volume)
+      .filter((n): n is number => n !== null && Number.isInteger(n)),
+    faltantes: calcularVolumesFaltantes(volumes, serie.total_volumes),
+  }
+}
+
+export type SerieListada = {
+  id: string
+  nome: string
+  tipo: TipoObra
+  total_volumes: number | null
+  em_publicacao: boolean
+  /** Derivada na hora (nada é gravado): tem total declarado e você já tem tudo. */
+  completa: boolean
+}
+
+export async function listarSeries(query: string): Promise<SerieListada[]> {
   const supabase = await createClient()
   let request = supabase
     .from('series')
-    .select('id, nome, tipo, total_volumes, em_publicacao')
+    .select('id, nome, tipo, total_volumes, em_publicacao, tem_numeracao')
     .order('nome')
 
   if (query.trim()) {
     request = request.ilike('nome', `%${query.trim()}%`)
   }
 
-  const { data, error } = await request
+  // Uma consulta rasa para TODOS os volumes em vez de uma por série (mesmo
+  // desenho de `listarSeriesComFuros`): a busca aqui roda a cada tecla digitada.
+  const [{ data, error }, { data: itens, error: errItens }] = await Promise.all([
+    request,
+    supabase.from('itens').select('serie_id, numero_volume, estado').not('serie_id', 'is', null),
+  ])
   if (error) throw new Error(error.message)
-  return data ?? []
+  if (errItens) throw new Error(errItens.message)
+
+  const volumesPorSerie = agruparVolumesPorSerie(
+    (itens ?? []) as ({ serie_id: string } & VolumeParaFuros)[]
+  )
+
+  return ((data ?? []) as (Omit<SerieListada, 'completa'> & { tem_numeracao: boolean })[]).map(
+    ({ tem_numeracao, ...serie }) => ({
+      ...serie,
+      completa: serieEstaCompleta({
+        totalVolumes: serie.total_volumes,
+        temNumeracao: tem_numeracao,
+        volumes: volumesPorSerie.get(serie.id) ?? [],
+      }),
+    })
+  )
 }

@@ -2,7 +2,15 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { adquirirInputSchema, itemInputSchema, type AdquirirInput, type ItemInput } from '@/lib/schemas'
+import {
+  adquirirLoteSchema,
+  criarVolumesInputSchema,
+  itemInputSchema,
+  type AdquirirInput,
+  type CriarVolumesInput,
+  type ItemInput,
+} from '@/lib/schemas'
+import type { TipoObra } from '@/lib/types'
 import { baixarEPersistirCapa, type CandidatoCapa } from '@/lib/capa-busca'
 import { normalizarTermoBusca } from '@/lib/capa-termo'
 
@@ -96,12 +104,18 @@ export async function deleteItem(id: string) {
   revalidateListagens()
 }
 
-/** Fluxo B — marcar aquisição a partir da lista de desejos. */
-export async function marcarAdquiri(id: string, input: AdquirirInput) {
-  const parsed = adquirirInputSchema.parse(input)
+/**
+ * Fluxo B — marcar aquisição a partir da lista de desejos, de um item ou de vários.
+ *
+ * Preço, loja e data são iguais para todo o lote, então um `.in()` resolve — não
+ * precisa do `Promise.all` por linha que `adicionarItensASerie` faz (lá o número
+ * do volume muda a cada item). O preço é UNITÁRIO: vai o mesmo valor em cada um.
+ */
+export async function marcarAdquiriEmLote(itemIds: string[], input: AdquirirInput) {
+  const parsed = adquirirLoteSchema.parse({ ...input, itemIds })
   const supabase = await createClient()
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('itens')
     .update({
       estado: 'comprado',
@@ -109,10 +123,102 @@ export async function marcarAdquiri(id: string, input: AdquirirInput) {
       loja: parsed.loja || null,
       data_aquisicao: parsed.data_aquisicao || new Date().toISOString().slice(0, 10),
     })
-    .eq('id', id)
+    .in('id', parsed.itemIds)
+    .select('id')
 
   if (error) throw new Error(error.message)
-  revalidateListagens(id)
+
+  revalidateListagens()
+  for (const id of parsed.itemIds) revalidatePath(`/item/${id}`)
+  return (data ?? []).length
+}
+
+export type ResumoCriacaoVolumes = {
+  /** Título e tipo voltam junto para a busca de capa do lote não ter que reconstruí-los. */
+  criados: { id: string; titulo: string; tipo: TipoObra }[]
+  /** Números que já existiam na série e foram pulados. */
+  ignorados: number[]
+}
+
+/**
+ * Cria de uma vez os volumes de uma série ("comprei do 1 ao 3 e do 5 ao 7").
+ *
+ * A checagem de número repetido roda aqui, e não por constraint, pelo motivo
+ * registrado na migration 0004: não existe `unique (serie_id, numero_volume)` —
+ * `numero_volume` é numeric e nullable de propósito (séries não numeradas e
+ * edições 1.5). Em série numerada, repetir é erro; sem numeração, é só ruído e
+ * o volume repetido é pulado.
+ */
+export async function criarVolumesEmLote(input: CriarVolumesInput): Promise<ResumoCriacaoVolumes> {
+  const parsed = criarVolumesInputSchema.parse(input)
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Não autenticado')
+
+  const [{ data: serie, error: errSerie }, { data: existentes, error: errItens }] = await Promise.all(
+    [
+      supabase
+        .from('series')
+        .select('id, nome, tipo, tem_numeracao')
+        .eq('id', parsed.serieId)
+        .maybeSingle(),
+      supabase.from('itens').select('numero_volume').eq('serie_id', parsed.serieId),
+    ]
+  )
+  if (errSerie) throw new Error(errSerie.message)
+  if (errItens) throw new Error(errItens.message)
+  if (!serie) throw new Error('Série não encontrada')
+
+  const ocupados = new Set(
+    (existentes ?? [])
+      .map((i: { numero_volume: number | null }) => i.numero_volume)
+      .filter((n): n is number => n !== null)
+  )
+  const numeros = Array.from(new Set(parsed.numeros)).sort((a, b) => a - b)
+  const repetidos = numeros.filter((n) => ocupados.has(n))
+
+  if (serie.tem_numeracao && repetidos.length > 0) {
+    throw new Error(
+      `Esta série já tem ${repetidos.map((n) => `#${n}`).join(', ')} — desmarque ou renumere`
+    )
+  }
+
+  const aCriar = numeros.filter((n) => !ocupados.has(n))
+  if (aCriar.length === 0) return { criados: [], ignorados: repetidos }
+
+  const rows = aCriar.map((n) => ({
+    user_id: user.id,
+    serie_id: parsed.serieId,
+    // Mesmo formato do título automático da inserção rápida.
+    titulo: `${serie.nome} #${n}`,
+    numero_volume: n,
+    tipo: serie.tipo,
+    estado: parsed.estado,
+    prioridade: parsed.prioridade,
+    preco: parsed.preco ?? null,
+    loja: parsed.loja || null,
+    data_aquisicao: parsed.data_aquisicao || null,
+  }))
+
+  const { data, error } = await supabase.from('itens').insert(rows).select('id, titulo, tipo')
+  if (error) throw new Error(error.message)
+
+  const criados = (data ?? []) as ResumoCriacaoVolumes['criados']
+
+  if (parsed.tagIds.length > 0 && criados.length > 0) {
+    const links = criados.flatMap(({ id }) =>
+      parsed.tagIds.map((tag_id) => ({ item_id: id, tag_id }))
+    )
+    const { error: tagError } = await supabase.from('item_tags').insert(links)
+    if (tagError) throw new Error(tagError.message)
+  }
+
+  revalidateListagens()
+  revalidatePath('/series')
+  revalidatePath(`/serie/${parsed.serieId}`)
+  return { criados, ignorados: repetidos }
 }
 
 export async function marcarLido(id: string, lido: boolean) {

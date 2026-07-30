@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { listarItem } from '@/lib/queries'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { ItemForm } from '@/components/itens/item-form'
+import { ScrollRestore } from '@/components/ui/scroll-restore'
 
 export default async function ItemPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -20,6 +21,7 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="mx-auto max-w-2xl">
+      <ScrollRestore />
       <ItemForm item={item} capaUrl={capaUrl} series={seriesData ?? []} />
     </div>
   )

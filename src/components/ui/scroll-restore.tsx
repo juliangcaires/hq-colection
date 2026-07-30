@@ -4,6 +4,10 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 
 const PREFIXO = 'scroll:'
 
+/** Teto da insistência em reposicionar. Acima disso, ou a tela não vai crescer
+ *  mais, ou o salto tardio incomodaria mais do que o topo indevido. */
+const PRAZO_DE_RESTAURACAO_MS = 600
+
 /**
  * Preserva a posição de rolagem de uma lista ao sair e voltar dela.
  *
@@ -45,13 +49,42 @@ export function ScrollRestore() {
 
     window.scrollTo(0, salvo)
 
-    // A lista inteira vem renderizada do servidor e os cards reservam altura com
-    // `aspect-[2/3]` antes das capas carregarem, então uma passada costuma bastar.
-    // O frame extra cobre o caso de o documento ainda estar curto.
-    const frame = requestAnimationFrame(() => {
+    // Uma passada só não basta em toda tela: `/series` e `/tags` refazem a lista
+    // num efeito com debounce, e a grade de volumes só ganha altura quando as
+    // capas (signed URLs) chegam. Enquanto o documento for curto demais para
+    // comportar a posição salva, insistimos a cada frame.
+    let frame = 0
+    let cancelado = false
+    const limite = performance.now() + PRAZO_DE_RESTAURACAO_MS
+
+    function desistir() {
+      cancelado = true
+      cancelAnimationFrame(frame)
+    }
+
+    function tentar() {
+      if (cancelado) return
       if (Math.abs(window.scrollY - salvo) > 1) window.scrollTo(0, salvo)
-    })
-    return () => cancelAnimationFrame(frame)
+
+      const alcancavel = document.documentElement.scrollHeight >= salvo + window.innerHeight
+      if (alcancavel || performance.now() > limite) return
+
+      frame = requestAnimationFrame(tentar)
+    }
+
+    frame = requestAnimationFrame(tentar)
+
+    // Se a pessoa já começou a rolar, insistir vira briga: quem chegou depois manda.
+    window.addEventListener('wheel', desistir, { passive: true, once: true })
+    window.addEventListener('touchstart', desistir, { passive: true, once: true })
+    window.addEventListener('keydown', desistir, { once: true })
+
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('wheel', desistir)
+      window.removeEventListener('touchstart', desistir)
+      window.removeEventListener('keydown', desistir)
+    }
   }, [])
 
   useEffect(() => {

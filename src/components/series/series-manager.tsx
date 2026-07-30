@@ -16,16 +16,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { createSerie, deleteSerie, listarSeries } from '@/app/(app)/series/actions'
+import {
+  createSerie,
+  deleteSerie,
+  listarSeries,
+  type SerieListada,
+} from '@/app/(app)/series/actions'
 import type { TipoObra } from '@/lib/types'
 
-type SerieRow = {
-  id: string
-  nome: string
-  tipo: TipoObra
-  total_volumes: number | null
-  em_publicacao: boolean
-}
+type SerieRow = SerieListada
 
 const TIPO_ITEMS = [
   { value: 'hq', label: 'HQ' },
@@ -44,7 +43,7 @@ export function SeriesManager({ initialSeries }: { initialSeries: SerieRow[] }) 
   useEffect(() => {
     const t = setTimeout(() => {
       listarSeries(query)
-        .then((data) => setSeries(data as SerieRow[]))
+        .then(setSeries)
         .catch(() => {})
     }, 250)
     return () => clearTimeout(t)
@@ -138,6 +137,11 @@ export function SeriesManager({ initialSeries }: { initialSeries: SerieRow[] }) 
             {!s.em_publicacao && (
               <Badge variant="secondary" className="text-xs">
                 encerrada
+              </Badge>
+            )}
+            {s.completa && (
+              <Badge variant="sucesso" className="text-xs">
+                completa
               </Badge>
             )}
             <Link href={`/serie/${s.id}`} className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>

@@ -71,9 +71,33 @@ export const adquirirInputSchema = z.object({
   data_aquisicao: z.string().optional().nullable(),
 })
 
+/** Marcar aquisição de vários itens da lista de desejos de uma vez.
+ *  `preco` é UNITÁRIO: o mesmo valor é gravado em cada item do lote. */
+export const adquirirLoteSchema = adquirirInputSchema.extend({
+  itemIds: z.array(z.string().uuid()).min(1, 'Selecione ao menos um item').max(500),
+})
+
+/** Criação de vários volumes de uma série de uma vez ("comprei do 1 ao 3 e do 5 ao 7").
+ *  O teto de 200 é o mesmo do parser de faixas — lote maior que isso é engano de digitação. */
+export const criarVolumesInputSchema = z.object({
+  serieId: z.string().uuid(),
+  numeros: z
+    .array(z.number().int().positive())
+    .min(1, 'Informe ao menos um volume')
+    .max(200, 'No máximo 200 volumes por vez'),
+  estado: estadoItemSchema.default('comprado'),
+  prioridade: z.coerce.number().int().default(0),
+  preco: z.coerce.number().nonnegative().optional().nullable(),
+  loja: z.string().trim().max(120).optional().nullable(),
+  data_aquisicao: z.string().optional().nullable(),
+  tagIds: z.array(z.string().uuid()).default([]),
+})
+
 export type TagInput = z.infer<typeof tagInputSchema>
 export type ItensDaSerieInput = z.infer<typeof itensDaSerieSchema>
 export type ItensComNumeroInput = z.infer<typeof itensComNumeroSchema>
 export type SerieInput = z.infer<typeof serieInputSchema>
 export type ItemInput = z.infer<typeof itemInputSchema>
 export type AdquirirInput = z.infer<typeof adquirirInputSchema>
+export type AdquirirLoteInput = z.infer<typeof adquirirLoteSchema>
+export type CriarVolumesInput = z.infer<typeof criarVolumesInputSchema>

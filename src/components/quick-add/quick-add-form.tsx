@@ -24,10 +24,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { TagTypeCombobox } from '@/components/tags/tag-type-combobox'
-import { buscarSeries, createSerie } from '@/app/(app)/series/actions'
+import {
+  analisarVolumes,
+  CriarVolumesFields,
+} from '@/components/series/criar-volumes-fields'
+import {
+  buscarSeries,
+  createSerie,
+  resumoVolumesDaSerie,
+  type ResumoVolumesDaSerie,
+} from '@/app/(app)/series/actions'
 import { buscarTags } from '@/app/(app)/tags/actions'
-import { createItem } from '@/app/(app)/itens/actions'
+import { createItem, criarVolumesEmLote } from '@/app/(app)/itens/actions'
+import { buscarCapasEmLote } from '@/lib/capa-lote'
 import type { EstadoItem, TagLite, TipoObra } from '@/lib/types'
 
 const ESTADO_ITEMS = [
@@ -72,6 +83,9 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
   )
 
   const [numeroVolume, setNumeroVolume] = useState('')
+  const [varios, setVarios] = useState(false)
+  const [volumesTexto, setVolumesTexto] = useState('')
+  const [resumoSerie, setResumoSerie] = useState<ResumoVolumesDaSerie | null>(null)
   const [titulo, setTitulo] = useState('')
   const [isbn, setIsbn] = useState('')
   const [prioridade, setPrioridade] = useState('0')
@@ -99,6 +113,33 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
     return () => clearTimeout(t)
   }, [tagQuery])
 
+  // O resumo só é buscado quando a caixinha é marcada — a maioria das inclusões
+  // é de um volume só e não precisaria pagar por essa consulta.
+  useEffect(() => {
+    if (!varios || !serieSelecionada || 'novo' in serieSelecionada) return
+    let ativo = true
+    resumoVolumesDaSerie(serieSelecionada.id)
+      .then((r) => {
+        if (ativo) setResumoSerie(r)
+      })
+      .catch(() => {})
+    return () => {
+      ativo = false
+    }
+  }, [varios, serieSelecionada])
+
+  /**
+   * Trocar de série invalida tudo o que dependia da anterior: os furos, os
+   * números já ocupados e a própria oferta do modo lote. Some daqui e não de um
+   * efeito para não disparar uma re-renderização em cascata a cada seleção.
+   */
+  function selecionarSerie(nova: SerieOption | { novo: true; nome: string } | null) {
+    setSerieSelecionada(nova)
+    setVarios(false)
+    setVolumesTexto('')
+    setResumoSerie(null)
+  }
+
   const serieNomeExibido = serieSelecionada
     ? 'novo' in serieSelecionada
       ? `Criar série "${serieSelecionada.nome}"`
@@ -107,7 +148,67 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
 
   const tagsHerdadas = serieSelecionada && !('novo' in serieSelecionada) ? serieSelecionada.tags : []
 
+  const analiseVolumes = analisarVolumes({
+    texto: volumesTexto,
+    numerosOcupados: resumoSerie?.numerosOcupados ?? [],
+    temNumeracao: resumoSerie?.tem_numeracao ?? false,
+  })
+
+  /** Cria a série nova, se for o caso, e devolve o id para o fluxo seguir. */
+  async function resolverSerieId(): Promise<{ serieId: string | null; tipo: TipoObra }> {
+    if (serieSelecionada && 'novo' in serieSelecionada) {
+      const id = await createSerie({
+        nome: serieSelecionada.nome,
+        tipo: tipoSelecionado,
+        em_publicacao: true,
+        // Liga-se depois, na tela da série — exigir número aqui travaria a inclusão rápida.
+        tem_numeracao: false,
+        tagIds: editoraSelecionada.map((t) => t.id),
+      })
+      return { serieId: id, tipo: tipoSelecionado }
+    }
+    if (serieSelecionada) return { serieId: serieSelecionada.id, tipo: serieSelecionada.tipo }
+    return { serieId: null, tipo: tipoSelecionado }
+  }
+
+  function handleSubmitVarios() {
+    if (analiseVolumes.bloqueado) return
+    startTransition(async () => {
+      try {
+        const { serieId } = await resolverSerieId()
+        if (!serieId) throw new Error('Escolha uma série para adicionar vários volumes')
+
+        const resumo = await criarVolumesEmLote({
+          serieId,
+          numeros: analiseVolumes.numeros,
+          estado,
+          prioridade: Number(prioridade) || 0,
+          tagIds: tagsExtras.map((t) => t.id),
+        })
+
+        toast.success(`${resumo.criados.length} volume(s) adicionados`)
+        if (resumo.ignorados.length > 0) {
+          toast.warning(`Já existiam na série: ${resumo.ignorados.map((n) => `#${n}`).join(', ')}`)
+        }
+        onDone()
+
+        // Depois de fechar: a capa é acessório e a cascata de provedores é lenta.
+        if (resumo.criados.length > 0) {
+          const aplicadas = await buscarCapasEmLote(resumo.criados)
+          if (aplicadas > 0) {
+            toast.success(`Capa encontrada para ${aplicadas} de ${resumo.criados.length}`)
+            router.refresh()
+          }
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Erro ao adicionar volumes')
+      }
+    })
+  }
+
   function handleSubmit() {
+    if (varios) return handleSubmitVarios()
+
     const tituloFinal =
       titulo.trim() ||
       (serieSelecionada
@@ -123,22 +224,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
 
     startTransition(async () => {
       try {
-        let serieId: string | null = null
-        let tipo: TipoObra = tipoSelecionado
-
-        if (serieSelecionada && 'novo' in serieSelecionada) {
-          serieId = await createSerie({
-            nome: serieSelecionada.nome,
-            tipo: tipoSelecionado,
-            em_publicacao: true,
-            // Liga-se depois, na tela da série — exigir número aqui travaria a inclusão rápida.
-            tem_numeracao: false,
-            tagIds: editoraSelecionada.map((t) => t.id),
-          })
-        } else if (serieSelecionada) {
-          serieId = serieSelecionada.id
-          tipo = serieSelecionada.tipo
-        }
+        const { serieId, tipo } = await resolverSerieId()
 
         const itemId = await createItem({
           titulo: tituloFinal,
@@ -221,7 +307,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
                     <button
                       className="w-full px-2 py-1.5 text-left text-sm hover:text-neutral-100"
                       onClick={() => {
-                        setSerieSelecionada({ novo: true, nome: serieQuery.trim() })
+                        selecionarSerie({ novo: true, nome: serieQuery.trim() })
                         setSerieOpen(false)
                       }}
                     >
@@ -237,7 +323,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
                       key={s.id}
                       value={s.id}
                       onSelect={() => {
-                        setSerieSelecionada(s)
+                        selecionarSerie(s)
                         setSerieOpen(false)
                       }}
                     >
@@ -253,7 +339,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
           <button
             type="button"
             className="self-start text-xs text-neutral-500 hover:text-neutral-300"
-            onClick={() => setSerieSelecionada(null)}
+            onClick={() => selecionarSerie(null)}
           >
             limpar seleção
           </button>
@@ -309,46 +395,91 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="numero">Número / volume</Label>
-          <Input
-            id="numero"
-            value={numeroVolume}
-            onChange={(e) => setNumeroVolume(e.target.value)}
-            placeholder="ex: 1"
-            inputMode="decimal"
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="prioridade">Prioridade</Label>
-          <Input
-            id="prioridade"
-            type="number"
-            value={prioridade}
-            onChange={(e) => setPrioridade(e.target.value)}
-          />
-        </div>
-      </div>
+      {serieSelecionada && (
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <Checkbox checked={varios} onCheckedChange={(v) => setVarios(v === true)} />
+          Comprei mais de um volume desta série
+        </label>
+      )}
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="titulo">
-          Título {serieSelecionada && <span className="text-neutral-500">(opcional — gerado da série)</span>}
-        </Label>
-        <Input
-          id="titulo"
-          value={titulo}
-          onChange={(e) => setTitulo(e.target.value)}
-          placeholder={serieSelecionada ? 'auto-gerado' : 'ex: Eternauta'}
-        />
-      </div>
+      {varios ? (
+        <>
+          <CriarVolumesFields
+            id="quick-add-volumes"
+            texto={volumesTexto}
+            onTextoChange={setVolumesTexto}
+            analise={analiseVolumes}
+            faltantes={resumoSerie?.faltantes ?? []}
+            temNumeracao={resumoSerie?.tem_numeracao ?? false}
+            disabled={isPending}
+          />
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="prioridade">Prioridade</Label>
+            <Input
+              id="prioridade"
+              type="number"
+              value={prioridade}
+              onChange={(e) => setPrioridade(e.target.value)}
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="numero">Número / volume</Label>
+              <Input
+                id="numero"
+                value={numeroVolume}
+                onChange={(e) => setNumeroVolume(e.target.value)}
+                placeholder="ex: 1"
+                inputMode="decimal"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="prioridade">Prioridade</Label>
+              <Input
+                id="prioridade"
+                type="number"
+                value={prioridade}
+                onChange={(e) => setPrioridade(e.target.value)}
+              />
+            </div>
+          </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="isbn">
-          ISBN <span className="text-neutral-500">(opcional — melhora a chance de achar a capa sozinho)</span>
-        </Label>
-        <Input id="isbn" value={isbn} onChange={(e) => setIsbn(e.target.value)} placeholder="ex: 9788545..." />
-      </div>
+          {/* Título e ISBN só existem no singular: no lote o título sai de "Série #n"
+              e um ISBN valeria para um volume só. */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="titulo">
+              Título{' '}
+              {serieSelecionada && (
+                <span className="text-neutral-500">(opcional — gerado da série)</span>
+              )}
+            </Label>
+            <Input
+              id="titulo"
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder={serieSelecionada ? 'auto-gerado' : 'ex: Eternauta'}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="isbn">
+              ISBN{' '}
+              <span className="text-neutral-500">
+                (opcional — melhora a chance de achar a capa sozinho)
+              </span>
+            </Label>
+            <Input
+              id="isbn"
+              value={isbn}
+              onChange={(e) => setIsbn(e.target.value)}
+              placeholder="ex: 9788545..."
+            />
+          </div>
+        </>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <Label>Tags extras (específicas deste item)</Label>
@@ -403,8 +534,12 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
         )}
       </div>
 
-      <Button onClick={handleSubmit} disabled={isPending}>
-        {isPending ? 'Salvando...' : ESTADO_LABEL_BOTAO[estado]}
+      <Button onClick={handleSubmit} disabled={isPending || (varios && analiseVolumes.bloqueado)}>
+        {isPending
+          ? 'Salvando...'
+          : varios
+            ? `${ESTADO_LABEL_BOTAO[estado]} (${analiseVolumes.numeros.length} volumes)`
+            : ESTADO_LABEL_BOTAO[estado]}
       </Button>
     </div>
   )
