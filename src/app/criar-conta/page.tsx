@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { AuthShell } from '@/components/auth/auth-shell'
-import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/auth/submit-button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { signUp } from './actions'
@@ -42,9 +42,7 @@ export default async function CriarContaPage({
           <Input id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required minLength={6} className="h-10" />
         </div>
 
-        <Button type="submit" className="mt-2 h-10 w-full">
-          Criar conta
-        </Button>
+        <SubmitButton pendingLabel="Criando conta...">Criar conta</SubmitButton>
       </form>
     </AuthShell>
   )

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { AuthShell } from '@/components/auth/auth-shell'
-import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/auth/submit-button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { signIn } from './actions'
@@ -47,9 +47,7 @@ export default async function LoginPage({
           <Input id="password" name="password" type="password" placeholder="••••••••" required minLength={6} className="h-10" />
         </div>
 
-        <Button type="submit" className="mt-2 h-10 w-full">
-          Entrar
-        </Button>
+        <SubmitButton pendingLabel="Entrando...">Entrar</SubmitButton>
       </form>
     </AuthShell>
   )
