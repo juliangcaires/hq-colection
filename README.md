@@ -4,6 +4,8 @@ App pessoal (PWA) pra catalogar coleção de quadrinhos e mangás: itens, série
 
 > Projeto individual, construído pra substituir uma planilha/Notion de controle de coleção física.
 
+**Demo ao vivo:** [myhqcolection.netlify.app](https://myhqcolection.netlify.app) — crie sua conta e catalogue sua própria coleção, os dados ficam isolados por usuário.
+
 ## Features
 
 - 📖 **Coleção e desejos** — cada item tem estado (`desejo` / `comprado` / `lido`), prioridade, preço, loja, data de aquisição e nota; filtros por busca, tipo, série e tags.
