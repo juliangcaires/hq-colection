@@ -346,7 +346,82 @@ export function descreverFalhaProvedor(diagnostico: ResultadoProvedor[]): string
   return null
 }
 
-/** Baixa uma imagem externa e persiste no bucket privado 'capas'. Retorna o path salvo (não a URL — bucket é privado). */
+const LIMITE_BYTES_CAPA = 5 * 1024 * 1024
+const MAX_REDIRECTS = 3
+const TIMEOUT_DOWNLOAD_MS = 15_000
+
+/** Hosts de onde as capas podem vir (os mesmos dos provedores da cascata). Open Library redireciona para archive.org e seus subdomínios. */
+const HOSTS_CAPA_EXATOS = new Set([
+  'books.google.com',
+  'covers.openlibrary.org',
+  'uploads.mangadex.org',
+])
+const DOMINIOS_CAPA = ['googleusercontent.com', 'anilist.co', 'archive.org']
+
+/** Só https e só hosts conhecidos: a URL pode vir do cliente (aplicarCapaEscolhida), então nunca confiamos nela. */
+export function urlDeCapaPermitida(valor: string): URL | null {
+  let url: URL
+  try {
+    url = new URL(valor)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) return null
+  if (url.port && url.port !== '443') return null
+  const host = url.hostname.toLowerCase()
+  const ok = HOSTS_CAPA_EXATOS.has(host) || DOMINIOS_CAPA.some((d) => host === d || host.endsWith(`.${d}`))
+  return ok ? url : null
+}
+
+const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
+
+/** Baixa com limites: allowlist a cada salto de redirect, timeout, teto de bytes e MIME de imagem. */
+async function baixarImagemSegura(imageUrl: string): Promise<{ buffer: Uint8Array; mime: string } | null> {
+  let atual = urlDeCapaPermitida(imageUrl)
+  if (!atual) return null
+
+  for (let salto = 0; salto <= MAX_REDIRECTS; salto++) {
+    const res = await fetch(atual, { redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_DOWNLOAD_MS) })
+
+    if (res.status >= 300 && res.status < 400) {
+      const destino = res.headers.get('location')
+      if (!destino) return null
+      atual = urlDeCapaPermitida(new URL(destino, atual).toString())
+      if (!atual) return null
+      continue
+    }
+    if (!res.ok || !res.body) return null
+
+    const mime = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+    if (!EXT_POR_MIME[mime]) return null
+    const declarado = Number(res.headers.get('content-length') || 0)
+    if (declarado > LIMITE_BYTES_CAPA) return null
+
+    const partes: Uint8Array[] = []
+    let total = 0
+    const reader = res.body.getReader()
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > LIMITE_BYTES_CAPA) {
+        await reader.cancel()
+        return null
+      }
+      partes.push(value)
+    }
+    const buffer = new Uint8Array(total)
+    let offset = 0
+    for (const parte of partes) {
+      buffer.set(parte, offset)
+      offset += parte.byteLength
+    }
+    return { buffer, mime }
+  }
+  return null
+}
+
+/** Baixa uma imagem externa (host permitido) e persiste no bucket privado 'capas'. Retorna o path salvo (não a URL — bucket é privado). */
 export async function baixarEPersistirCapa(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any>,
@@ -355,15 +430,12 @@ export async function baixarEPersistirCapa(
   imageUrl: string
 ): Promise<string | null> {
   try {
-    const res = await fetch(imageUrl)
-    if (!res.ok) return null
-    const contentType = res.headers.get('content-type') || 'image/jpeg'
-    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
-    const buffer = await res.arrayBuffer()
-    const path = `${userId}/${itemId}.${ext}`
+    const baixada = await baixarImagemSegura(imageUrl)
+    if (!baixada) return null
+    const path = `${userId}/${itemId}.${EXT_POR_MIME[baixada.mime]}`
     const { error } = await supabase.storage
       .from('capas')
-      .upload(path, buffer, { upsert: true, contentType })
+      .upload(path, baixada.buffer, { upsert: true, contentType: baixada.mime })
     if (error) return null
     return path
   } catch {

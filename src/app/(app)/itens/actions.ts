@@ -1,9 +1,11 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import {
   adquirirLoteSchema,
+  candidatoCapaSchema,
   criarVolumesInputSchema,
   itemInputSchema,
   type AdquirirInput,
@@ -265,20 +267,31 @@ export async function uploadCapaManual(itemId: string, formData: FormData) {
 }
 
 /** Aplica a capa que o usuário escolheu na grade de candidatos (busca automática, Fase 2). */
-export async function aplicarCapaEscolhida(itemId: string, candidato: CandidatoCapa) {
+export async function aplicarCapaEscolhida(itemId: string, candidatoBruto: CandidatoCapa) {
+  const id = z.string().uuid().parse(itemId)
+  const candidato = candidatoCapaSchema.parse(candidatoBruto)
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Não autenticado')
 
-  const path = await baixarEPersistirCapa(supabase, user.id, itemId, candidato.url)
+  // Dono do item conferido ANTES de baixar qualquer coisa (a RLS filtra por user_id).
+  const { data: existente, error: erroItem } = await supabase
+    .from('itens')
+    .select('id')
+    .eq('id', id)
+    .maybeSingle()
+  if (erroItem) throw new Error(erroItem.message)
+  if (!existente) throw new Error('Item não encontrado')
+
+  const path = await baixarEPersistirCapa(supabase, user.id, id, candidato.url)
   if (!path) throw new Error('Não foi possível baixar essa imagem')
 
   const { data: item, error } = await supabase
     .from('itens')
     .update({ capa_url: path, capa_origem: 'api' })
-    .eq('id', itemId)
+    .eq('id', id)
     .select('titulo, numero_volume, serie:series(id, nome)')
     .single<{ titulo: string; numero_volume: number | null; serie: { id: string; nome: string } | null }>()
   if (error) throw new Error(error.message)

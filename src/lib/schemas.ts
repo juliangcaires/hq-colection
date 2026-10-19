@@ -101,3 +101,11 @@ export type ItemInput = z.infer<typeof itemInputSchema>
 export type AdquirirInput = z.infer<typeof adquirirInputSchema>
 export type AdquirirLoteInput = z.infer<typeof adquirirLoteSchema>
 export type CriarVolumesInput = z.infer<typeof criarVolumesInputSchema>
+
+/** Candidato de capa vindo do cliente: tudo é re-validado, a URL ainda passa pela allowlist de hosts no download. */
+export const candidatoCapaSchema = z.object({
+  url: z.string().url().max(1000),
+  label: z.string().max(300).default(''),
+  provedor: z.enum(['google_books', 'open_library', 'anilist', 'mangadex']),
+  ref: z.string().max(64).regex(/^[A-Za-z0-9-]+$/).nullish(),
+})
