@@ -20,3 +20,15 @@ export async function getSignedCapaUrls(
   }
   return map
 }
+
+/** Apaga o arquivo antigo da capa quando um novo (com outro caminho/extensão) o substituiu. Falha aqui não deve quebrar a operação. */
+export async function removerCapaAntiga(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any>,
+  caminhoAntigo: string | null | undefined,
+  caminhoNovo: string | null
+): Promise<void> {
+  if (!caminhoAntigo || caminhoAntigo === caminhoNovo) return
+  const { error } = await supabase.storage.from('capas').remove([caminhoAntigo])
+  if (error) console.error('[capas] não removeu arquivo antigo', caminhoAntigo, error.message)
+}

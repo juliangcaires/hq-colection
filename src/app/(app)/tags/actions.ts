@@ -36,12 +36,14 @@ async function updateTagImpl(id: string, input: { nome: string; tipo: TipoTag })
   const parsed = tagInputSchema.parse(input)
   const supabase = await createClient()
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('tags')
     .update({ nome: parsed.nome, tipo: parsed.tipo })
     .eq('id', id)
+    .select('id')
 
   if (error) throw new Error(error.message)
+  if (!data || data.length === 0) throw new ErroDeNegocio('Tag não encontrada')
   revalidatePath('/tags')
   revalidatePath('/colecao')
   revalidatePath('/desejos')
@@ -53,8 +55,9 @@ export async function updateTag(id: string, input: { nome: string; tipo: TipoTag
 
 async function deleteTagImpl(id: string) {
   const supabase = await createClient()
-  const { error } = await supabase.from('tags').delete().eq('id', id)
+  const { data, error } = await supabase.from('tags').delete().eq('id', id).select('id')
   if (error) throw new Error(error.message)
+  if (!data || data.length === 0) throw new ErroDeNegocio('Tag não encontrada')
   revalidatePath('/tags')
   revalidatePath('/colecao')
   revalidatePath('/desejos')

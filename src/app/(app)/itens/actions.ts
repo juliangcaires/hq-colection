@@ -17,6 +17,9 @@ import {
 import type { TipoObra } from '@/lib/types'
 import { baixarEPersistirCapa, type CandidatoCapa } from '@/lib/capa-busca'
 import { normalizarTermoBusca } from '@/lib/capa-termo'
+import { removerCapaAntiga } from '@/lib/supabase/capas'
+
+const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
 
 function revalidateListagens(itemId?: string) {
@@ -74,7 +77,7 @@ async function updateItemImpl(id: string, input: ItemInput) {
   const parsed = itemInputSchema.parse(input)
   const supabase = await createClient()
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('itens')
     .update({
       serie_id: parsed.serie_id || null,
@@ -91,8 +94,11 @@ async function updateItemImpl(id: string, input: ItemInput) {
       observacoes: parsed.observacoes || null,
     })
     .eq('id', id)
+    .select('id')
 
   if (error) throw new Error(error.message)
+  // A RLS filtra itens de outro usuário/inexistentes: 0 linhas não é sucesso.
+  if (!data || data.length === 0) throw new ErroDeNegocio('Item não encontrado')
 
   const { error: clearError } = await supabase.from('item_tags').delete().eq('item_id', id)
   if (clearError) throw new Error(clearError.message)
@@ -112,8 +118,17 @@ export async function updateItem(id: string, input: ItemInput) {
 
 async function deleteItemImpl(id: string) {
   const supabase = await createClient()
+  const { data: existente, error: erroBusca } = await supabase
+    .from('itens')
+    .select('capa_url')
+    .eq('id', id)
+    .maybeSingle()
+  if (erroBusca) throw new Error(erroBusca.message)
+  if (!existente) throw new ErroDeNegocio('Item não encontrado')
+
   const { error } = await supabase.from('itens').delete().eq('id', id)
   if (error) throw new Error(error.message)
+  await removerCapaAntiga(supabase, existente.capa_url, null)
   revalidateListagens()
 }
 
@@ -141,9 +156,13 @@ async function marcarAdquiriEmLoteImpl(itemIds: string[], input: AdquirirInput) 
       data_aquisicao: parsed.data_aquisicao || hojeIso(FUSO_DO_APP),
     })
     .in('id', parsed.itemIds)
+    .eq('estado', 'desejo')
     .select('id')
 
   if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    throw new ErroDeNegocio('Esses itens já não estão na lista de desejos.')
+  }
 
   revalidateListagens()
   for (const id of parsed.itemIds) revalidatePath(`/item/${id}`)
@@ -246,20 +265,6 @@ export async function criarVolumesEmLote(input: CriarVolumesInput) {
   return executar(() => criarVolumesEmLoteImpl(input))
 }
 
-async function marcarLidoImpl(id: string, lido: boolean) {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from('itens')
-    .update({ estado: lido ? 'lido' : 'comprado' })
-    .eq('id', id)
-  if (error) throw new Error(error.message)
-  revalidateListagens(id)
-}
-
-export async function marcarLido(id: string, lido: boolean) {
-  return executar(() => marcarLidoImpl(id, lido))
-}
-
 /** Upload manual de capa (fallback normal — cobertura de edição BR é irregular). */
 async function uploadCapaManualImpl(itemId: string, formData: FormData) {
   const supabase = await createClient()
@@ -276,8 +281,11 @@ async function uploadCapaManualImpl(itemId: string, formData: FormData) {
     throw new ErroDeNegocio('Envie um arquivo de imagem')
   }
 
-  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+  const ext = EXT_POR_MIME[file.type] ?? 'jpg'
   const path = `${user.id}/${itemId}.${ext}`
+
+  const { data: atual } = await supabase.from('itens').select('capa_url').eq('id', itemId).maybeSingle()
+  if (!atual) throw new ErroDeNegocio('Item não encontrado')
 
   const { error: uploadError } = await supabase.storage
     .from('capas')
@@ -289,6 +297,7 @@ async function uploadCapaManualImpl(itemId: string, formData: FormData) {
     .update({ capa_url: path, capa_origem: 'foto' })
     .eq('id', itemId)
   if (updateError) throw new Error(updateError.message)
+  await removerCapaAntiga(supabase, atual.capa_url, path)
 
   revalidateListagens(itemId)
 }
@@ -316,6 +325,7 @@ async function aplicarCapaEscolhidaImpl(itemId: string, candidatoBruto: Candidat
   if (erroItem) throw new Error(erroItem.message)
   if (!existente) throw new ErroDeNegocio('Item não encontrado')
 
+  const { data: anterior } = await supabase.from('itens').select('capa_url').eq('id', id).maybeSingle()
   const path = await baixarEPersistirCapa(supabase, user.id, id, candidato.url)
   if (!path) throw new ErroDeNegocio('Não foi possível baixar essa imagem')
 
@@ -326,6 +336,8 @@ async function aplicarCapaEscolhidaImpl(itemId: string, candidatoBruto: Candidat
     .select('titulo, numero_volume, serie:series(id, nome)')
     .single<{ titulo: string; numero_volume: number | null; serie: { id: string; nome: string } | null }>()
   if (error) throw new Error(error.message)
+
+  await removerCapaAntiga(supabase, anterior?.capa_url, path)
 
   // Grava o que funcionou nesta série — o próximo volume reaproveita em vez de buscar do zero.
   if (item?.serie) {

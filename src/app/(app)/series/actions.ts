@@ -62,7 +62,7 @@ async function updateSerieImpl(id: string, input: SerieInput) {
   const parsed = serieInputSchema.parse(input)
   const supabase = await createClient()
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('series')
     .update({
       nome: parsed.nome,
@@ -73,8 +73,10 @@ async function updateSerieImpl(id: string, input: SerieInput) {
       observacoes: parsed.observacoes || null,
     })
     .eq('id', id)
+    .select('id')
 
   if (error) throw new Error(error.message)
+  if (!data || data.length === 0) throw new ErroDeNegocio('Série não encontrada')
 
   const { error: clearError } = await supabase.from('serie_tags').delete().eq('serie_id', id)
   if (clearError) throw new Error(clearError.message)
@@ -97,8 +99,9 @@ export async function updateSerie(id: string, input: SerieInput) {
 
 async function deleteSerieImpl(id: string) {
   const supabase = await createClient()
-  const { error } = await supabase.from('series').delete().eq('id', id)
+  const { data, error } = await supabase.from('series').delete().eq('id', id).select('id')
   if (error) throw new Error(error.message)
+  if (!data || data.length === 0) throw new ErroDeNegocio('Série não encontrada')
   revalidatePath('/colecao')
   revalidatePath('/desejos')
   revalidatePath('/series')
