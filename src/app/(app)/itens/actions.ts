@@ -242,10 +242,40 @@ async function criarVolumesEmLoteImpl(input: CriarVolumesInput): Promise<ResumoC
     data_aquisicao: parsed.data_aquisicao || null,
   }))
 
-  const { data, error } = await supabase.from('itens').insert(rows).select('id, titulo, tipo')
+  const { data, error } = await supabase.from('itens').insert(rows).select('id, titulo, tipo, numero_volume')
   if (error) throw new Error(error.message)
 
-  const criados = (data ?? []) as ResumoCriacaoVolumes['criados']
+  let criados = (data ?? []) as (ResumoCriacaoVolumes['criados'][number] & { numero_volume: number })[]
+  const ignoradosPorConcorrencia: number[] = []
+
+  if (serie.tem_numeracao && criados.length > 0) {
+    // A checagem acima é "ler e depois inserir": duas abas/retries ao mesmo tempo passam ambas.
+    // Sem constraint (ver migration 0004), cada requisição reconfere e desfaz SÓ as próprias linhas
+    // que perderam — vence a mais antiga (created_at, id), então as duas chegam à mesma conclusão.
+    const { data: todas, error: erroConferencia } = await supabase
+      .from('itens')
+      .select('id, numero_volume, created_at')
+      .eq('serie_id', parsed.serieId)
+      .in('numero_volume', aCriar)
+      .order('created_at')
+      .order('id')
+    if (erroConferencia) throw new Error(erroConferencia.message)
+
+    const vencedor = new Map<number, string>()
+    for (const linha of (todas ?? []) as { id: string; numero_volume: number }[]) {
+      if (!vencedor.has(linha.numero_volume)) vencedor.set(linha.numero_volume, linha.id)
+    }
+    const perdedores = criados.filter((c) => vencedor.get(c.numero_volume) !== c.id)
+    if (perdedores.length > 0) {
+      const { error: erroLimpeza } = await supabase
+        .from('itens')
+        .delete()
+        .in('id', perdedores.map((c) => c.id))
+      if (erroLimpeza) throw new Error(erroLimpeza.message)
+      ignoradosPorConcorrencia.push(...perdedores.map((c) => c.numero_volume))
+      criados = criados.filter((c) => vencedor.get(c.numero_volume) === c.id)
+    }
+  }
 
   if (parsed.tagIds.length > 0 && criados.length > 0) {
     const links = criados.flatMap(({ id }) =>
@@ -258,7 +288,10 @@ async function criarVolumesEmLoteImpl(input: CriarVolumesInput): Promise<ResumoC
   revalidateListagens()
   revalidatePath('/series')
   revalidatePath(`/serie/${parsed.serieId}`)
-  return { criados, ignorados: repetidos }
+  return {
+    criados: criados.map(({ id, titulo, tipo }) => ({ id, titulo, tipo })),
+    ignorados: [...repetidos, ...ignoradosPorConcorrencia].sort((a, b) => a - b),
+  }
 }
 
 export async function criarVolumesEmLote(input: CriarVolumesInput) {
