@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EstadoItem, ItemComRelacoes, Tag, TipoObra, TipoTag } from '@/lib/types'
 import { calcularVolumesFaltantes, type VolumeParaFuros } from '@/lib/volumes'
 import { lerTodasAsLinhas } from '@/lib/paginar'
+import { escaparLike } from '@/lib/like'
 
 const ITEM_SELECT =
   '*, serie:series(id, nome, tipo, em_publicacao, tem_numeracao, serie_tags(tags(id, nome, tipo, cor, user_id, created_at))), item_tags(tags(id, nome, tipo, cor, user_id, created_at))'
@@ -87,7 +88,7 @@ export async function listarItens(
     if (filtros.estado) query = query.eq('estado', filtros.estado)
     if (filtros.tipo) query = query.eq('tipo', filtros.tipo)
     if (filtros.serieId) query = query.eq('serie_id', filtros.serieId)
-    if (filtros.busca) query = query.ilike('titulo', `%${filtros.busca}%`)
+    if (filtros.busca) query = query.ilike('titulo', `%${escaparLike(filtros.busca)}%`)
     if (filtros.semCapa) query = query.is('capa_url', null)
 
     return query.range(de, ate)

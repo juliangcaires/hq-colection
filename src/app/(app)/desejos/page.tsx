@@ -4,8 +4,7 @@ import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { ColecaoFilters } from '@/components/itens/colecao-filters'
 import { DesejosLista } from '@/components/itens/desejos-lista'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
-import { parseTagsPorTipoDaUrl } from '@/lib/tags-por-tipo'
-import type { TipoObra } from '@/lib/types'
+import { lerFiltrosDaUrl } from '@/lib/filtros-url'
 
 type SearchParams = {
   busca?: string
@@ -32,14 +31,7 @@ export default async function DesejosPage({
   const [itens, { data: seriesData }, { data: tagsData }] = await Promise.all([
     listarItens(
       supabase,
-      {
-        estado: 'desejo',
-        tipo: (params.tipo as TipoObra) || undefined,
-        serieId: params.serie || undefined,
-        busca: params.busca || undefined,
-        semCapa: params.capa === 'sem',
-        tagsPorTipo: parseTagsPorTipoDaUrl(params),
-      },
+      { ...lerFiltrosDaUrl(params), estado: 'desejo' },
       { column: 'prioridade', ascending: false }
     ),
     supabase.from('series').select('id, nome, serie_tags(tag_id)').order('nome'),

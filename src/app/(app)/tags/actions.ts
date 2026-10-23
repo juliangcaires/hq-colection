@@ -7,6 +7,7 @@ import { ErroDeNegocio } from '@/lib/resultado'
 import { tagInputSchema } from '@/lib/schemas'
 import { lerTodasAsLinhas } from '@/lib/paginar'
 import type { TipoTag } from '@/lib/types'
+import { escaparLike } from '@/lib/like'
 
 async function createTagImpl(input: { nome: string; tipo: TipoTag }) {
   const parsed = tagInputSchema.parse(input)
@@ -66,7 +67,7 @@ export async function deleteTag(id: string) {
 export async function buscarTags(query: string) {
   const supabase = await createClient()
   let request = supabase.from('tags').select('id, nome, tipo, cor').order('nome').limit(30)
-  if (query.trim()) request = request.ilike('nome', `%${query.trim()}%`)
+  if (query.trim()) request = request.ilike('nome', `%${escaparLike(query.trim())}%`)
   const { data, error } = await request
   if (error) throw new Error(error.message)
   return data ?? []
@@ -81,7 +82,7 @@ export async function buscarTagsPorTipo(tipo: TipoTag, query: string) {
     .eq('tipo', tipo)
     .order('nome')
     .limit(30)
-  if (query.trim()) request = request.ilike('nome', `%${query.trim()}%`)
+  if (query.trim()) request = request.ilike('nome', `%${escaparLike(query.trim())}%`)
   const { data, error } = await request
   if (error) throw new Error(error.message)
   return data ?? []

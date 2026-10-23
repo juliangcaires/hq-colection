@@ -5,8 +5,7 @@ import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { ColecaoFilters } from '@/components/itens/colecao-filters'
 import { ItemCard } from '@/components/itens/item-card'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
-import { parseTagsPorTipoDaUrl } from '@/lib/tags-por-tipo'
-import type { EstadoItem, TipoObra } from '@/lib/types'
+import { lerFiltrosDaUrl } from '@/lib/filtros-url'
 
 type SearchParams = {
   busca?: string
@@ -33,14 +32,7 @@ export default async function ColecaoPage({
   const supabase = await createClient()
 
   const [itens, { data: seriesData }, { data: tagsData }] = await Promise.all([
-    listarItens(supabase, {
-      estado: (params.estado as EstadoItem) || undefined,
-      tipo: (params.tipo as TipoObra) || undefined,
-      serieId: params.serie || undefined,
-      busca: params.busca || undefined,
-      semCapa: params.capa === 'sem',
-      tagsPorTipo: parseTagsPorTipoDaUrl(params),
-    }),
+    listarItens(supabase, lerFiltrosDaUrl(params)),
     supabase.from('series').select('id, nome, serie_tags(tag_id)').order('nome'),
     supabase.from('tags').select('id, nome, tipo, cor').order('nome'),
   ])

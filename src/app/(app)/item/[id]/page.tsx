@@ -3,10 +3,12 @@ import { createClient } from '@/lib/supabase/server'
 import { listarItem } from '@/lib/queries'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { ItemForm } from '@/components/itens/item-form'
+import { uuidOuNull } from '@/lib/filtros-url'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
 
 export default async function ItemPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+  const id = uuidOuNull((await params).id)
+  if (!id) notFound()
   const supabase = await createClient()
 
   const item = await listarItem(supabase, id)

@@ -16,6 +16,7 @@ import {
   type SerieInput,
 } from '@/lib/schemas'
 import type { EstadoItem, TipoObra, TipoTag } from '@/lib/types'
+import { escaparLike } from '@/lib/like'
 
 async function createSerieImpl(input: SerieInput) {
   const parsed = serieInputSchema.parse(input)
@@ -161,7 +162,7 @@ export async function buscarSeries(query: string, editoraTagId?: string) {
     .limit(20)
 
   if (query.trim()) {
-    request = request.ilike('nome', `%${query.trim()}%`)
+    request = request.ilike('nome', `%${escaparLike(query.trim())}%`)
   }
 
   const { data, error } = await request
@@ -262,7 +263,7 @@ export async function buscarItensParaSerie(
   }
 
   if (query.trim()) {
-    request = request.ilike('titulo', `%${query.trim()}%`)
+    request = request.ilike('titulo', `%${escaparLike(query.trim())}%`)
   }
 
   if (tipo) request = request.eq('tipo', tipo)
@@ -543,7 +544,7 @@ export async function listarSeries(query: string): Promise<SerieListada[]> {
         .select('id, nome, tipo, total_volumes, em_publicacao, tem_numeracao')
         .order('nome')
         .order('id')
-      if (termo) request = request.ilike('nome', `%${termo}%`)
+      if (termo) request = request.ilike('nome', `%${escaparLike(termo)}%`)
       return request.range(de, ate)
     }),
     lerTodasAsLinhas((de, ate) =>
