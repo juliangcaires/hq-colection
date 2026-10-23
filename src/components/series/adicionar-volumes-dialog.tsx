@@ -31,6 +31,7 @@ import {
   type ItemCandidato,
 } from '@/app/(app)/series/actions'
 import type { TagLite, TipoObra, TipoTag } from '@/lib/types'
+import { desembrulhar } from '@/lib/resultado'
 
 const TIPO_ITEMS = [
   { value: 'todos', label: 'HQ e mangá' },
@@ -179,7 +180,7 @@ export function AdicionarVolumesDialog({
     }))
     startTransition(async () => {
       try {
-        const resumo = await adicionarItensASerie(serieId, payload)
+        const resumo = desembrulhar(await adicionarItensASerie(serieId, payload))
         if (resumo.incluidos > 0) {
           toast.success(`${resumo.incluidos} volume(s) incluídos em "${serieNome}"`)
         }

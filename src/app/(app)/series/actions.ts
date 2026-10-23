@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
+import { executar } from '@/lib/executar'
+import { ErroDeNegocio } from '@/lib/resultado'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { agruparVolumesPorSerie } from '@/lib/queries'
 import { lerTodasAsLinhas } from '@/lib/paginar'
@@ -15,13 +17,13 @@ import {
 } from '@/lib/schemas'
 import type { EstadoItem, TipoObra, TipoTag } from '@/lib/types'
 
-export async function createSerie(input: SerieInput) {
+async function createSerieImpl(input: SerieInput) {
   const parsed = serieInputSchema.parse(input)
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) throw new Error('Não autenticado')
+  if (!user) throw new ErroDeNegocio('Não autenticado')
 
   const { data: serie, error } = await supabase
     .from('series')
@@ -51,7 +53,11 @@ export async function createSerie(input: SerieInput) {
   return serie.id as string
 }
 
-export async function updateSerie(id: string, input: SerieInput) {
+export async function createSerie(input: SerieInput) {
+  return executar(() => createSerieImpl(input))
+}
+
+async function updateSerieImpl(id: string, input: SerieInput) {
   const parsed = serieInputSchema.parse(input)
   const supabase = await createClient()
 
@@ -84,13 +90,21 @@ export async function updateSerie(id: string, input: SerieInput) {
   revalidatePath(`/serie/${id}`)
 }
 
-export async function deleteSerie(id: string) {
+export async function updateSerie(id: string, input: SerieInput) {
+  return executar(() => updateSerieImpl(id, input))
+}
+
+async function deleteSerieImpl(id: string) {
   const supabase = await createClient()
   const { error } = await supabase.from('series').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/colecao')
   revalidatePath('/desejos')
   revalidatePath('/series')
+}
+
+export async function deleteSerie(id: string) {
+  return executar(() => deleteSerieImpl(id))
 }
 
 type BuscarSerieRow = {
@@ -320,17 +334,17 @@ function numerosRepetidos(numeros: number[]): number[] {
  * numeric de propósito, para séries não numeradas e edições 1.5.
  * Séries sem a flag continuam como antes: só `serie_id`, número intocado.
  */
-export async function adicionarItensASerie(
+async function adicionarItensASerieImpl(
   serieId: string,
   itens: { itemId: string; numero: number | null }[]
-): Promise<ResumoInclusao> {
+): Promise<ResumoInclusao>  {
   const parsed = itensComNumeroSchema.parse({ serieId, itens })
   const itemIds = parsed.itens.map((i) => i.itemId)
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) throw new Error('Não autenticado')
+  if (!user) throw new ErroDeNegocio('Não autenticado')
 
   const { data: serie, error: serieError } = await supabase
     .from('series')
@@ -338,18 +352,18 @@ export async function adicionarItensASerie(
     .eq('id', parsed.serieId)
     .maybeSingle()
   if (serieError) throw new Error(serieError.message)
-  if (!serie) throw new Error('Série não encontrada')
+  if (!serie) throw new ErroDeNegocio('Série não encontrada')
 
   const temNumeracao = Boolean((serie as { tem_numeracao: boolean }).tem_numeracao)
 
   if (temNumeracao) {
     if (parsed.itens.some((i) => i.numero === null)) {
-      throw new Error('Esta série é numerada: informe o número de todos os volumes marcados.')
+      throw new ErroDeNegocio('Esta série é numerada: informe o número de todos os volumes marcados.')
     }
 
     const repetidosNoEnvio = numerosRepetidos(parsed.itens.map((i) => i.numero as number))
     if (repetidosNoEnvio.length > 0) {
-      throw new Error(`Número repetido entre os volumes marcados: ${repetidosNoEnvio.join(', ')}`)
+      throw new ErroDeNegocio(`Número repetido entre os volumes marcados: ${repetidosNoEnvio.join(', ')}`)
     }
 
     // Volumes que já estão na série e NÃO estão sendo reenviados (esses podem
@@ -371,7 +385,7 @@ export async function adicionarItensASerie(
       .map((i) => i.numero as number)
       .filter((n) => ocupados.has(n))
     if (colidindo.length > 0) {
-      throw new Error(
+      throw new ErroDeNegocio(
         `Número já usado por outro volume da série: ${Array.from(new Set(colidindo)).join(', ')}`
       )
     }
@@ -436,8 +450,15 @@ export async function adicionarItensASerie(
   }
 }
 
+export async function adicionarItensASerie(
+  serieId: string,
+  itens: { itemId: string; numero: number | null }[]
+) {
+  return executar(() => adicionarItensASerieImpl(serieId, itens))
+}
+
 /** Desvincula itens da série — eles voltam a ser avulsos, sem serem excluídos. */
-export async function removerItensDaSerie(serieId: string, itemIds: string[]): Promise<number> {
+async function removerItensDaSerieImpl(serieId: string, itemIds: string[]): Promise<number>  {
   const parsed = itensDaSerieSchema.parse({ serieId, itemIds })
   const supabase = await createClient()
 
@@ -452,6 +473,10 @@ export async function removerItensDaSerie(serieId: string, itemIds: string[]): P
 
   revalidateSeriesEListagens([parsed.serieId])
   return (data ?? []).length
+}
+
+export async function removerItensDaSerie(serieId: string, itemIds: string[]) {
+  return executar(() => removerItensDaSerieImpl(serieId, itemIds))
 }
 
 export type ResumoVolumesDaSerie = {
@@ -483,7 +508,7 @@ export async function resumoVolumesDaSerie(serieId: string): Promise<ResumoVolum
     ),
   ])
   if (errSerie) throw new Error(errSerie.message)
-  if (!serie) throw new Error('Série não encontrada')
+  if (!serie) throw new ErroDeNegocio('Série não encontrada')
 
   return {
     total_volumes: serie.total_volumes,

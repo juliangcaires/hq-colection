@@ -29,6 +29,7 @@ import {
 import { criarVolumesEmLote } from '@/app/(app)/itens/actions'
 import { buscarCapasEmLote } from '@/lib/capa-lote'
 import type { EstadoItem } from '@/lib/types'
+import { desembrulhar } from '@/lib/resultado'
 
 const ESTADO_ITEMS = [
   { value: 'comprado', label: 'Comprado' },
@@ -81,7 +82,7 @@ export function CriarVolumesDialog({
     if (analise.bloqueado) return
     startTransition(async () => {
       try {
-        const resumo = await criarVolumesEmLote({
+        const resumo = desembrulhar(await criarVolumesEmLote({
           serieId,
           numeros: analise.numeros,
           estado,
@@ -90,7 +91,7 @@ export function CriarVolumesDialog({
           loja: estado !== 'desejo' ? loja || null : null,
           data_aquisicao: estado !== 'desejo' ? data || null : null,
           tagIds: [],
-        })
+        }))
 
         toast.success(`${resumo.criados.length} volume(s) criados em "${serieNome}"`)
         if (resumo.ignorados.length > 0) {

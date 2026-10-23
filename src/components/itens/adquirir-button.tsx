@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { marcarAdquiriEmLote } from '@/app/(app)/itens/actions'
+import { desembrulhar } from '@/lib/resultado'
 
 /**
  * Marca aquisição de um item ou de vários — é o mesmo diálogo porque os campos
@@ -36,11 +37,11 @@ export function AdquirirDialog({
   function handleConfirm() {
     startTransition(async () => {
       try {
-        const afetados = await marcarAdquiriEmLote(itemIds, {
+        const afetados = desembrulhar(await marcarAdquiriEmLote(itemIds, {
           preco: preco ? Number(preco) : null,
           loja: loja || null,
           data_aquisicao: data || null,
-        })
+        }))
         toast.success(
           lote
             ? `${afetados} item(ns) marcados como comprados`

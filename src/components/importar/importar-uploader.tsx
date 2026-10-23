@@ -5,6 +5,7 @@ import Papa from 'papaparse'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { importarCsv, type RascunhoRow, type ResumoImportacao } from '@/app/(app)/importar/actions'
+import { desembrulhar } from '@/lib/resultado'
 
 export function ImportarUploader() {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -37,7 +38,7 @@ export function ImportarUploader() {
     if (!rows || rows.length === 0) return
     startTransition(async () => {
       try {
-        const r = await importarCsv(rows)
+        const r = desembrulhar(await importarCsv(rows))
         setResumo(r)
         toast.success('Importação concluída')
       } catch (e) {

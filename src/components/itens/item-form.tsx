@@ -30,6 +30,7 @@ import {
 import { agruparTagsPorTipo, TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
 import type { EstadoItem, ItemComRelacoes, TagLite, TipoObra, TipoTag } from '@/lib/types'
 import { descreverFalhaProvedor, type CandidatoCapa, type ResultadoProvedor } from '@/lib/capa-busca'
+import { desembrulhar } from '@/lib/resultado'
 
 type SerieOpcao = { id: string; nome: string }
 
@@ -96,10 +97,10 @@ export function ItemForm({
           tagIds: Object.values(tagsPorTipo).flatMap((tags) => tags.map((t) => t.id)),
         }
         if (item) {
-          await updateItem(item.id, input)
+          desembrulhar(await updateItem(item.id, input))
           toast.success('Item atualizado')
         } else {
-          const id = await createItem(input)
+          const id = desembrulhar(await createItem(input))
           toast.success('Item criado')
           router.push(`/item/${id}`)
           return
@@ -115,7 +116,7 @@ export function ItemForm({
     if (!item) return
     startTransition(async () => {
       try {
-        await deleteItem(item.id)
+        desembrulhar(await deleteItem(item.id))
         toast.success('Item excluído')
         router.push('/colecao')
       } catch (e) {
@@ -132,7 +133,7 @@ export function ItemForm({
     formData.append('file', file)
     startUpload(async () => {
       try {
-        await uploadCapaManual(item.id, formData)
+        desembrulhar(await uploadCapaManual(item.id, formData))
         toast.success('Capa atualizada')
         router.refresh()
       } catch (err) {
@@ -185,7 +186,7 @@ export function ItemForm({
     if (!item) return
     startAplicarCandidato(async () => {
       try {
-        await aplicarCapaEscolhida(item.id, candidato)
+        desembrulhar(await aplicarCapaEscolhida(item.id, candidato))
         toast.success('Capa aplicada')
         setCandidatos(null)
         router.refresh()

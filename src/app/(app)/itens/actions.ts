@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
+import { executar } from '@/lib/executar'
+import { ErroDeNegocio } from '@/lib/resultado'
 import {
   adquirirLoteSchema,
   candidatoCapaSchema,
@@ -23,13 +25,13 @@ function revalidateListagens(itemId?: string) {
   if (itemId) revalidatePath(`/item/${itemId}`)
 }
 
-export async function createItem(input: ItemInput) {
+async function createItemImpl(input: ItemInput) {
   const parsed = itemInputSchema.parse(input)
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) throw new Error('Não autenticado')
+  if (!user) throw new ErroDeNegocio('Não autenticado')
 
   const { data: item, error } = await supabase
     .from('itens')
@@ -63,7 +65,11 @@ export async function createItem(input: ItemInput) {
   return item.id as string
 }
 
-export async function updateItem(id: string, input: ItemInput) {
+export async function createItem(input: ItemInput) {
+  return executar(() => createItemImpl(input))
+}
+
+async function updateItemImpl(id: string, input: ItemInput) {
   const parsed = itemInputSchema.parse(input)
   const supabase = await createClient()
 
@@ -99,11 +105,19 @@ export async function updateItem(id: string, input: ItemInput) {
   revalidateListagens(id)
 }
 
-export async function deleteItem(id: string) {
+export async function updateItem(id: string, input: ItemInput) {
+  return executar(() => updateItemImpl(id, input))
+}
+
+async function deleteItemImpl(id: string) {
   const supabase = await createClient()
   const { error } = await supabase.from('itens').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidateListagens()
+}
+
+export async function deleteItem(id: string) {
+  return executar(() => deleteItemImpl(id))
 }
 
 /**
@@ -113,7 +127,7 @@ export async function deleteItem(id: string) {
  * precisa do `Promise.all` por linha que `adicionarItensASerie` faz (lá o número
  * do volume muda a cada item). O preço é UNITÁRIO: vai o mesmo valor em cada um.
  */
-export async function marcarAdquiriEmLote(itemIds: string[], input: AdquirirInput) {
+async function marcarAdquiriEmLoteImpl(itemIds: string[], input: AdquirirInput) {
   const parsed = adquirirLoteSchema.parse({ ...input, itemIds })
   const supabase = await createClient()
 
@@ -135,6 +149,10 @@ export async function marcarAdquiriEmLote(itemIds: string[], input: AdquirirInpu
   return (data ?? []).length
 }
 
+export async function marcarAdquiriEmLote(itemIds: string[], input: AdquirirInput) {
+  return executar(() => marcarAdquiriEmLoteImpl(itemIds, input))
+}
+
 export type ResumoCriacaoVolumes = {
   /** Título e tipo voltam junto para a busca de capa do lote não ter que reconstruí-los. */
   criados: { id: string; titulo: string; tipo: TipoObra }[]
@@ -151,13 +169,13 @@ export type ResumoCriacaoVolumes = {
  * edições 1.5). Em série numerada, repetir é erro; sem numeração, é só ruído e
  * o volume repetido é pulado.
  */
-export async function criarVolumesEmLote(input: CriarVolumesInput): Promise<ResumoCriacaoVolumes> {
+async function criarVolumesEmLoteImpl(input: CriarVolumesInput): Promise<ResumoCriacaoVolumes>  {
   const parsed = criarVolumesInputSchema.parse(input)
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) throw new Error('Não autenticado')
+  if (!user) throw new ErroDeNegocio('Não autenticado')
 
   const [{ data: serie, error: errSerie }, { data: existentes, error: errItens }] = await Promise.all(
     [
@@ -171,7 +189,7 @@ export async function criarVolumesEmLote(input: CriarVolumesInput): Promise<Resu
   )
   if (errSerie) throw new Error(errSerie.message)
   if (errItens) throw new Error(errItens.message)
-  if (!serie) throw new Error('Série não encontrada')
+  if (!serie) throw new ErroDeNegocio('Série não encontrada')
 
   const ocupados = new Set(
     (existentes ?? [])
@@ -182,7 +200,7 @@ export async function criarVolumesEmLote(input: CriarVolumesInput): Promise<Resu
   const repetidos = numeros.filter((n) => ocupados.has(n))
 
   if (serie.tem_numeracao && repetidos.length > 0) {
-    throw new Error(
+    throw new ErroDeNegocio(
       `Esta série já tem ${repetidos.map((n) => `#${n}`).join(', ')} — desmarque ou renumere`
     )
   }
@@ -223,7 +241,11 @@ export async function criarVolumesEmLote(input: CriarVolumesInput): Promise<Resu
   return { criados, ignorados: repetidos }
 }
 
-export async function marcarLido(id: string, lido: boolean) {
+export async function criarVolumesEmLote(input: CriarVolumesInput) {
+  return executar(() => criarVolumesEmLoteImpl(input))
+}
+
+async function marcarLidoImpl(id: string, lido: boolean) {
   const supabase = await createClient()
   const { error } = await supabase
     .from('itens')
@@ -233,20 +255,24 @@ export async function marcarLido(id: string, lido: boolean) {
   revalidateListagens(id)
 }
 
+export async function marcarLido(id: string, lido: boolean) {
+  return executar(() => marcarLidoImpl(id, lido))
+}
+
 /** Upload manual de capa (fallback normal — cobertura de edição BR é irregular). */
-export async function uploadCapaManual(itemId: string, formData: FormData) {
+async function uploadCapaManualImpl(itemId: string, formData: FormData) {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) throw new Error('Não autenticado')
+  if (!user) throw new ErroDeNegocio('Não autenticado')
 
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) {
-    throw new Error('Arquivo inválido')
+    throw new ErroDeNegocio('Arquivo inválido')
   }
   if (!file.type.startsWith('image/')) {
-    throw new Error('Envie um arquivo de imagem')
+    throw new ErroDeNegocio('Envie um arquivo de imagem')
   }
 
   const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
@@ -266,15 +292,19 @@ export async function uploadCapaManual(itemId: string, formData: FormData) {
   revalidateListagens(itemId)
 }
 
+export async function uploadCapaManual(itemId: string, formData: FormData) {
+  return executar(() => uploadCapaManualImpl(itemId, formData))
+}
+
 /** Aplica a capa que o usuário escolheu na grade de candidatos (busca automática, Fase 2). */
-export async function aplicarCapaEscolhida(itemId: string, candidatoBruto: CandidatoCapa) {
+async function aplicarCapaEscolhidaImpl(itemId: string, candidatoBruto: CandidatoCapa) {
   const id = z.string().uuid().parse(itemId)
   const candidato = candidatoCapaSchema.parse(candidatoBruto)
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) throw new Error('Não autenticado')
+  if (!user) throw new ErroDeNegocio('Não autenticado')
 
   // Dono do item conferido ANTES de baixar qualquer coisa (a RLS filtra por user_id).
   const { data: existente, error: erroItem } = await supabase
@@ -283,10 +313,10 @@ export async function aplicarCapaEscolhida(itemId: string, candidatoBruto: Candi
     .eq('id', id)
     .maybeSingle()
   if (erroItem) throw new Error(erroItem.message)
-  if (!existente) throw new Error('Item não encontrado')
+  if (!existente) throw new ErroDeNegocio('Item não encontrado')
 
   const path = await baixarEPersistirCapa(supabase, user.id, id, candidato.url)
-  if (!path) throw new Error('Não foi possível baixar essa imagem')
+  if (!path) throw new ErroDeNegocio('Não foi possível baixar essa imagem')
 
   const { data: item, error } = await supabase
     .from('itens')
@@ -311,4 +341,8 @@ export async function aplicarCapaEscolhida(itemId: string, candidatoBruto: Candi
   }
 
   revalidateListagens(itemId)
+}
+
+export async function aplicarCapaEscolhida(itemId: string, candidatoBruto: CandidatoCapa) {
+  return executar(() => aplicarCapaEscolhidaImpl(itemId, candidatoBruto))
 }

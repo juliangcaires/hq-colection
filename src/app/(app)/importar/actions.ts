@@ -2,6 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { executar } from '@/lib/executar'
+import { ErroDeNegocio } from '@/lib/resultado'
 import {
   baixarEPersistirCapa,
   buscarCapaPorIsbn,
@@ -38,12 +40,12 @@ export type ResumoImportacao = {
 
 const ESTADOS_VALIDOS: EstadoItem[] = ['desejo', 'comprado', 'lido']
 
-export async function importarCsv(rows: RascunhoRow[]): Promise<ResumoImportacao> {
+async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) throw new Error('Não autenticado')
+  if (!user) throw new ErroDeNegocio('Não autenticado')
 
   const resumo: ResumoImportacao = {
     itensCriados: 0,
@@ -303,4 +305,8 @@ export async function importarCsv(rows: RascunhoRow[]): Promise<ResumoImportacao
   revalidatePath('/tags')
 
   return resumo
+}
+
+export async function importarCsv(rows: RascunhoRow[]) {
+  return executar(() => importarCsvImpl(rows))
 }

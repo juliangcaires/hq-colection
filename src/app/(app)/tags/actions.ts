@@ -2,17 +2,19 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { executar } from '@/lib/executar'
+import { ErroDeNegocio } from '@/lib/resultado'
 import { tagInputSchema } from '@/lib/schemas'
 import { lerTodasAsLinhas } from '@/lib/paginar'
 import type { TipoTag } from '@/lib/types'
 
-export async function createTag(input: { nome: string; tipo: TipoTag }) {
+async function createTagImpl(input: { nome: string; tipo: TipoTag }) {
   const parsed = tagInputSchema.parse(input)
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) throw new Error('Não autenticado')
+  if (!user) throw new ErroDeNegocio('Não autenticado')
 
   const { data, error } = await supabase
     .from('tags')
@@ -25,7 +27,11 @@ export async function createTag(input: { nome: string; tipo: TipoTag }) {
   return data.id as string
 }
 
-export async function updateTag(id: string, input: { nome: string; tipo: TipoTag }) {
+export async function createTag(input: { nome: string; tipo: TipoTag }) {
+  return executar(() => createTagImpl(input))
+}
+
+async function updateTagImpl(id: string, input: { nome: string; tipo: TipoTag }) {
   const parsed = tagInputSchema.parse(input)
   const supabase = await createClient()
 
@@ -40,13 +46,21 @@ export async function updateTag(id: string, input: { nome: string; tipo: TipoTag
   revalidatePath('/desejos')
 }
 
-export async function deleteTag(id: string) {
+export async function updateTag(id: string, input: { nome: string; tipo: TipoTag }) {
+  return executar(() => updateTagImpl(id, input))
+}
+
+async function deleteTagImpl(id: string) {
   const supabase = await createClient()
   const { error } = await supabase.from('tags').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/tags')
   revalidatePath('/colecao')
   revalidatePath('/desejos')
+}
+
+export async function deleteTag(id: string) {
+  return executar(() => deleteTagImpl(id))
 }
 
 export async function buscarTags(query: string) {
@@ -74,7 +88,7 @@ export async function buscarTagsPorTipo(tipo: TipoTag, query: string) {
 }
 
 /** Reatribui todos os vínculos (série e item) das tags de origem para a tag de destino, depois apaga as de origem. */
-export async function mergeTags(sourceIds: string[], targetId: string) {
+async function mergeTagsImpl(sourceIds: string[], targetId: string) {
   const ids = sourceIds.filter((id) => id !== targetId)
   if (ids.length === 0) return
 
@@ -105,4 +119,8 @@ export async function mergeTags(sourceIds: string[], targetId: string) {
   revalidatePath('/tags')
   revalidatePath('/colecao')
   revalidatePath('/desejos')
+}
+
+export async function mergeTags(sourceIds: string[], targetId: string) {
+  return executar(() => mergeTagsImpl(sourceIds, targetId))
 }

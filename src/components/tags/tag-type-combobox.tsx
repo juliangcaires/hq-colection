@@ -16,6 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils'
 import { buscarTagsPorTipo, createTag } from '@/app/(app)/tags/actions'
 import type { TagLite, TipoTag } from '@/lib/types'
+import { desembrulhar } from '@/lib/resultado'
 
 export function TagTypeCombobox({
   tipo,
@@ -61,7 +62,7 @@ export function TagTypeCombobox({
     const nome = query.trim()
     if (!nome) return
     try {
-      const id = await createTag({ nome, tipo })
+      const id = desembrulhar(await createTag({ nome, tipo }))
       const novaTag = { id, nome, tipo, cor: null }
       onChange(multiple ? [...value, novaTag] : [novaTag])
       setQuery('')

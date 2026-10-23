@@ -20,6 +20,7 @@ import {
 import { deleteSerie, updateSerie } from '@/app/(app)/series/actions'
 import { agruparTagsPorTipo, TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
 import type { Serie, TagLite, TipoObra, TipoTag } from '@/lib/types'
+import { desembrulhar } from '@/lib/resultado'
 
 export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[] }; allTags: TagLite[] }) {
   const router = useRouter()
@@ -41,7 +42,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
     startTransition(async () => {
       try {
         const tagIds = Object.values(tagsPorTipo).flatMap((tags) => tags.map((t) => t.id))
-        await updateSerie(serie.id, {
+        desembrulhar(await updateSerie(serie.id, {
           nome: nome.trim(),
           tipo,
           total_volumes: totalVolumes ? Number(totalVolumes) : null,
@@ -49,7 +50,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
           tem_numeracao: temNumeracao,
           observacoes: observacoes || null,
           tagIds,
-        })
+        }))
         toast.success('Série atualizada')
         router.refresh()
       } catch (e) {
@@ -61,7 +62,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
   function handleDelete() {
     startTransition(async () => {
       try {
-        await deleteSerie(serie.id)
+        desembrulhar(await deleteSerie(serie.id))
         toast.success('Série excluída')
         router.push('/colecao')
       } catch (e) {
