@@ -4,6 +4,15 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
+import { escaparLike } from '@/lib/like'
+import {
+  LINHAS_POR_LOTE,
+  linhaCsvSchema,
+  normalizarEstado,
+  normalizarNumeroVolume,
+  normalizarTipo,
+  type LinhaCsv,
+} from '@/lib/csv-importacao'
 import {
   baixarEPersistirCapa,
   buscarCapaPorIsbn,
@@ -11,23 +20,9 @@ import {
   type MemoriaSerie,
   type Provedor,
 } from '@/lib/capa-busca'
-import type { EstadoItem, TipoObra, TipoTag, Tag } from '@/lib/types'
+import type { TipoObra, TipoTag, Tag } from '@/lib/types'
 
-export type RascunhoRow = {
-  titulo?: string
-  serie?: string
-  numero_volume?: string
-  tipo?: string
-  estado?: string
-  editora?: string
-  universo?: string
-  personagem?: string
-  selo?: string
-  autor?: string
-  isbn?: string
-  tags_extra?: string
-  observacoes?: string
-}
+export type RascunhoRow = LinhaCsv
 
 export type ResumoImportacao = {
   itensCriados: number
@@ -38,9 +33,12 @@ export type ResumoImportacao = {
   erros: { linha: number; motivo: string }[]
 }
 
-const ESTADOS_VALIDOS: EstadoItem[] = ['desejo', 'comprado', 'lido']
+async function importarCsvImpl(rowsBrutas: unknown[], primeiraLinha: number): Promise<ResumoImportacao> {
+  if (!Array.isArray(rowsBrutas) || rowsBrutas.length > LINHAS_POR_LOTE * 2) {
+    throw new ErroDeNegocio('Lote de importação inválido.')
+  }
+  const linhaInicial = Number.isInteger(primeiraLinha) && primeiraLinha >= 2 ? primeiraLinha : 2
 
-async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  {
   const supabase = await createClient()
   const {
     data: { user },
@@ -82,16 +80,20 @@ async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  
     const cached = serieCache.get(key)
     if (cached) return cached
 
-    const { data: existente } = await supabase
+    // `escaparLike`: o nome é literal ("CSV_Wild" não pode casar com "CSV Wild"); `limit(1)`
+    // porque duas séries só diferentes na caixa fariam `maybeSingle` falhar e criar uma terceira.
+    const { data: existentes, error: erroBusca } = await supabase
       .from('series')
       .select('id')
       .eq('user_id', user!.id)
-      .ilike('nome', nome.trim())
-      .maybeSingle()
+      .ilike('nome', escaparLike(nome.trim()))
+      .order('created_at')
+      .limit(1)
+    if (erroBusca) throw new Error(erroBusca.message)
 
-    if (existente) {
-      serieCache.set(key, existente.id)
-      return existente.id
+    if (existentes && existentes.length > 0) {
+      serieCache.set(key, existentes[0].id)
+      return existentes[0].id
     }
 
     const { data: nova, error } = await supabase
@@ -111,17 +113,19 @@ async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  
     const cached = tagCache.get(key)
     if (cached) return cached
 
-    const { data: existente } = await supabase
+    const { data: existentes, error: erroBusca } = await supabase
       .from('tags')
       .select('id')
       .eq('user_id', user!.id)
       .eq('tipo', tipo)
-      .ilike('nome', nome.trim())
-      .maybeSingle()
+      .ilike('nome', escaparLike(nome.trim()))
+      .order('created_at')
+      .limit(1)
+    if (erroBusca) throw new Error(erroBusca.message)
 
-    if (existente) {
-      tagCache.set(key, existente.id)
-      return existente.id
+    if (existentes && existentes.length > 0) {
+      tagCache.set(key, existentes[0].id)
+      return existentes[0].id
     }
 
     const { data: nova, error } = await supabase
@@ -136,13 +140,33 @@ async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  
     return nova.id
   }
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]
+  for (let i = 0; i < rowsBrutas.length; i++) {
+    const linha = linhaInicial + i
     try {
-      const tipo: TipoObra = row.tipo?.trim() === 'manga' ? 'manga' : 'hq'
-      const estadoBruto = row.estado?.trim() as EstadoItem | undefined
-      const estado: EstadoItem = estadoBruto && ESTADOS_VALIDOS.includes(estadoBruto) ? estadoBruto : 'comprado'
-      const numeroVolume = row.numero_volume?.trim() ? Number(row.numero_volume) : null
+      const validacao = linhaCsvSchema.safeParse(rowsBrutas[i])
+      if (!validacao.success) {
+        const problema = validacao.error.issues[0]
+        resumo.erros.push({ linha, motivo: `${problema.path.join('.') || 'linha'}: ${problema.message}` })
+        continue
+      }
+      const row = validacao.data
+
+      const tipo = normalizarTipo(row.tipo)
+      if (!tipo) {
+        resumo.erros.push({ linha, motivo: `tipo "${row.tipo}" não reconhecido (use hq ou manga)` })
+        continue
+      }
+      const estado = normalizarEstado(row.estado)
+      if (!estado) {
+        resumo.erros.push({ linha, motivo: `estado "${row.estado}" não reconhecido (use desejo, comprado ou lido)` })
+        continue
+      }
+      const numero = normalizarNumeroVolume(row.numero_volume)
+      if (!numero.ok) {
+        resumo.erros.push({ linha, motivo: `numero_volume "${row.numero_volume}" não é um número` })
+        continue
+      }
+      const numeroVolume = numero.valor
 
       let serieId: string | null = null
       if (row.serie?.trim()) {
@@ -156,7 +180,7 @@ async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  
           : '')
 
       if (!titulo) {
-        resumo.erros.push({ linha: i + 2, motivo: 'sem título nem série — linha ignorada' })
+        resumo.erros.push({ linha, motivo: 'sem título nem série — linha ignorada' })
         continue
       }
 
@@ -174,21 +198,23 @@ async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  
           numeroVolume === null
             ? queryDuplicata.is('numero_volume', null)
             : queryDuplicata.eq('numero_volume', numeroVolume)
-        const { data: existente } = await queryDuplicata.maybeSingle()
-        if (existente) {
+        const { data: existentes, error: erroDuplicata } = await queryDuplicata.limit(1)
+        if (erroDuplicata) throw new Error(erroDuplicata.message)
+        if (existentes && existentes.length > 0) {
           resumo.itensIgnorados++
           continue
         }
       } else {
         // Sem série: título sozinho não basta — edições diferentes do mesmo
         // título (ex: capa normal vs. "DC de Bolso") são itens distintos.
-        const { data: candidatos } = await supabase
+        const { data: candidatos, error: erroCandidatos } = await supabase
           .from('itens')
           .select('id, item_tags(tags(nome, tipo))')
           .eq('user_id', user.id)
           .is('serie_id', null)
-          .ilike('titulo', titulo)
+          .ilike('titulo', escaparLike(titulo))
           .returns<{ id: string; item_tags: { tags: Pick<Tag, 'nome' | 'tipo'> | null }[] | null }[]>()
+        if (erroCandidatos) throw new Error(erroCandidatos.message)
         const jaExiste = (candidatos ?? []).some((c) => {
           const seloCandidato =
             (c.item_tags ?? [])
@@ -220,7 +246,10 @@ async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  
 
       if (serieId && tagIdsSerieOuItem.length > 0) {
         const linksSerie = tagIdsSerieOuItem.map((tag_id) => ({ serie_id: serieId!, tag_id }))
-        await supabase.from('serie_tags').upsert(linksSerie, { onConflict: 'serie_id,tag_id' })
+        const { error: erroTagsSerie } = await supabase
+          .from('serie_tags')
+          .upsert(linksSerie, { onConflict: 'serie_id,tag_id' })
+        if (erroTagsSerie) throw new Error(erroTagsSerie.message)
       }
 
       const tagIdsDoItem: string[] = serieId ? [] : [...tagIdsSerieOuItem]
@@ -248,7 +277,8 @@ async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  
 
       if (tagIdsDoItem.length > 0) {
         const linksItem = tagIdsDoItem.map((tag_id) => ({ item_id: item.id, tag_id }))
-        await supabase.from('item_tags').insert(linksItem)
+        const { error: erroTagsItem } = await supabase.from('item_tags').insert(linksItem)
+        if (erroTagsItem) throw new Error(erroTagsItem.message)
       }
 
       resumo.itensCriados++
@@ -295,7 +325,8 @@ async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  
         }
       }
     } catch (e) {
-      resumo.erros.push({ linha: i + 2, motivo: e instanceof Error ? e.message : 'erro desconhecido' })
+      console.error('[importarCsv] linha', linha, e)
+      resumo.erros.push({ linha, motivo: 'erro ao gravar esta linha' })
     }
   }
 
@@ -307,6 +338,10 @@ async function importarCsvImpl(rows: RascunhoRow[]): Promise<ResumoImportacao>  
   return resumo
 }
 
-export async function importarCsv(rows: RascunhoRow[]) {
-  return executar(() => importarCsvImpl(rows))
+/**
+ * Importa um LOTE de linhas (o navegador envia o arquivo em pedaços de `LINHAS_POR_LOTE`).
+ * `primeiraLinha` é o número da linha do arquivo da primeira linha do lote, para os erros apontarem a linha certa.
+ */
+export async function importarCsv(rows: unknown[], primeiraLinha: number) {
+  return executar(() => importarCsvImpl(rows, primeiraLinha))
 }
