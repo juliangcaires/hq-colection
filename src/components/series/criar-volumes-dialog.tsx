@@ -31,6 +31,7 @@ import { buscarCapasEmLote } from '@/lib/capa-lote'
 import type { EstadoItem } from '@/lib/types'
 import { desembrulhar } from '@/lib/resultado'
 import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
+import { hojeIso } from '@/lib/datas'
 
 const ESTADO_ITEMS = [
   { value: 'comprado', label: 'Comprado' },
@@ -63,7 +64,7 @@ export function CriarVolumesDialog({
   const [estado, setEstado] = useState<EstadoItem>('comprado')
   const [preco, setPreco] = useState('')
   const [loja, setLoja] = useState('')
-  const [data, setData] = useState(() => new Date().toISOString().slice(0, 10))
+  const [data, setData] = useState(() => hojeIso())
   const [isPending, startTransition] = useTransition()
 
   const analise = analisarVolumes({ texto, numerosOcupados, temNumeracao })

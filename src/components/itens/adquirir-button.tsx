@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { marcarAdquiriEmLote } from '@/app/(app)/itens/actions'
 import { desembrulhar } from '@/lib/resultado'
 import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
+import { hojeIso } from '@/lib/datas'
 
 /**
  * Marca aquisição de um item ou de vários — é o mesmo diálogo porque os campos
@@ -30,7 +31,7 @@ export function AdquirirDialog({
 }) {
   const [preco, setPreco] = useState('')
   const [loja, setLoja] = useState('')
-  const [data, setData] = useState(() => new Date().toISOString().slice(0, 10))
+  const [data, setData] = useState(() => hojeIso())
   const [isPending, startTransition] = useTransition()
 
   const lote = itemIds.length > 1

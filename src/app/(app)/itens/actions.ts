@@ -17,6 +17,7 @@ import {
 import type { TipoObra } from '@/lib/types'
 import { baixarEPersistirCapa, type CandidatoCapa } from '@/lib/capa-busca'
 import { normalizarTermoBusca } from '@/lib/capa-termo'
+import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
 
 function revalidateListagens(itemId?: string) {
   revalidatePath('/colecao')
@@ -137,7 +138,7 @@ async function marcarAdquiriEmLoteImpl(itemIds: string[], input: AdquirirInput) 
       estado: 'comprado',
       preco: parsed.preco ?? null,
       loja: parsed.loja || null,
-      data_aquisicao: parsed.data_aquisicao || new Date().toISOString().slice(0, 10),
+      data_aquisicao: parsed.data_aquisicao || hojeIso(FUSO_DO_APP),
     })
     .in('id', parsed.itemIds)
     .select('id')
