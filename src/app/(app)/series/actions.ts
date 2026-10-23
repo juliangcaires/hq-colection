@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { getSignedCapaUrls } from '@/lib/supabase/capas'
 import { agruparVolumesPorSerie } from '@/lib/queries'
+import { lerTodasAsLinhas } from '@/lib/paginar'
 import { calcularVolumesFaltantes, serieEstaCompleta, type VolumeParaFuros } from '@/lib/volumes'
 import {
   itensComNumeroSchema,
@@ -193,14 +194,18 @@ async function idsPorTags(
   )
   if (grupos.length === 0) return null
 
-  const { data, error } = await supabase
-    .from('item_tags')
-    .select('item_id, tag_id')
-    .in('tag_id', grupos.flat())
-  if (error) throw new Error(error.message)
+  const vinculos = await lerTodasAsLinhas<{ item_id: string; tag_id: string }>((de, ate) =>
+    supabase
+      .from('item_tags')
+      .select('item_id, tag_id')
+      .in('tag_id', grupos.flat())
+      .order('item_id')
+      .order('tag_id')
+      .range(de, ate)
+  )
 
   const tagsDoItem = new Map<string, Set<string>>()
-  for (const { item_id, tag_id } of (data ?? []) as { item_id: string; tag_id: string }[]) {
+  for (const { item_id, tag_id } of vinculos) {
     const atual = tagsDoItem.get(item_id) ?? new Set<string>()
     atual.add(tag_id)
     tagsDoItem.set(item_id, atual)
@@ -467,19 +472,18 @@ export type ResumoVolumesDaSerie = {
 export async function resumoVolumesDaSerie(serieId: string): Promise<ResumoVolumesDaSerie> {
   const supabase = await createClient()
 
-  const [{ data: serie, error: errSerie }, { data: itens, error: errItens }] = await Promise.all([
+  const [{ data: serie, error: errSerie }, volumes] = await Promise.all([
     supabase
       .from('series')
       .select('total_volumes, tem_numeracao')
       .eq('id', serieId)
       .maybeSingle(),
-    supabase.from('itens').select('numero_volume, estado').eq('serie_id', serieId),
+    lerTodasAsLinhas<VolumeParaFuros>((de, ate) =>
+      supabase.from('itens').select('numero_volume, estado').eq('serie_id', serieId).order('id').range(de, ate)
+    ),
   ])
   if (errSerie) throw new Error(errSerie.message)
-  if (errItens) throw new Error(errItens.message)
   if (!serie) throw new Error('Série não encontrada')
-
-  const volumes = (itens ?? []) as VolumeParaFuros[]
 
   return {
     total_volumes: serie.total_volumes,
@@ -503,29 +507,35 @@ export type SerieListada = {
 
 export async function listarSeries(query: string): Promise<SerieListada[]> {
   const supabase = await createClient()
-  let request = supabase
-    .from('series')
-    .select('id, nome, tipo, total_volumes, em_publicacao, tem_numeracao')
-    .order('nome')
-
-  if (query.trim()) {
-    request = request.ilike('nome', `%${query.trim()}%`)
-  }
+  const termo = query.trim()
 
   // Uma consulta rasa para TODOS os volumes em vez de uma por série (mesmo
   // desenho de `listarSeriesComFuros`): a busca aqui roda a cada tecla digitada.
-  const [{ data, error }, { data: itens, error: errItens }] = await Promise.all([
-    request,
-    supabase.from('itens').select('serie_id, numero_volume, estado').not('serie_id', 'is', null),
+  const [data, itens] = await Promise.all([
+    lerTodasAsLinhas((de, ate) => {
+      let request = supabase
+        .from('series')
+        .select('id, nome, tipo, total_volumes, em_publicacao, tem_numeracao')
+        .order('nome')
+        .order('id')
+      if (termo) request = request.ilike('nome', `%${termo}%`)
+      return request.range(de, ate)
+    }),
+    lerTodasAsLinhas((de, ate) =>
+      supabase
+        .from('itens')
+        .select('serie_id, numero_volume, estado')
+        .not('serie_id', 'is', null)
+        .order('id')
+        .range(de, ate)
+    ),
   ])
-  if (error) throw new Error(error.message)
-  if (errItens) throw new Error(errItens.message)
 
   const volumesPorSerie = agruparVolumesPorSerie(
-    (itens ?? []) as ({ serie_id: string } & VolumeParaFuros)[]
+    itens as ({ serie_id: string } & VolumeParaFuros)[]
   )
 
-  return ((data ?? []) as (Omit<SerieListada, 'completa'> & { tem_numeracao: boolean })[]).map(
+  return ((data) as (Omit<SerieListada, 'completa'> & { tem_numeracao: boolean })[]).map(
     ({ tem_numeracao, ...serie }) => ({
       ...serie,
       completa: serieEstaCompleta({

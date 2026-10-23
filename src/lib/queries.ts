@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EstadoItem, ItemComRelacoes, Tag, TipoObra, TipoTag } from '@/lib/types'
 import { calcularVolumesFaltantes, type VolumeParaFuros } from '@/lib/volumes'
+import { lerTodasAsLinhas } from '@/lib/paginar'
 
 const ITEM_SELECT =
   '*, serie:series(id, nome, tipo, em_publicacao, tem_numeracao, serie_tags(tags(id, nome, tipo, cor, user_id, created_at))), item_tags(tags(id, nome, tipo, cor, user_id, created_at))'
@@ -75,20 +76,24 @@ export async function listarItens(
   filtros: FiltrosItens = {},
   orderBy: { column: string; ascending?: boolean } = { column: 'created_at', ascending: false }
 ): Promise<ItemComRelacoes[]> {
-  let query = supabase.from('itens').select(ITEM_SELECT).order(orderBy.column, {
-    ascending: orderBy.ascending ?? false,
+  // `id` desempata a ordenação: sem isso, `.range()` pode repetir/perder linhas entre páginas.
+  const data = await lerTodasAsLinhas((de, ate) => {
+    let query = supabase
+      .from('itens')
+      .select(ITEM_SELECT)
+      .order(orderBy.column, { ascending: orderBy.ascending ?? false })
+      .order('id')
+
+    if (filtros.estado) query = query.eq('estado', filtros.estado)
+    if (filtros.tipo) query = query.eq('tipo', filtros.tipo)
+    if (filtros.serieId) query = query.eq('serie_id', filtros.serieId)
+    if (filtros.busca) query = query.ilike('titulo', `%${filtros.busca}%`)
+    if (filtros.semCapa) query = query.is('capa_url', null)
+
+    return query.range(de, ate)
   })
 
-  if (filtros.estado) query = query.eq('estado', filtros.estado)
-  if (filtros.tipo) query = query.eq('tipo', filtros.tipo)
-  if (filtros.serieId) query = query.eq('serie_id', filtros.serieId)
-  if (filtros.busca) query = query.ilike('titulo', `%${filtros.busca}%`)
-  if (filtros.semCapa) query = query.is('capa_url', null)
-
-  const { data, error } = await query
-  if (error) throw new Error(error.message)
-
-  let itens = ((data ?? []) as unknown as RawItemRow[]).map(toItemComRelacoes)
+  let itens = (data as unknown as RawItemRow[]).map(toItemComRelacoes)
 
   if (filtros.tagsPorTipo) {
     for (const ids of Object.values(filtros.tagsPorTipo)) {
@@ -172,20 +177,27 @@ export async function listarSeriesComFuros(
   supabase: SupabaseClient<any>,
   limite = 5
 ): Promise<SerieComFuros[]> {
-  const [{ data: series, error: errSeries }, { data: itens, error: errItens }] = await Promise.all([
-    supabase.from('series').select('id, nome, tipo, total_volumes'),
+  const [series, itens] = await Promise.all([
+    lerTodasAsLinhas((de, ate) =>
+      supabase.from('series').select('id, nome, tipo, total_volumes').order('id').range(de, ate)
+    ),
     // `estado` entra porque volume em `desejo` não conta como possuído no cálculo de furos.
-    supabase.from('itens').select('serie_id, numero_volume, estado').not('serie_id', 'is', null),
+    lerTodasAsLinhas((de, ate) =>
+      supabase
+        .from('itens')
+        .select('serie_id, numero_volume, estado')
+        .not('serie_id', 'is', null)
+        .order('id')
+        .range(de, ate)
+    ),
   ])
-  if (errSeries) throw new Error(errSeries.message)
-  if (errItens) throw new Error(errItens.message)
 
   const volumesPorSerie = agruparVolumesPorSerie(
-    (itens ?? []) as ({ serie_id: string } & VolumeParaFuros)[]
+    itens as ({ serie_id: string } & VolumeParaFuros)[]
   )
 
   const resultado: SerieComFuros[] = []
-  for (const serie of (series ?? []) as {
+  for (const serie of series as {
     id: string
     nome: string
     tipo: TipoObra

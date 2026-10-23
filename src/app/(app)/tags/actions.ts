@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { tagInputSchema } from '@/lib/schemas'
+import { lerTodasAsLinhas } from '@/lib/paginar'
 import type { TipoTag } from '@/lib/types'
 
 export async function createTag(input: { nome: string; tipo: TipoTag }) {
@@ -79,19 +80,20 @@ export async function mergeTags(sourceIds: string[], targetId: string) {
 
   const supabase = await createClient()
 
-  const { data: serieLinks } = await supabase
-    .from('serie_tags')
-    .select('serie_id')
-    .in('tag_id', ids)
-  const { data: itemLinks } = await supabase.from('item_tags').select('item_id').in('tag_id', ids)
+  const serieLinks = await lerTodasAsLinhas<{ serie_id: string }>((de, ate) =>
+    supabase.from('serie_tags').select('serie_id, tag_id').in('tag_id', ids).order('serie_id').order('tag_id').range(de, ate)
+  )
+  const itemLinks = await lerTodasAsLinhas<{ item_id: string }>((de, ate) =>
+    supabase.from('item_tags').select('item_id, tag_id').in('tag_id', ids).order('item_id').order('tag_id').range(de, ate)
+  )
 
-  if (serieLinks && serieLinks.length > 0) {
+  if (serieLinks.length > 0) {
     const rows = serieLinks.map((l) => ({ serie_id: l.serie_id, tag_id: targetId }))
     const { error } = await supabase.from('serie_tags').upsert(rows, { onConflict: 'serie_id,tag_id' })
     if (error) throw new Error(error.message)
   }
 
-  if (itemLinks && itemLinks.length > 0) {
+  if (itemLinks.length > 0) {
     const rows = itemLinks.map((l) => ({ item_id: l.item_id, tag_id: targetId }))
     const { error } = await supabase.from('item_tags').upsert(rows, { onConflict: 'item_id,tag_id' })
     if (error) throw new Error(error.message)
