@@ -30,6 +30,7 @@ import { criarVolumesEmLote } from '@/app/(app)/itens/actions'
 import { buscarCapasEmLote } from '@/lib/capa-lote'
 import type { EstadoItem } from '@/lib/types'
 import { desembrulhar } from '@/lib/resultado'
+import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
 
 const ESTADO_ITEMS = [
   { value: 'comprado', label: 'Comprado' },
@@ -80,6 +81,10 @@ export function CriarVolumesDialog({
 
   function handleCriar() {
     if (analise.bloqueado) return
+    if (estado !== 'desejo' && numeroInvalido(preco)) {
+      toast.error('Preço inválido')
+      return
+    }
     startTransition(async () => {
       try {
         const resumo = desembrulhar(await criarVolumesEmLote({
@@ -87,7 +92,7 @@ export function CriarVolumesDialog({
           numeros: analise.numeros,
           estado,
           prioridade: 0,
-          preco: estado !== 'desejo' && preco ? Number(preco) : null,
+          preco: estado !== 'desejo' ? parseNumeroPtBr(preco) : null,
           loja: estado !== 'desejo' ? loja || null : null,
           data_aquisicao: estado !== 'desejo' ? data || null : null,
           tagIds: [],

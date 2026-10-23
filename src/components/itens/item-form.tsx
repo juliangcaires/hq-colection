@@ -31,6 +31,7 @@ import { agruparTagsPorTipo, TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
 import type { EstadoItem, ItemComRelacoes, TagLite, TipoObra, TipoTag } from '@/lib/types'
 import { descreverFalhaProvedor, type CandidatoCapa, type ResultadoProvedor } from '@/lib/capa-busca'
 import { desembrulhar } from '@/lib/resultado'
+import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
 
 type SerieOpcao = { id: string; nome: string }
 
@@ -79,17 +80,21 @@ export function ItemForm({
       toast.error('Título obrigatório')
       return
     }
+    if (numeroInvalido(numeroVolume) || numeroInvalido(preco)) {
+      toast.error(numeroInvalido(numeroVolume) ? 'Número do volume inválido' : 'Preço inválido')
+      return
+    }
     startTransition(async () => {
       try {
         const input = {
           titulo: titulo.trim(),
           serie_id: serieId || null,
-          numero_volume: numeroVolume ? Number(numeroVolume) : null,
+          numero_volume: parseNumeroPtBr(numeroVolume),
           tipo,
           isbn: isbn || null,
           estado,
           prioridade: Number(prioridade) || 0,
-          preco: preco ? Number(preco) : null,
+          preco: parseNumeroPtBr(preco),
           loja: loja || null,
           data_aquisicao: dataAquisicao || null,
           nota: nota ? Number(nota) : null,

@@ -41,6 +41,7 @@ import { createItem, criarVolumesEmLote } from '@/app/(app)/itens/actions'
 import { buscarCapasEmLote } from '@/lib/capa-lote'
 import type { EstadoItem, TagLite, TipoObra } from '@/lib/types'
 import { desembrulhar } from '@/lib/resultado'
+import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
 
 const ESTADO_ITEMS = [
   { value: 'desejo', label: 'Desejo' },
@@ -222,6 +223,10 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
       toast.error('Escolha uma série ou preencha o título')
       return
     }
+    if (numeroInvalido(numeroVolume)) {
+      toast.error('Número do volume inválido')
+      return
+    }
 
     startTransition(async () => {
       try {
@@ -230,7 +235,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
         const itemId = desembrulhar(await createItem({
           titulo: tituloFinal,
           serie_id: serieId,
-          numero_volume: numeroVolume ? Number(numeroVolume) : null,
+          numero_volume: parseNumeroPtBr(numeroVolume),
           tipo,
           isbn: isbn.trim() || null,
           estado,

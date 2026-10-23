@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { marcarAdquiriEmLote } from '@/app/(app)/itens/actions'
 import { desembrulhar } from '@/lib/resultado'
+import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
 
 /**
  * Marca aquisição de um item ou de vários — é o mesmo diálogo porque os campos
@@ -35,10 +36,14 @@ export function AdquirirDialog({
   const lote = itemIds.length > 1
 
   function handleConfirm() {
+    if (numeroInvalido(preco)) {
+      toast.error('Preço inválido')
+      return
+    }
     startTransition(async () => {
       try {
         const afetados = desembrulhar(await marcarAdquiriEmLote(itemIds, {
-          preco: preco ? Number(preco) : null,
+          preco: parseNumeroPtBr(preco),
           loja: loja || null,
           data_aquisicao: data || null,
         }))
