@@ -70,7 +70,7 @@ export async function deleteTag(id: string) {
 export async function buscarTags(query: string) {
   const supabase = await createClient()
   let request = supabase.from('tags').select('id, nome, tipo, cor').order('nome').limit(30)
-  if (query.trim()) request = request.ilike('nome', `%${escaparLike(query.trim())}%`)
+  if (query.trim().slice(0, 100)) request = request.ilike('nome', `%${escaparLike(query.trim().slice(0, 100))}%`)
   const { data, error } = await request
   if (error) throw new Error(error.message)
   return data ?? []
@@ -85,7 +85,7 @@ export async function buscarTagsPorTipo(tipo: TipoTag, query: string) {
     .eq('tipo', tipo)
     .order('nome')
     .limit(30)
-  if (query.trim()) request = request.ilike('nome', `%${escaparLike(query.trim())}%`)
+  if (query.trim().slice(0, 100)) request = request.ilike('nome', `%${escaparLike(query.trim().slice(0, 100))}%`)
   const { data, error } = await request
   if (error) throw new Error(error.message)
   return data ?? []

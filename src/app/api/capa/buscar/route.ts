@@ -13,8 +13,8 @@ import { removerCapaAntiga } from '@/lib/supabase/capas'
 
 const bodySchema = z.object({
   itemId: z.string().uuid(),
-  isbn: z.string().trim().optional().nullable(),
-  titulo: z.string().trim().min(1),
+  isbn: z.string().trim().max(20).optional().nullable(),
+  titulo: z.string().trim().min(1).max(300),
   tipo: z.enum(['hq', 'manga']),
 })
 

@@ -150,8 +150,8 @@ export async function buscarSeries(query: string, editoraTagId?: string) {
       .map((r) => r.series)
       .filter((s): s is BuscarSerieRow => Boolean(s))
 
-    if (query.trim()) {
-      const q = query.trim().toLowerCase()
+    if (query.trim().slice(0, 100)) {
+      const q = query.trim().slice(0, 100).toLowerCase()
       series = series.filter((s) => s.nome.toLowerCase().includes(q))
     }
     series.sort((a, b) => a.nome.localeCompare(b.nome))
@@ -164,8 +164,8 @@ export async function buscarSeries(query: string, editoraTagId?: string) {
     .order('nome')
     .limit(20)
 
-  if (query.trim()) {
-    request = request.ilike('nome', `%${escaparLike(query.trim())}%`)
+  if (query.trim().slice(0, 100)) {
+    request = request.ilike('nome', `%${escaparLike(query.trim().slice(0, 100))}%`)
   }
 
   const { data, error } = await request
@@ -265,8 +265,8 @@ export async function buscarItensParaSerie(
     request = request.is('serie_id', null)
   }
 
-  if (query.trim()) {
-    request = request.ilike('titulo', `%${escaparLike(query.trim())}%`)
+  if (query.trim().slice(0, 100)) {
+    request = request.ilike('titulo', `%${escaparLike(query.trim().slice(0, 100))}%`)
   }
 
   if (tipo) request = request.eq('tipo', tipo)
@@ -534,7 +534,7 @@ export type SerieListada = {
 
 export async function listarSeries(query: string): Promise<SerieListada[]> {
   const supabase = await createClient()
-  const termo = query.trim()
+  const termo = query.trim().slice(0, 100)
 
   // Uma consulta rasa para TODOS os volumes em vez de uma por série (mesmo
   // desenho de `listarSeriesComFuros`): a busca aqui roda a cada tecla digitada.
