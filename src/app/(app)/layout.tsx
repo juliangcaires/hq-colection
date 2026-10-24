@@ -6,9 +6,9 @@ import { QuickAddButton } from '@/components/quick-add/quick-add-button'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // Só para mostrar o e-mail: o proxy já exigiu sessão válida, então basta ler o JWT verificado.
+  const { data } = await supabase.auth.getClaims()
+  const email = typeof data?.claims.email === 'string' ? data.claims.email : undefined
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <NavLinks className="hidden gap-5 text-sm text-muted-foreground sm:flex" />
           </div>
           <div className="flex items-center gap-3">
-            <span className="hidden text-xs text-muted-foreground sm:inline">{user?.email}</span>
+            <span className="hidden text-xs text-muted-foreground sm:inline">{email}</span>
             <form action={signOut}>
               <button className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
                 Sair

@@ -25,9 +25,12 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // `getClaims` valida a assinatura do JWT localmente (chave pública em cache, ~1 ms) e só vai à
+  // rede para renovar um token expirado; `getUser` custava uma ida ao Auth (~60 ms) a cada
+  // navegação. Contrapartida: um logout feito em outro aparelho só é notado quando o token
+  // expirar (padrão 1 h) — as Server Actions seguem usando `getUser` e a RLS vale sempre.
+  const { data } = await supabase.auth.getClaims()
+  const user = data?.claims ?? null
 
   const isPublicPath = PUBLIC_PATHS.some((path) => request.nextUrl.pathname.startsWith(path))
 
