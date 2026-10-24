@@ -52,7 +52,7 @@ export function ColecaoFilters({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [busca, setBusca] = useState(searchParams.get('busca') ?? '')
-  const [, startTransition] = useTransition()
+  const [isPending, startTransition] = useTransition()
 
   function setParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString())
@@ -81,7 +81,14 @@ export function ColecaoFilters({
   const serieId = searchParams.get('serie')
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3">
+    <div
+      className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3"
+      aria-busy={isPending}
+    >
+      {/* A lista é renderizada no servidor: sem isto, filtrar parece não fazer nada até a resposta chegar. */}
+      {isPending && (
+        <div role="status" aria-label="Carregando" className="fixed inset-x-0 top-0 z-50 h-0.5 animate-pulse bg-primary" />
+      )}
       <Input
         placeholder="Buscar por título..."
         value={busca}
@@ -172,7 +179,7 @@ export function ColecaoFilters({
         </Button>
       )}
 
-      <Button variant="ghost" size="sm" onClick={() => router.push(pathname)}>
+      <Button variant="ghost" size="sm" onClick={() => startTransition(() => router.push(pathname))}>
         Limpar filtros
       </Button>
     </div>
