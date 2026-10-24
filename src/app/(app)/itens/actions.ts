@@ -17,7 +17,7 @@ import {
 import type { TipoObra } from '@/lib/types'
 import { baixarEPersistirCapa, type CandidatoCapa } from '@/lib/capa-busca'
 import { normalizarTermoBusca } from '@/lib/capa-termo'
-import { removerCapaAntiga } from '@/lib/supabase/capas'
+import { novoCaminhoDeCapa, removerCapaAntiga } from '@/lib/supabase/capas'
 
 const LIMITE_CAPA_BYTES = 5 * 1024 * 1024
 const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
@@ -319,14 +319,14 @@ async function uploadCapaManualImpl(itemId: string, formData: FormData) {
   }
 
   const ext = EXT_POR_MIME[file.type]
-  const path = `${user.id}/${itemId}.${ext}`
+  const path = novoCaminhoDeCapa(user.id, itemId, ext)
 
   const { data: atual } = await supabase.from('itens').select('capa_url').eq('id', itemId).maybeSingle()
   if (!atual) throw new ErroDeNegocio('Item não encontrado')
 
   const { error: uploadError } = await supabase.storage
     .from('capas')
-    .upload(path, file, { upsert: true, contentType: file.type })
+    .upload(path, file, { contentType: file.type })
   if (uploadError) throw new Error(uploadError.message)
 
   const { error: updateError } = await supabase

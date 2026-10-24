@@ -15,7 +15,7 @@ export function ItemCard({ item, capaUrl }: { item: ItemComRelacoes; capaUrl: st
         }`}
       >
         {capaUrl ? (
-          <Image
+          <Image unoptimized
             src={capaUrl}
             alt={item.titulo}
             fill

@@ -9,6 +9,7 @@ import {
   type Provedor,
 } from '@/lib/capa-busca'
 import { normalizarTermoBusca } from '@/lib/capa-termo'
+import { removerCapaAntiga } from '@/lib/supabase/capas'
 
 const bodySchema = z.object({
   itemId: z.string().uuid(),
@@ -43,12 +44,13 @@ export async function POST(req: NextRequest) {
 
   const { data: item } = await supabase
     .from('itens')
-    .select('id, user_id, numero_volume, serie:series(id, nome, busca_termo, busca_provedor, busca_ref)')
+    .select('id, user_id, numero_volume, capa_url, serie:series(id, nome, busca_termo, busca_provedor, busca_ref)')
     .eq('id', itemId)
     .maybeSingle<{
       id: string
       user_id: string
       numero_volume: number | null
+      capa_url: string | null
       serie: SerieRow | null
     }>()
 
@@ -74,6 +76,7 @@ export async function POST(req: NextRequest) {
       const path = await baixarEPersistirCapa(supabase, user.id, itemId, resultado.url)
       if (path) {
         await supabase.from('itens').update({ capa_url: path, capa_origem: 'api' }).eq('id', itemId)
+        await removerCapaAntiga(supabase, item.capa_url, path)
         if (item.serie) {
           await supabase
             .from('series')

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { listarItem } from '@/lib/queries'
-import { getSignedCapaUrls } from '@/lib/supabase/capas'
+import { urlsDeCapas } from '@/lib/supabase/capas'
 import { ItemForm } from '@/components/itens/item-form'
 import { uuidOuNull } from '@/lib/filtros-url'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
@@ -16,7 +16,7 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
 
   const [{ data: seriesData }, capaMap] = await Promise.all([
     supabase.from('series').select('id, nome').order('nome'),
-    getSignedCapaUrls(supabase, [item.capa_url]),
+    urlsDeCapas([item.capa_url]),
   ])
 
   const capaUrl = capaMap.get(item.capa_url ?? '') ?? null

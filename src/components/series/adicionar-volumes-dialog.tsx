@@ -310,7 +310,7 @@ export function AdicionarVolumesDialog({
                   />
                   <div className="relative h-12 w-8 shrink-0 overflow-hidden rounded bg-card ring-1 ring-border">
                     {item.capaUrl && (
-                      <Image src={item.capaUrl} alt="" fill sizes="32px" className="object-cover" />
+                      <Image unoptimized src={item.capaUrl} alt="" fill sizes="32px" className="object-cover" />
                     )}
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col">

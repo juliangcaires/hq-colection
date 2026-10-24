@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { listarItens } from '@/lib/queries'
-import { getSignedCapaUrls } from '@/lib/supabase/capas'
+import { urlsDeCapas } from '@/lib/supabase/capas'
 import { calcularVolumesFaltantes, serieEstaCompleta } from '@/lib/volumes'
 import { uuidOuNull } from '@/lib/filtros-url'
 import { Badge } from '@/components/ui/badge'
@@ -34,9 +34,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
     supabase.from('tags').select('id, nome, tipo, cor').order('nome'),
   ])
 
-  const capaMap = await getSignedCapaUrls(
-    supabase,
-    itens.map((i) => i.capa_url)
+  const capaMap = urlsDeCapas(itens.map((i) => i.capa_url)
   )
 
   const tagIds = (serie.serie_tags ?? []).map((st: { tag_id: string }) => st.tag_id)

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { TipoObra } from '@/lib/types'
 import type { TermoBusca } from '@/lib/capa-termo'
+import { novoCaminhoDeCapa } from '@/lib/supabase/capas'
 
 export type Provedor = 'google_books' | 'open_library' | 'anilist' | 'mangadex'
 
@@ -432,7 +433,7 @@ export async function baixarEPersistirCapa(
   try {
     const baixada = await baixarImagemSegura(imageUrl)
     if (!baixada) return null
-    const path = `${userId}/${itemId}.${EXT_POR_MIME[baixada.mime]}`
+    const path = novoCaminhoDeCapa(userId, itemId, EXT_POR_MIME[baixada.mime])
     const { error } = await supabase.storage
       .from('capas')
       .upload(path, baixada.buffer, { upsert: true, contentType: baixada.mime })

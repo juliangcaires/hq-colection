@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
-import { getSignedCapaUrls } from '@/lib/supabase/capas'
+import { urlsDeCapas } from '@/lib/supabase/capas'
 import { agruparVolumesPorSerie } from '@/lib/queries'
 import { lerTodasAsLinhas } from '@/lib/paginar'
 import { calcularVolumesFaltantes, serieEstaCompleta, type VolumeParaFuros } from '@/lib/volumes'
@@ -285,9 +285,7 @@ export async function buscarItensParaSerie(
   type Row = Omit<ItemCandidato, 'capaUrl'> & { capa_url: string | null }
   const rows = (data ?? []) as unknown as Row[]
 
-  const capaMap = await getSignedCapaUrls(
-    supabase,
-    rows.map((r) => r.capa_url)
+  const capaMap = urlsDeCapas(rows.map((r) => r.capa_url)
   )
 
   return {

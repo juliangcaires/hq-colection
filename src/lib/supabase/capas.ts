@@ -1,22 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-const EXPIRA_EM_SEGUNDOS = 60 * 60 // 1h — bucket 'capas' é privado
+/** Nome único por gravação: o conteúdo de um arquivo nunca muda, então o navegador pode guardá-lo para sempre. */
+export function novoCaminhoDeCapa(userId: string, itemId: string, ext: string): string {
+  return `${userId}/${itemId}-${Date.now()}.${ext}`
+}
 
-/** Gera signed URLs em lote para paths salvos em itens.capa_url (bucket privado). */
-export async function getSignedCapaUrls(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: SupabaseClient<any>,
-  paths: (string | null)[]
-): Promise<Map<string, string>> {
-  const validPaths = Array.from(new Set(paths.filter((p): p is string => Boolean(p))))
-  if (validPaths.length === 0) return new Map()
-
-  const { data, error } = await supabase.storage.from('capas').createSignedUrls(validPaths, EXPIRA_EM_SEGUNDOS)
-  if (error) return new Map()
-
+/**
+ * URL estável (`/api/capa/<arquivo>`) de cada caminho salvo em `itens.capa_url`.
+ * Substitui as signed URLs, que mudavam a cada renderização (cache do navegador sempre perdia),
+ * custavam uma chamada ao Storage por página e falhavam em silêncio com muitos itens.
+ */
+export function urlsDeCapas(paths: (string | null)[]): Map<string, string> {
   const map = new Map<string, string>()
-  for (const item of data ?? []) {
-    if (item.path && item.signedUrl) map.set(item.path, item.signedUrl)
+  for (const path of paths) {
+    if (path) map.set(path, `/api/capa/${path.split('/').pop()}`)
   }
   return map
 }

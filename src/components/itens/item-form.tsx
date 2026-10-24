@@ -208,7 +208,7 @@ export function ItemForm({
       <div className="flex gap-4">
         <div className="relative h-40 w-28 flex-shrink-0 overflow-hidden rounded-md bg-neutral-800">
           {capaUrl ? (
-            <Image src={capaUrl} alt={titulo} fill sizes="112px" className="object-cover" />
+            <Image unoptimized src={capaUrl} alt={titulo} fill sizes="112px" className="object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center text-center text-xs text-neutral-500">
               sem capa

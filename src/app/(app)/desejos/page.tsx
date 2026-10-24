@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { listarItens } from '@/lib/queries'
-import { getSignedCapaUrls } from '@/lib/supabase/capas'
+import { urlsDeCapas } from '@/lib/supabase/capas'
 import { ColecaoFilters } from '@/components/itens/colecao-filters'
 import { DesejosLista } from '@/components/itens/desejos-lista'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
@@ -38,9 +38,7 @@ export default async function DesejosPage({
     supabase.from('tags').select('id, nome, tipo, cor').order('nome'),
   ])
 
-  const capaMap = await getSignedCapaUrls(
-    supabase,
-    itens.map((i) => i.capa_url)
+  const capaMap = urlsDeCapas(itens.map((i) => i.capa_url)
   )
 
   const series = (seriesData ?? []).map((s) => ({
