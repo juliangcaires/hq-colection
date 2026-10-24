@@ -7,9 +7,9 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AdquirirButton, AdquirirDialog } from '@/components/itens/adquirir-button'
-import type { ItemComRelacoes } from '@/lib/types'
+import type { ItemDeLista } from '@/lib/queries'
 
-type ItemDesejo = Pick<ItemComRelacoes, 'id' | 'titulo' | 'prioridade' | 'capa_url' | 'serie'>
+type ItemDesejo = ItemDeLista
 
 export function DesejosLista({
   itens,

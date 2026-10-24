@@ -1,8 +1,8 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import type { ItemComRelacoes } from '@/lib/types'
+import type { ItemDeLista } from '@/lib/queries'
 
-export function ItemCard({ item, capaUrl }: { item: ItemComRelacoes; capaUrl: string | null }) {
+export function ItemCard({ item, capaUrl }: { item: ItemDeLista; capaUrl: string | null }) {
   const isDesejo = item.estado === 'desejo'
   const isLido = item.estado === 'lido'
   const mostrarNumero = Boolean(item.serie?.tem_numeracao) && item.numero_volume !== null

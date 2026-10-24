@@ -36,3 +36,13 @@ export function lerFiltrosDaUrl(params: Record<string, string | undefined>): Fil
     tagsPorTipo,
   }
 }
+
+export const ITENS_POR_PAGINA = 60
+const LIMITE_MAXIMO = 3000
+
+/** `?limite=` do "carregar mais": inteiro entre uma página e o teto; qualquer outra coisa vale uma página. */
+export function lerLimite(valor: string | undefined): number {
+  const n = Number(valor)
+  if (!Number.isInteger(n) || n < ITENS_POR_PAGINA) return ITENS_POR_PAGINA
+  return Math.min(n, LIMITE_MAXIMO)
+}
