@@ -19,7 +19,8 @@ import { baixarEPersistirCapa, type CandidatoCapa } from '@/lib/capa-busca'
 import { normalizarTermoBusca } from '@/lib/capa-termo'
 import { removerCapaAntiga } from '@/lib/supabase/capas'
 
-const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }
+const LIMITE_CAPA_BYTES = 5 * 1024 * 1024
+const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
 
 function revalidateListagens(itemId?: string) {
@@ -310,11 +311,14 @@ async function uploadCapaManualImpl(itemId: string, formData: FormData) {
   if (!(file instanceof File) || file.size === 0) {
     throw new ErroDeNegocio('Arquivo inválido')
   }
-  if (!file.type.startsWith('image/')) {
-    throw new ErroDeNegocio('Envie um arquivo de imagem')
+  if (!EXT_POR_MIME[file.type]) {
+    throw new ErroDeNegocio('Envie uma imagem JPEG, PNG ou WebP')
+  }
+  if (file.size > LIMITE_CAPA_BYTES) {
+    throw new ErroDeNegocio('A imagem passa de 5 MB')
   }
 
-  const ext = EXT_POR_MIME[file.type] ?? 'jpg'
+  const ext = EXT_POR_MIME[file.type]
   const path = `${user.id}/${itemId}.${ext}`
 
   const { data: atual } = await supabase.from('itens').select('capa_url').eq('id', itemId).maybeSingle()
