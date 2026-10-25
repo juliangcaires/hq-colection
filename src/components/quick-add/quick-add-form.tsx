@@ -33,6 +33,7 @@ import {
 import {
   buscarSeries,
   createSerie,
+  deleteSerie,
   resumoVolumesDaSerie,
   type ResumoVolumesDaSerie,
 } from '@/app/(app)/series/actions'
@@ -157,7 +158,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
   })
 
   /** Cria a série nova, se for o caso, e devolve o id para o fluxo seguir. */
-  async function resolverSerieId(): Promise<{ serieId: string | null; tipo: TipoObra }> {
+  async function resolverSerieId(): Promise<{ serieId: string | null; tipo: TipoObra; criada: boolean }> {
     if (serieSelecionada && 'novo' in serieSelecionada) {
       const id = desembrulhar(await createSerie({
         nome: serieSelecionada.nome,
@@ -167,17 +168,31 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
         tem_numeracao: false,
         tagIds: editoraSelecionada.map((t) => t.id),
       }))
-      return { serieId: id, tipo: tipoSelecionado }
+      return { serieId: id, tipo: tipoSelecionado, criada: true }
     }
-    if (serieSelecionada) return { serieId: serieSelecionada.id, tipo: serieSelecionada.tipo }
-    return { serieId: null, tipo: tipoSelecionado }
+    if (serieSelecionada) return { serieId: serieSelecionada.id, tipo: serieSelecionada.tipo, criada: false }
+    return { serieId: null, tipo: tipoSelecionado, criada: false }
+  }
+
+  /**
+   * A série nova e o item/volumes são duas chamadas. Se a segunda falha, a série recém-criada
+   * (que ainda não tem nada dentro) é apagada, para não sobrar série vazia a cada tentativa.
+   */
+  async function desfazerSerieNova(serieId: string) {
+    try {
+      await deleteSerie(serieId)
+    } catch {
+      // sem rede: a série vazia pode ser apagada depois na tela de séries
+    }
   }
 
   function handleSubmitVarios() {
     if (analiseVolumes.bloqueado) return
     startTransition(async () => {
+      let serieNovaId: string | null = null
       try {
-        const { serieId } = await resolverSerieId()
+        const { serieId, criada } = await resolverSerieId()
+        if (criada) serieNovaId = serieId
         if (!serieId) throw new Error('Escolha uma série para adicionar vários volumes')
 
         const resumo = desembrulhar(await criarVolumesEmLote({
@@ -187,6 +202,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
           prioridade: Number(prioridade) || 0,
           tagIds: tagsExtras.map((t) => t.id),
         }))
+        serieNovaId = null // já tem conteúdo: não pode mais ser desfeita
 
         toast.success(`${resumo.criados.length} volume(s) adicionados`)
         if (resumo.ignorados.length > 0) {
@@ -203,6 +219,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
           }
         }
       } catch (e) {
+        if (serieNovaId) await desfazerSerieNova(serieNovaId)
         toast.error(e instanceof Error ? e.message : 'Erro ao adicionar volumes')
       }
     })
@@ -229,8 +246,10 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
     }
 
     startTransition(async () => {
+      let serieNovaId: string | null = null
       try {
-        const { serieId, tipo } = await resolverSerieId()
+        const { serieId, tipo, criada } = await resolverSerieId()
+        if (criada) serieNovaId = serieId
 
         const itemId = desembrulhar(await createItem({
           titulo: tituloFinal,
@@ -242,6 +261,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
           prioridade: Number(prioridade) || 0,
           tagIds: tagsExtras.map((t) => t.id),
         }))
+        serieNovaId = null // o item existe: a série deixou de ser órfã
 
         // Busca de capa — a resposta agora é lida: candidatos não são mais
         // descartados em silêncio quando não há ISBN.
@@ -270,6 +290,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
         }
         onDone()
       } catch (e) {
+        if (serieNovaId) await desfazerSerieNova(serieNovaId)
         toast.error(e instanceof Error ? e.message : 'Erro ao adicionar item')
       }
     })
