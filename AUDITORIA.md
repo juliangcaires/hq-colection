@@ -357,13 +357,13 @@ Legenda: ✅ corrigido e retestado · 🟡 corrigido no código, **falta você r
 | B-06 | ✅ | `lib/numeros.ts` (vírgula decimal) |
 | B-07 | ✅ | "Hoje" em `America/Sao_Paulo` |
 | B-09 | ✅ | Capa antiga removida ao trocar/excluir; nome de arquivo único por gravação |
-| B-10 | ⏳ | Precisa de função SQL transacional (sugestão: `0007`) |
+| B-10 | ✅ | Migration `0007`: `item_salvar`, `serie_salvar`, `tags_mesclar`, `volumes_criar_em_lote` (transação única, `security invoker`). Retestado no banco real, inclusive 4 pedidos simultâneos de volumes. Fica de fora: série+item criados juntos no quick-add (dois passos) |
 | B-11 | ✅ | Update/delete de algo alheio/inexistente → "não encontrado" |
 | B-12 | ◐ | `marcarAdquiriEmLote` só em desejos; `marcarLido` removido. `mergeTags` entre tipos diferentes ficou como está |
 | P-01 | ◐ | Barra de carregamento nos filtros. `loading.tsx` global foi **testado e descartado** (o React segura a troca ~300 ms: 143 → 333 ms) |
 | P-02 | ✅ | Consulta enxuta, "carregar mais" (60), rota `/api/capa/<arquivo>` com cache imutável |
 | P-03 | ✅ | `getClaims()` no proxy e no layout; actions seguem com `getUser()` |
-| P-04 | ⏳ | Busca de séries e Início ainda leem todos os volumes (agora paginado). Solução: agregado em SQL |
+| P-04 | ✅ | `series_com_resumo` (0007): furos e "completa" calculados no SQL; paridade com `volumes.ts` testada (150 séries aleatórias) |
 | P-05 | 🟡 | Índices e `(select auth.uid())`: migration `0006` |
 | I-03 | ◐ | 27 testes unitários (`npm test`). Faltam testes de integração/RLS no repositório |
 
@@ -385,5 +385,5 @@ Descoberta durante a correção: com mais de ~1000 itens a Coleção não exibia
 1. **Rodar no SQL Editor do Supabase, nesta ordem:** `supabase/migrations/0005_remove_view_tags_efetivas.sql` e `0006_integridade_indices_e_limites.sql`.
 2. Remover `SUPABASE_SERVICE_ROLE_KEY` do `.env.local` e das variáveis da Netlify.
 3. Decidir o cadastro aberto: Turnstile (precisa de chaves) ou fechar a criação de contas.
-4. Opcional: B-10 (RPC transacional) e P-04 (agregados em SQL) numa migration `0007`.
-5. Depois do passo 1: reteste de RLS e limpeza dos usuários `audit-*` de teste.
+4. Cadastro aberto continua sem confirmação de e-mail (confirmado em teste).
+5. Migrations `0005`, `0006` e `0007` aplicadas e retestadas; contas `audit-*` de teste removidas.

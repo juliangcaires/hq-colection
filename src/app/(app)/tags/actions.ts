@@ -5,9 +5,10 @@ import { createClient } from '@/lib/supabase/server'
 import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
 import { tagInputSchema } from '@/lib/schemas'
-import { lerTodasAsLinhas } from '@/lib/paginar'
 import type { TipoTag } from '@/lib/types'
 import { escaparLike } from '@/lib/like'
+import { lancarErroRpc } from '@/lib/rpc'
+import { z } from 'zod'
 
 async function createTagImpl(input: { nome: string; tipo: TipoTag }) {
   const parsed = tagInputSchema.parse(input)
@@ -93,32 +94,15 @@ export async function buscarTagsPorTipo(tipo: TipoTag, query: string) {
 
 /** Reatribui todos os vínculos (série e item) das tags de origem para a tag de destino, depois apaga as de origem. */
 async function mergeTagsImpl(sourceIds: string[], targetId: string) {
-  const ids = sourceIds.filter((id) => id !== targetId)
-  if (ids.length === 0) return
+  const origens = z.array(z.string().uuid()).max(200).parse(sourceIds)
+  const destino = z.string().uuid().parse(targetId)
+  if (origens.every((id) => id === destino)) return
 
   const supabase = await createClient()
-
-  const serieLinks = await lerTodasAsLinhas<{ serie_id: string }>((de, ate) =>
-    supabase.from('serie_tags').select('serie_id, tag_id').in('tag_id', ids).order('serie_id').order('tag_id').range(de, ate)
-  )
-  const itemLinks = await lerTodasAsLinhas<{ item_id: string }>((de, ate) =>
-    supabase.from('item_tags').select('item_id, tag_id').in('tag_id', ids).order('item_id').order('tag_id').range(de, ate)
-  )
-
-  if (serieLinks.length > 0) {
-    const rows = serieLinks.map((l) => ({ serie_id: l.serie_id, tag_id: targetId }))
-    const { error } = await supabase.from('serie_tags').upsert(rows, { onConflict: 'serie_id,tag_id' })
-    if (error) throw new Error(error.message)
-  }
-
-  if (itemLinks.length > 0) {
-    const rows = itemLinks.map((l) => ({ item_id: l.item_id, tag_id: targetId }))
-    const { error } = await supabase.from('item_tags').upsert(rows, { onConflict: 'item_id,tag_id' })
-    if (error) throw new Error(error.message)
-  }
-
-  const { error: deleteError } = await supabase.from('tags').delete().in('id', ids)
-  if (deleteError) throw new Error(deleteError.message)
+  // Reaponta série/item e apaga as tags de origem numa transação só (migration 0007):
+  // antes, uma falha no meio deixava vínculos copiados e tags ainda existentes.
+  const { error } = await supabase.rpc('tags_mesclar', { p_origens: origens, p_destino: destino })
+  if (error) lancarErroRpc(error)
 
   revalidatePath('/tags')
   revalidatePath('/colecao')
