@@ -6,9 +6,8 @@ import { createClient } from '@/lib/supabase/server'
 import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
 import { urlsDeCapas } from '@/lib/supabase/capas'
-import { agruparVolumesPorSerie } from '@/lib/queries'
 import { lerTodasAsLinhas } from '@/lib/paginar'
-import { calcularVolumesFaltantes, serieEstaCompleta, type VolumeParaFuros } from '@/lib/volumes'
+import { calcularVolumesFaltantes, type VolumeParaFuros } from '@/lib/volumes'
 import {
   itensComNumeroSchema,
   itensDaSerieSchema,
@@ -17,6 +16,18 @@ import {
 } from '@/lib/schemas'
 import type { EstadoItem, TipoObra, TipoTag } from '@/lib/types'
 import { escaparLike } from '@/lib/like'
+import { lancarErroRpc } from '@/lib/rpc'
+
+function dadosDaSerie(p: SerieInput) {
+  return {
+    nome: p.nome,
+    tipo: p.tipo,
+    total_volumes: p.total_volumes ?? null,
+    em_publicacao: p.em_publicacao,
+    tem_numeracao: p.tem_numeracao,
+    observacoes: p.observacoes || null,
+  }
+}
 
 async function createSerieImpl(input: SerieInput) {
   const parsed = serieInputSchema.parse(input)
@@ -26,32 +37,17 @@ async function createSerieImpl(input: SerieInput) {
   } = await supabase.auth.getUser()
   if (!user) throw new ErroDeNegocio('Não autenticado')
 
-  const { data: serie, error } = await supabase
-    .from('series')
-    .insert({
-      user_id: user.id,
-      nome: parsed.nome,
-      tipo: parsed.tipo,
-      total_volumes: parsed.total_volumes ?? null,
-      em_publicacao: parsed.em_publicacao,
-      tem_numeracao: parsed.tem_numeracao,
-      observacoes: parsed.observacoes || null,
-    })
-    .select('id')
-    .single()
-
-  if (error) throw new Error(error.message)
-
-  if (parsed.tagIds.length > 0) {
-    const rows = parsed.tagIds.map((tag_id) => ({ serie_id: serie.id, tag_id }))
-    const { error: tagError } = await supabase.from('serie_tags').insert(rows)
-    if (tagError) throw new Error(tagError.message)
-  }
+  const { data, error } = await supabase.rpc('serie_salvar', {
+    p_id: null,
+    p_dados: dadosDaSerie(parsed),
+    p_tag_ids: parsed.tagIds,
+  })
+  if (error) lancarErroRpc(error)
 
   revalidatePath('/colecao')
   revalidatePath('/desejos')
   revalidatePath('/series')
-  return serie.id as string
+  return data as string
 }
 
 export async function createSerie(input: SerieInput) {
@@ -60,37 +56,20 @@ export async function createSerie(input: SerieInput) {
 
 async function updateSerieImpl(id: string, input: SerieInput) {
   const parsed = serieInputSchema.parse(input)
+  const serieId = z.string().uuid().parse(id)
   const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from('series')
-    .update({
-      nome: parsed.nome,
-      tipo: parsed.tipo,
-      total_volumes: parsed.total_volumes ?? null,
-      em_publicacao: parsed.em_publicacao,
-      tem_numeracao: parsed.tem_numeracao,
-      observacoes: parsed.observacoes || null,
-    })
-    .eq('id', id)
-    .select('id')
-
-  if (error) throw new Error(error.message)
-  if (!data || data.length === 0) throw new ErroDeNegocio('Série não encontrada')
-
-  const { error: clearError } = await supabase.from('serie_tags').delete().eq('serie_id', id)
-  if (clearError) throw new Error(clearError.message)
-
-  if (parsed.tagIds.length > 0) {
-    const rows = parsed.tagIds.map((tag_id) => ({ serie_id: id, tag_id }))
-    const { error: tagError } = await supabase.from('serie_tags').insert(rows)
-    if (tagError) throw new Error(tagError.message)
-  }
+  const { error } = await supabase.rpc('serie_salvar', {
+    p_id: serieId,
+    p_dados: dadosDaSerie(parsed),
+    p_tag_ids: parsed.tagIds,
+  })
+  if (error) lancarErroRpc(error)
 
   revalidatePath('/colecao')
   revalidatePath('/desejos')
   revalidatePath('/series')
-  revalidatePath(`/serie/${id}`)
+  revalidatePath(`/serie/${serieId}`)
 }
 
 export async function updateSerie(id: string, input: SerieInput) {
@@ -536,40 +515,21 @@ export async function listarSeries(query: string): Promise<SerieListada[]> {
   const supabase = await createClient()
   const termo = query.trim().slice(0, 100)
 
-  // Uma consulta rasa para TODOS os volumes em vez de uma por série (mesmo
-  // desenho de `listarSeriesComFuros`): a busca aqui roda a cada tecla digitada.
-  const [data, itens] = await Promise.all([
-    lerTodasAsLinhas((de, ate) => {
-      let request = supabase
-        .from('series')
-        .select('id, nome, tipo, total_volumes, em_publicacao, tem_numeracao')
-        .order('nome')
-        .order('id')
-      if (termo) request = request.ilike('nome', `%${escaparLike(termo)}%`)
-      return request.range(de, ate)
-    }),
-    lerTodasAsLinhas((de, ate) =>
-      supabase
-        .from('itens')
-        .select('serie_id, numero_volume, estado')
-        .not('serie_id', 'is', null)
-        .order('id')
-        .range(de, ate)
-    ),
-  ])
+  // Furos e "completa" são calculados no banco (função `series_com_resumo`, migration 0007):
+  // antes cada tecla digitada baixava todos os volumes da coleção.
+  const { data, error } = await supabase.rpc('series_com_resumo', {
+    p_padrao: termo ? `%${escaparLike(termo)}%` : null,
+  })
+  if (error) throw new Error(error.message)
 
-  const volumesPorSerie = agruparVolumesPorSerie(
-    itens as ({ serie_id: string } & VolumeParaFuros)[]
-  )
-
-  return ((data) as (Omit<SerieListada, 'completa'> & { tem_numeracao: boolean })[]).map(
-    ({ tem_numeracao, ...serie }) => ({
-      ...serie,
-      completa: serieEstaCompleta({
-        totalVolumes: serie.total_volumes,
-        temNumeracao: tem_numeracao,
-        volumes: volumesPorSerie.get(serie.id) ?? [],
-      }),
+  return ((data ?? []) as (Omit<SerieListada, 'completa'> & { completa: boolean; tem_numeracao: boolean })[]).map(
+    ({ id, nome, tipo, total_volumes, em_publicacao, completa }) => ({
+      id,
+      nome,
+      tipo,
+      total_volumes,
+      em_publicacao,
+      completa,
     })
   )
 }

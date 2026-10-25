@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EstadoItem, ItemComRelacoes, Tag, TipoObra, TipoTag } from '@/lib/types'
-import { calcularVolumesFaltantes, type VolumeParaFuros } from '@/lib/volumes'
 import { lerTodasAsLinhas, TAMANHO_PAGINA } from '@/lib/paginar'
 import { escaparLike } from '@/lib/like'
 
@@ -261,65 +260,21 @@ export type SerieComFuros = {
 }
 
 /**
- * Indexa por série o resultado de uma consulta rasa de volumes
- * (`select('serie_id, numero_volume, estado')`), que é como o dashboard e a
- * tela de Séries evitam N+1: uma consulta só para todos os itens, agrupada aqui.
- */
-export function agruparVolumesPorSerie(
-  itens: ({ serie_id: string } & VolumeParaFuros)[]
-): Map<string, VolumeParaFuros[]> {
-  const porSerie = new Map<string, VolumeParaFuros[]>()
-  for (const item of itens) {
-    const lista = porSerie.get(item.serie_id) ?? []
-    lista.push({ numero_volume: item.numero_volume, estado: item.estado })
-    porSerie.set(item.serie_id, lista)
-  }
-  return porSerie
-}
-
-/**
- * Séries do usuário que têm furos (volumes faltantes), para o atalho "o que
- * comprar a seguir" do dashboard. Duas consultas leves (sem tags/capa) — sem
- * N+1: busca todas as séries e todos os itens com serie_id de uma vez e
- * agrupa em memória, reaproveitando `calcularVolumesFaltantes`.
+ * Séries do usuário que têm furos (volumes faltantes), para o atalho "o que comprar a seguir" do
+ * dashboard. O cálculo roda no banco (`series_com_resumo`, migration 0007) com a mesma regra de
+ * `calcularVolumesFaltantes`; só as séries com furo voltam para o app, as com menos furos primeiro.
  */
 export async function listarSeriesComFuros(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any>,
   limite = 5
 ): Promise<SerieComFuros[]> {
-  const [series, itens] = await Promise.all([
-    lerTodasAsLinhas((de, ate) =>
-      supabase.from('series').select('id, nome, tipo, total_volumes').order('id').range(de, ate)
-    ),
-    // `estado` entra porque volume em `desejo` não conta como possuído no cálculo de furos.
-    lerTodasAsLinhas((de, ate) =>
-      supabase
-        .from('itens')
-        .select('serie_id, numero_volume, estado')
-        .not('serie_id', 'is', null)
-        .order('id')
-        .range(de, ate)
-    ),
-  ])
+  const { data, error } = await supabase.rpc('series_com_resumo', { p_padrao: null })
+  if (error) throw new Error(error.message)
 
-  const volumesPorSerie = agruparVolumesPorSerie(
-    itens as ({ serie_id: string } & VolumeParaFuros)[]
-  )
-
-  const resultado: SerieComFuros[] = []
-  for (const serie of series as {
-    id: string
-    nome: string
-    tipo: TipoObra
-    total_volumes: number | null
-  }[]) {
-    const faltantes = calcularVolumesFaltantes(volumesPorSerie.get(serie.id) ?? [], serie.total_volumes)
-    if (faltantes.length > 0) {
-      resultado.push({ id: serie.id, nome: serie.nome, tipo: serie.tipo, faltantes })
-    }
-  }
-
-  resultado.sort((a, b) => a.faltantes.length - b.faltantes.length)
-  return resultado.slice(0, limite)
+  return ((data ?? []) as (SerieComFuros & { completa: boolean })[])
+    .filter((s) => s.faltantes.length > 0)
+    .sort((a, b) => a.faltantes.length - b.faltantes.length)
+    .slice(0, limite)
+    .map(({ id, nome, tipo, faltantes }) => ({ id, nome, tipo, faltantes }))
 }

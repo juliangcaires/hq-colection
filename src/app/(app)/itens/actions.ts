@@ -22,12 +22,30 @@ import { novoCaminhoDeCapa, removerCapaAntiga } from '@/lib/supabase/capas'
 const LIMITE_CAPA_BYTES = 5 * 1024 * 1024
 const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
+import { lancarErroRpc } from '@/lib/rpc'
 
 function revalidateListagens(itemId?: string) {
   revalidatePath('/colecao')
   revalidatePath('/desejos')
   revalidatePath('/')
   if (itemId) revalidatePath(`/item/${itemId}`)
+}
+
+function dadosDoItem(p: ItemInput) {
+  return {
+    serie_id: p.serie_id || null,
+    titulo: p.titulo,
+    numero_volume: p.numero_volume ?? null,
+    tipo: p.tipo,
+    isbn: p.isbn || null,
+    estado: p.estado,
+    prioridade: p.prioridade,
+    preco: p.preco ?? null,
+    loja: p.loja || null,
+    data_aquisicao: p.data_aquisicao || null,
+    nota: p.nota ?? null,
+    observacoes: p.observacoes || null,
+  }
 }
 
 async function createItemImpl(input: ItemInput) {
@@ -38,36 +56,16 @@ async function createItemImpl(input: ItemInput) {
   } = await supabase.auth.getUser()
   if (!user) throw new ErroDeNegocio('Não autenticado')
 
-  const { data: item, error } = await supabase
-    .from('itens')
-    .insert({
-      user_id: user.id,
-      serie_id: parsed.serie_id || null,
-      titulo: parsed.titulo,
-      numero_volume: parsed.numero_volume ?? null,
-      tipo: parsed.tipo,
-      isbn: parsed.isbn || null,
-      estado: parsed.estado,
-      prioridade: parsed.prioridade,
-      preco: parsed.preco ?? null,
-      loja: parsed.loja || null,
-      data_aquisicao: parsed.data_aquisicao || null,
-      nota: parsed.nota ?? null,
-      observacoes: parsed.observacoes || null,
-    })
-    .select('id')
-    .single()
-
-  if (error) throw new Error(error.message)
-
-  if (parsed.tagIds.length > 0) {
-    const rows = parsed.tagIds.map((tag_id) => ({ item_id: item.id, tag_id }))
-    const { error: tagError } = await supabase.from('item_tags').insert(rows)
-    if (tagError) throw new Error(tagError.message)
-  }
+  // Item e tags numa transação só (migration 0007): se as tags falham, o item não fica pela metade.
+  const { data, error } = await supabase.rpc('item_salvar', {
+    p_id: null,
+    p_dados: dadosDoItem(parsed),
+    p_tag_ids: parsed.tagIds,
+  })
+  if (error) lancarErroRpc(error)
 
   revalidateListagens()
-  return item.id as string
+  return data as string
 }
 
 export async function createItem(input: ItemInput) {
@@ -76,41 +74,17 @@ export async function createItem(input: ItemInput) {
 
 async function updateItemImpl(id: string, input: ItemInput) {
   const parsed = itemInputSchema.parse(input)
+  const itemId = z.string().uuid().parse(id)
   const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from('itens')
-    .update({
-      serie_id: parsed.serie_id || null,
-      titulo: parsed.titulo,
-      numero_volume: parsed.numero_volume ?? null,
-      tipo: parsed.tipo,
-      isbn: parsed.isbn || null,
-      estado: parsed.estado,
-      prioridade: parsed.prioridade,
-      preco: parsed.preco ?? null,
-      loja: parsed.loja || null,
-      data_aquisicao: parsed.data_aquisicao || null,
-      nota: parsed.nota ?? null,
-      observacoes: parsed.observacoes || null,
-    })
-    .eq('id', id)
-    .select('id')
+  const { error } = await supabase.rpc('item_salvar', {
+    p_id: itemId,
+    p_dados: dadosDoItem(parsed),
+    p_tag_ids: parsed.tagIds,
+  })
+  if (error) lancarErroRpc(error)
 
-  if (error) throw new Error(error.message)
-  // A RLS filtra itens de outro usuário/inexistentes: 0 linhas não é sucesso.
-  if (!data || data.length === 0) throw new ErroDeNegocio('Item não encontrado')
-
-  const { error: clearError } = await supabase.from('item_tags').delete().eq('item_id', id)
-  if (clearError) throw new Error(clearError.message)
-
-  if (parsed.tagIds.length > 0) {
-    const rows = parsed.tagIds.map((tag_id) => ({ item_id: id, tag_id }))
-    const { error: tagError } = await supabase.from('item_tags').insert(rows)
-    if (tagError) throw new Error(tagError.message)
-  }
-
-  revalidateListagens(id)
+  revalidateListagens(itemId)
 }
 
 export async function updateItem(id: string, input: ItemInput) {
@@ -190,7 +164,7 @@ export type ResumoCriacaoVolumes = {
  * edições 1.5). Em série numerada, repetir é erro; sem numeração, é só ruído e
  * o volume repetido é pulado.
  */
-async function criarVolumesEmLoteImpl(input: CriarVolumesInput): Promise<ResumoCriacaoVolumes>  {
+async function criarVolumesEmLoteImpl(input: CriarVolumesInput): Promise<ResumoCriacaoVolumes> {
   const parsed = criarVolumesInputSchema.parse(input)
   const supabase = await createClient()
   const {
@@ -198,101 +172,28 @@ async function criarVolumesEmLoteImpl(input: CriarVolumesInput): Promise<ResumoC
   } = await supabase.auth.getUser()
   if (!user) throw new ErroDeNegocio('Não autenticado')
 
-  const [{ data: serie, error: errSerie }, { data: existentes, error: errItens }] = await Promise.all(
-    [
-      supabase
-        .from('series')
-        .select('id, nome, tipo, tem_numeracao')
-        .eq('id', parsed.serieId)
-        .maybeSingle(),
-      supabase.from('itens').select('numero_volume').eq('serie_id', parsed.serieId),
-    ]
-  )
-  if (errSerie) throw new Error(errSerie.message)
-  if (errItens) throw new Error(errItens.message)
-  if (!serie) throw new ErroDeNegocio('Série não encontrada')
+  // A trava por série, a checagem de repetidos e a criação (itens + tags) acontecem no banco, numa
+  // transação: duas abas/retries ao mesmo tempo não geram volumes duplicados nem item sem tag.
+  const { data, error } = await supabase.rpc('volumes_criar_em_lote', {
+    p_serie: parsed.serieId,
+    p_numeros: parsed.numeros,
+    p_dados: {
+      estado: parsed.estado,
+      prioridade: parsed.prioridade,
+      preco: parsed.preco ?? null,
+      loja: parsed.loja || null,
+      data_aquisicao: parsed.data_aquisicao || null,
+    },
+    p_tag_ids: parsed.tagIds,
+  })
+  if (error) lancarErroRpc(error)
 
-  const ocupados = new Set(
-    (existentes ?? [])
-      .map((i: { numero_volume: number | null }) => i.numero_volume)
-      .filter((n): n is number => n !== null)
-  )
-  const numeros = Array.from(new Set(parsed.numeros)).sort((a, b) => a - b)
-  const repetidos = numeros.filter((n) => ocupados.has(n))
-
-  if (serie.tem_numeracao && repetidos.length > 0) {
-    throw new ErroDeNegocio(
-      `Esta série já tem ${repetidos.map((n) => `#${n}`).join(', ')} — desmarque ou renumere`
-    )
-  }
-
-  const aCriar = numeros.filter((n) => !ocupados.has(n))
-  if (aCriar.length === 0) return { criados: [], ignorados: repetidos }
-
-  const rows = aCriar.map((n) => ({
-    user_id: user.id,
-    serie_id: parsed.serieId,
-    // Mesmo formato do título automático da inserção rápida.
-    titulo: `${serie.nome} #${n}`,
-    numero_volume: n,
-    tipo: serie.tipo,
-    estado: parsed.estado,
-    prioridade: parsed.prioridade,
-    preco: parsed.preco ?? null,
-    loja: parsed.loja || null,
-    data_aquisicao: parsed.data_aquisicao || null,
-  }))
-
-  const { data, error } = await supabase.from('itens').insert(rows).select('id, titulo, tipo, numero_volume')
-  if (error) throw new Error(error.message)
-
-  let criados = (data ?? []) as (ResumoCriacaoVolumes['criados'][number] & { numero_volume: number })[]
-  const ignoradosPorConcorrencia: number[] = []
-
-  if (serie.tem_numeracao && criados.length > 0) {
-    // A checagem acima é "ler e depois inserir": duas abas/retries ao mesmo tempo passam ambas.
-    // Sem constraint (ver migration 0004), cada requisição reconfere e desfaz SÓ as próprias linhas
-    // que perderam — vence a mais antiga (created_at, id), então as duas chegam à mesma conclusão.
-    const { data: todas, error: erroConferencia } = await supabase
-      .from('itens')
-      .select('id, numero_volume, created_at')
-      .eq('serie_id', parsed.serieId)
-      .in('numero_volume', aCriar)
-      .order('created_at')
-      .order('id')
-    if (erroConferencia) throw new Error(erroConferencia.message)
-
-    const vencedor = new Map<number, string>()
-    for (const linha of (todas ?? []) as { id: string; numero_volume: number }[]) {
-      if (!vencedor.has(linha.numero_volume)) vencedor.set(linha.numero_volume, linha.id)
-    }
-    const perdedores = criados.filter((c) => vencedor.get(c.numero_volume) !== c.id)
-    if (perdedores.length > 0) {
-      const { error: erroLimpeza } = await supabase
-        .from('itens')
-        .delete()
-        .in('id', perdedores.map((c) => c.id))
-      if (erroLimpeza) throw new Error(erroLimpeza.message)
-      ignoradosPorConcorrencia.push(...perdedores.map((c) => c.numero_volume))
-      criados = criados.filter((c) => vencedor.get(c.numero_volume) === c.id)
-    }
-  }
-
-  if (parsed.tagIds.length > 0 && criados.length > 0) {
-    const links = criados.flatMap(({ id }) =>
-      parsed.tagIds.map((tag_id) => ({ item_id: id, tag_id }))
-    )
-    const { error: tagError } = await supabase.from('item_tags').insert(links)
-    if (tagError) throw new Error(tagError.message)
-  }
+  const resumo = data as { criados: ResumoCriacaoVolumes['criados']; ignorados: number[] }
 
   revalidateListagens()
   revalidatePath('/series')
   revalidatePath(`/serie/${parsed.serieId}`)
-  return {
-    criados: criados.map(({ id, titulo, tipo }) => ({ id, titulo, tipo })),
-    ignorados: [...repetidos, ...ignoradosPorConcorrencia].sort((a, b) => a - b),
-  }
+  return { criados: resumo.criados, ignorados: resumo.ignorados.map(Number).sort((a, b) => a - b) }
 }
 
 export async function criarVolumesEmLote(input: CriarVolumesInput) {
