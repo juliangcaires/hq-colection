@@ -1,8 +1,9 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { listarItens } from '@/lib/queries'
-import { getSignedCapaUrls } from '@/lib/supabase/capas'
+import { urlsDeCapas } from '@/lib/supabase/capas'
 import { calcularVolumesFaltantes, serieEstaCompleta } from '@/lib/volumes'
+import { uuidOuNull } from '@/lib/filtros-url'
 import { Badge } from '@/components/ui/badge'
 import { SerieForm } from '@/components/series/serie-form'
 import { AdicionarVolumesDialog } from '@/components/series/adicionar-volumes-dialog'
@@ -14,15 +15,18 @@ import { ScrollRestore } from '@/components/ui/scroll-restore'
 const MAX_FALTANTES_EXIBIDOS = 30
 
 export default async function SeriePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+  const id = uuidOuNull((await params).id)
+  if (!id) notFound()
   const supabase = await createClient()
 
-  const { data: serie } = await supabase
+  const { data: serie, error: erroSerie } = await supabase
     .from('series')
     .select('*, serie_tags(tag_id)')
     .eq('id', id)
     .maybeSingle()
 
+  // Falha real do banco não pode virar "não encontrada": vai para o error.tsx.
+  if (erroSerie) throw new Error(erroSerie.message)
   if (!serie) notFound()
 
   const [itens, { data: allTags }] = await Promise.all([
@@ -30,9 +34,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
     supabase.from('tags').select('id, nome, tipo, cor').order('nome'),
   ])
 
-  const capaMap = await getSignedCapaUrls(
-    supabase,
-    itens.map((i) => i.capa_url)
+  const capaMap = urlsDeCapas(itens.map((i) => i.capa_url)
   )
 
   const tagIds = (serie.serie_tags ?? []).map((st: { tag_id: string }) => st.tag_id)

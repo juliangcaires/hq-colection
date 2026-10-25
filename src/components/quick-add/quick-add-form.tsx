@@ -40,6 +40,8 @@ import { buscarTags } from '@/app/(app)/tags/actions'
 import { createItem, criarVolumesEmLote } from '@/app/(app)/itens/actions'
 import { buscarCapasEmLote } from '@/lib/capa-lote'
 import type { EstadoItem, TagLite, TipoObra } from '@/lib/types'
+import { desembrulhar } from '@/lib/resultado'
+import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
 
 const ESTADO_ITEMS = [
   { value: 'desejo', label: 'Desejo' },
@@ -157,14 +159,14 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
   /** Cria a série nova, se for o caso, e devolve o id para o fluxo seguir. */
   async function resolverSerieId(): Promise<{ serieId: string | null; tipo: TipoObra }> {
     if (serieSelecionada && 'novo' in serieSelecionada) {
-      const id = await createSerie({
+      const id = desembrulhar(await createSerie({
         nome: serieSelecionada.nome,
         tipo: tipoSelecionado,
         em_publicacao: true,
         // Liga-se depois, na tela da série — exigir número aqui travaria a inclusão rápida.
         tem_numeracao: false,
         tagIds: editoraSelecionada.map((t) => t.id),
-      })
+      }))
       return { serieId: id, tipo: tipoSelecionado }
     }
     if (serieSelecionada) return { serieId: serieSelecionada.id, tipo: serieSelecionada.tipo }
@@ -178,13 +180,13 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
         const { serieId } = await resolverSerieId()
         if (!serieId) throw new Error('Escolha uma série para adicionar vários volumes')
 
-        const resumo = await criarVolumesEmLote({
+        const resumo = desembrulhar(await criarVolumesEmLote({
           serieId,
           numeros: analiseVolumes.numeros,
           estado,
           prioridade: Number(prioridade) || 0,
           tagIds: tagsExtras.map((t) => t.id),
-        })
+        }))
 
         toast.success(`${resumo.criados.length} volume(s) adicionados`)
         if (resumo.ignorados.length > 0) {
@@ -221,21 +223,25 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
       toast.error('Escolha uma série ou preencha o título')
       return
     }
+    if (numeroInvalido(numeroVolume)) {
+      toast.error('Número do volume inválido')
+      return
+    }
 
     startTransition(async () => {
       try {
         const { serieId, tipo } = await resolverSerieId()
 
-        const itemId = await createItem({
+        const itemId = desembrulhar(await createItem({
           titulo: tituloFinal,
           serie_id: serieId,
-          numero_volume: numeroVolume ? Number(numeroVolume) : null,
+          numero_volume: parseNumeroPtBr(numeroVolume),
           tipo,
           isbn: isbn.trim() || null,
           estado,
           prioridade: Number(prioridade) || 0,
           tagIds: tagsExtras.map((t) => t.id),
-        })
+        }))
 
         // Busca de capa — a resposta agora é lida: candidatos não são mais
         // descartados em silêncio quando não há ISBN.

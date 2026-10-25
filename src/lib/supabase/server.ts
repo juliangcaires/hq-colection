@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { OPCOES_COOKIE } from '@/lib/supabase/cookies'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -15,7 +16,7 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, { ...options, ...OPCOES_COOKIE })
             )
           } catch {
             // chamado a partir de um Server Component — o proxy.ts já

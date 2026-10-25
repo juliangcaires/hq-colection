@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ItemCard } from '@/components/itens/item-card'
 import { removerItensDaSerie } from '@/app/(app)/series/actions'
 import type { ItemComRelacoes } from '@/lib/types'
+import { desembrulhar } from '@/lib/resultado'
 
 export function VolumesGrid({
   serieId,
@@ -45,7 +46,7 @@ export function VolumesGrid({
     const ids = Array.from(selecionados)
     startTransition(async () => {
       try {
-        const removidos = await removerItensDaSerie(serieId, ids)
+        const removidos = desembrulhar(await removerItensDaSerie(serieId, ids))
         toast.success(`${removidos} volume(s) removidos da série`)
         setConfirmando(false)
         sairDaSelecao()

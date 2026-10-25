@@ -15,6 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { TipoTag } from '@/lib/types'
 import { createTag, deleteTag, mergeTags, updateTag } from '@/app/(app)/tags/actions'
+import { desembrulhar } from '@/lib/resultado'
 
 const TIPOS: { value: TipoTag; label: string }[] = [
   { value: 'personagem', label: 'Personagem' },
@@ -48,7 +49,7 @@ export function TagsManager({ initialTags }: { initialTags: TagRow[] }) {
     if (!novoNome.trim()) return
     startTransition(async () => {
       try {
-        await createTag({ nome: novoNome.trim(), tipo: novoTipo })
+        desembrulhar(await createTag({ nome: novoNome.trim(), tipo: novoTipo }))
         setNovoNome('')
         toast.success('Tag criada')
       } catch (e) {
@@ -62,7 +63,7 @@ export function TagsManager({ initialTags }: { initialTags: TagRow[] }) {
     const sourceIds = Array.from(selected)
     startTransition(async () => {
       try {
-        await mergeTags(sourceIds, mergeTarget)
+        desembrulhar(await mergeTags(sourceIds, mergeTarget))
         setSelected(new Set())
         setMergeTarget('')
         toast.success('Tags mescladas')
@@ -168,7 +169,7 @@ function TagRow({
   function handleSave() {
     startTransition(async () => {
       try {
-        await updateTag(tag.id, { nome: nome.trim(), tipo })
+        desembrulhar(await updateTag(tag.id, { nome: nome.trim(), tipo }))
         toast.success('Tag atualizada')
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao salvar')
@@ -179,7 +180,7 @@ function TagRow({
   function handleDelete() {
     startTransition(async () => {
       try {
-        await deleteTag(tag.id)
+        desembrulhar(await deleteTag(tag.id))
         toast.success('Tag excluída')
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao excluir')

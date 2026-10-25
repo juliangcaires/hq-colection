@@ -7,9 +7,9 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AdquirirButton, AdquirirDialog } from '@/components/itens/adquirir-button'
-import type { ItemComRelacoes } from '@/lib/types'
+import type { ItemDeLista } from '@/lib/queries'
 
-type ItemDesejo = Pick<ItemComRelacoes, 'id' | 'titulo' | 'prioridade' | 'capa_url' | 'serie'>
+type ItemDesejo = ItemDeLista
 
 export function DesejosLista({
   itens,
@@ -87,7 +87,7 @@ export function DesejosLista({
             <>
               <div className="relative h-16 w-11 flex-shrink-0 overflow-hidden rounded border-2 border-dashed border-neutral-600 bg-neutral-800">
                 {capaUrl && (
-                  <Image src={capaUrl} alt={item.titulo} fill sizes="44px" className="object-cover" />
+                  <Image unoptimized src={capaUrl} alt={item.titulo} fill sizes="44px" className="object-cover" />
                 )}
               </div>
               <div className="flex min-w-0 flex-col">

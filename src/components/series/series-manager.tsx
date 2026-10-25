@@ -23,6 +23,7 @@ import {
   type SerieListada,
 } from '@/app/(app)/series/actions'
 import type { TipoObra } from '@/lib/types'
+import { desembrulhar } from '@/lib/resultado'
 
 type SerieRow = SerieListada
 
@@ -53,13 +54,13 @@ export function SeriesManager({ initialSeries }: { initialSeries: SerieRow[] }) 
     if (!novoNome.trim()) return
     startTransition(async () => {
       try {
-        const id = await createSerie({
+        const id = desembrulhar(await createSerie({
           nome: novoNome.trim(),
           tipo: novoTipo,
           em_publicacao: true,
           tem_numeracao: false,
           tagIds: [],
-        })
+        }))
         toast.success('Série criada')
         router.push(`/serie/${id}`)
       } catch (e) {
@@ -72,7 +73,7 @@ export function SeriesManager({ initialSeries }: { initialSeries: SerieRow[] }) 
     if (!deletando) return
     startTransition(async () => {
       try {
-        await deleteSerie(deletando.id)
+        desembrulhar(await deleteSerie(deletando.id))
         setSeries((prev) => prev.filter((s) => s.id !== deletando.id))
         toast.success('Série excluída')
         setDeletando(null)

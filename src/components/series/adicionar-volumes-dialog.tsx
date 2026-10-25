@@ -31,20 +31,14 @@ import {
   type ItemCandidato,
 } from '@/app/(app)/series/actions'
 import type { TagLite, TipoObra, TipoTag } from '@/lib/types'
+import { desembrulhar } from '@/lib/resultado'
+import { parseNumeroPtBr } from '@/lib/numeros'
 
 const TIPO_ITEMS = [
   { value: 'todos', label: 'HQ e mangá' },
   { value: 'hq', label: 'HQ' },
   { value: 'manga', label: 'Mangá' },
 ]
-
-/** Aceita vírgula como separador decimal (1,5) — a coluna é numeric de propósito. */
-function parseNumero(bruto: string): number | null {
-  const limpo = bruto.trim().replace(',', '.')
-  if (!limpo) return null
-  const n = Number(limpo)
-  return Number.isFinite(n) ? n : null
-}
 
 type Selecionado = { item: ItemCandidato; numero: string }
 
@@ -156,11 +150,11 @@ export function AdicionarVolumesDialog({
     const ocupados = new Set(numerosOcupados)
     const contagem = new Map<number, number>()
     for (const { numero } of entradas) {
-      const n = parseNumero(numero)
+      const n = parseNumeroPtBr(numero)
       if (n !== null) contagem.set(n, (contagem.get(n) ?? 0) + 1)
     }
     for (const { item, numero } of entradas) {
-      const n = parseNumero(numero)
+      const n = parseNumeroPtBr(numero)
       if (n === null) semNumero.add(item.id)
       else if ((contagem.get(n) ?? 0) > 1 || ocupados.has(n)) emConflito.add(item.id)
     }
@@ -175,11 +169,11 @@ export function AdicionarVolumesDialog({
     if (total === 0 || bloqueado) return
     const payload = entradas.map(({ item, numero }) => ({
       itemId: item.id,
-      numero: temNumeracao ? parseNumero(numero) : null,
+      numero: temNumeracao ? parseNumeroPtBr(numero) : null,
     }))
     startTransition(async () => {
       try {
-        const resumo = await adicionarItensASerie(serieId, payload)
+        const resumo = desembrulhar(await adicionarItensASerie(serieId, payload))
         if (resumo.incluidos > 0) {
           toast.success(`${resumo.incluidos} volume(s) incluídos em "${serieNome}"`)
         }
@@ -316,7 +310,7 @@ export function AdicionarVolumesDialog({
                   />
                   <div className="relative h-12 w-8 shrink-0 overflow-hidden rounded bg-card ring-1 ring-border">
                     {item.capaUrl && (
-                      <Image src={item.capaUrl} alt="" fill sizes="32px" className="object-cover" />
+                      <Image unoptimized src={item.capaUrl} alt="" fill sizes="32px" className="object-cover" />
                     )}
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col">

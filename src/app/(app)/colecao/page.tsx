@@ -1,14 +1,15 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { listarItens } from '@/lib/queries'
-import { getSignedCapaUrls } from '@/lib/supabase/capas'
+import { listarItensPagina, type ItemDeLista } from '@/lib/queries'
+import { urlsDeCapas } from '@/lib/supabase/capas'
 import { ColecaoFilters } from '@/components/itens/colecao-filters'
 import { ItemCard } from '@/components/itens/item-card'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
-import { parseTagsPorTipoDaUrl } from '@/lib/tags-por-tipo'
-import type { EstadoItem, TipoObra } from '@/lib/types'
+import { lerFiltrosDaUrl, lerLimite } from '@/lib/filtros-url'
+import { CarregarMais } from '@/components/itens/carregar-mais'
 
 type SearchParams = {
+  limite?: string
   busca?: string
   estado?: string
   tipo?: string
@@ -32,22 +33,15 @@ export default async function ColecaoPage({
   const params = await searchParams
   const supabase = await createClient()
 
-  const [itens, { data: seriesData }, { data: tagsData }] = await Promise.all([
-    listarItens(supabase, {
-      estado: (params.estado as EstadoItem) || undefined,
-      tipo: (params.tipo as TipoObra) || undefined,
-      serieId: params.serie || undefined,
-      busca: params.busca || undefined,
-      semCapa: params.capa === 'sem',
-      tagsPorTipo: parseTagsPorTipoDaUrl(params),
-    }),
+  const limite = lerLimite(params.limite)
+
+  const [{ itens, total }, { data: seriesData }, { data: tagsData }] = await Promise.all([
+    listarItensPagina(supabase, lerFiltrosDaUrl(params), undefined, limite),
     supabase.from('series').select('id, nome, serie_tags(tag_id)').order('nome'),
     supabase.from('tags').select('id, nome, tipo, cor').order('nome'),
   ])
 
-  const capaMap = await getSignedCapaUrls(
-    supabase,
-    itens.map((i) => i.capa_url)
+  const capaMap = urlsDeCapas(itens.map((i) => i.capa_url)
   )
 
   const series = (seriesData ?? []).map((s) => ({
@@ -63,7 +57,7 @@ export default async function ColecaoPage({
       <ScrollRestore />
       <div>
         <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground">Coleção</h1>
-        <p className="text-sm text-muted-foreground">{itens.length} item(ns)</p>
+        <p className="text-sm text-muted-foreground">{total} item(ns)</p>
       </div>
 
       <ColecaoFilters series={series} tags={tagsData ?? []} />
@@ -79,6 +73,8 @@ export default async function ColecaoPage({
           ))}
         </div>
       )}
+
+      <CarregarMais params={params} limite={limite} mostrando={itens.length} total={total} />
     </div>
   )
 }
@@ -87,7 +83,7 @@ function ColecaoAgrupada({
   itens,
   capaMap,
 }: {
-  itens: Awaited<ReturnType<typeof listarItens>>
+  itens: ItemDeLista[]
   capaMap: Map<string, string>
 }) {
   const grupos = new Map<string, { nome: string; serieId: string | null; itens: typeof itens }>()

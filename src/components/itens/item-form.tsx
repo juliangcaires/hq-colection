@@ -30,6 +30,8 @@ import {
 import { agruparTagsPorTipo, TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
 import type { EstadoItem, ItemComRelacoes, TagLite, TipoObra, TipoTag } from '@/lib/types'
 import { descreverFalhaProvedor, type CandidatoCapa, type ResultadoProvedor } from '@/lib/capa-busca'
+import { desembrulhar } from '@/lib/resultado'
+import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
 
 type SerieOpcao = { id: string; nome: string }
 
@@ -78,17 +80,21 @@ export function ItemForm({
       toast.error('Título obrigatório')
       return
     }
+    if (numeroInvalido(numeroVolume) || numeroInvalido(preco)) {
+      toast.error(numeroInvalido(numeroVolume) ? 'Número do volume inválido' : 'Preço inválido')
+      return
+    }
     startTransition(async () => {
       try {
         const input = {
           titulo: titulo.trim(),
           serie_id: serieId || null,
-          numero_volume: numeroVolume ? Number(numeroVolume) : null,
+          numero_volume: parseNumeroPtBr(numeroVolume),
           tipo,
           isbn: isbn || null,
           estado,
           prioridade: Number(prioridade) || 0,
-          preco: preco ? Number(preco) : null,
+          preco: parseNumeroPtBr(preco),
           loja: loja || null,
           data_aquisicao: dataAquisicao || null,
           nota: nota ? Number(nota) : null,
@@ -96,10 +102,10 @@ export function ItemForm({
           tagIds: Object.values(tagsPorTipo).flatMap((tags) => tags.map((t) => t.id)),
         }
         if (item) {
-          await updateItem(item.id, input)
+          desembrulhar(await updateItem(item.id, input))
           toast.success('Item atualizado')
         } else {
-          const id = await createItem(input)
+          const id = desembrulhar(await createItem(input))
           toast.success('Item criado')
           router.push(`/item/${id}`)
           return
@@ -115,7 +121,7 @@ export function ItemForm({
     if (!item) return
     startTransition(async () => {
       try {
-        await deleteItem(item.id)
+        desembrulhar(await deleteItem(item.id))
         toast.success('Item excluído')
         router.push('/colecao')
       } catch (e) {
@@ -132,7 +138,7 @@ export function ItemForm({
     formData.append('file', file)
     startUpload(async () => {
       try {
-        await uploadCapaManual(item.id, formData)
+        desembrulhar(await uploadCapaManual(item.id, formData))
         toast.success('Capa atualizada')
         router.refresh()
       } catch (err) {
@@ -185,7 +191,7 @@ export function ItemForm({
     if (!item) return
     startAplicarCandidato(async () => {
       try {
-        await aplicarCapaEscolhida(item.id, candidato)
+        desembrulhar(await aplicarCapaEscolhida(item.id, candidato))
         toast.success('Capa aplicada')
         setCandidatos(null)
         router.refresh()
@@ -202,7 +208,7 @@ export function ItemForm({
       <div className="flex gap-4">
         <div className="relative h-40 w-28 flex-shrink-0 overflow-hidden rounded-md bg-neutral-800">
           {capaUrl ? (
-            <Image src={capaUrl} alt={titulo} fill sizes="112px" className="object-cover" />
+            <Image unoptimized src={capaUrl} alt={titulo} fill sizes="112px" className="object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center text-center text-xs text-neutral-500">
               sem capa
