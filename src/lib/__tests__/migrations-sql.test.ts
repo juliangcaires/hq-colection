@@ -7,10 +7,13 @@ import { calcularVolumesFaltantes, serieEstaCompleta } from '@/lib/volumes'
 /**
  * Roda as migrations num PostgreSQL em memória (PGlite) com stubs mínimos de `auth` e `storage`.
  * Valida a lógica das funções SQL — e a paridade de `series_com_resumo` com `volumes.ts`.
- * NÃO valida a RLS (o superusuário a ignora): isso se testa no banco real.
+ * Depois de carregar tudo, os testes rodam como o papel `authenticated` (sem privilégio de superusuário),
+ * então a RLS das migrations 0001/0006 vale de verdade — foi assim que se pegou o erro de item_tags no
+ * mesmo comando que insere os itens. O que o PGlite não cobre: Storage e o PostgREST.
  */
 const PASTA = path.resolve(__dirname, '../../../supabase/migrations')
 const U = '11111111-1111-1111-1111-111111111111'
+const OUTRO = '99999999-9999-9999-9999-999999999999'
 
 let db: PGlite
 
@@ -28,7 +31,15 @@ beforeAll(async () => {
   for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
-  await db.exec(`insert into auth.users values ('${U}'); select set_config('app.uid','${U}',false);`)
+  await db.exec(`
+    insert into auth.users values ('${U}'), ('${OUTRO}');
+    grant usage on schema public, auth to authenticated;
+    grant all on all tables in schema public to authenticated;
+    grant execute on all functions in schema public to authenticated;
+    grant execute on function auth.uid() to authenticated;
+    select set_config('app.uid','${U}',false);
+    set role authenticated;
+  `)
 }, 60_000)
 
 const rnd = (n: number) => Math.floor(Math.random() * n)
@@ -116,5 +127,28 @@ describe('funções transacionais', () => {
     const { rows: [r] } = await db.query<{ r: { criados: unknown[]; ignorados: number[] } }>(`select volumes_criar_em_lote($1, '{1,2}', '{"estado":"comprado"}', '{}') r`, [sem.s])
     expect(r.r.criados).toHaveLength(1)
     expect(r.r.ignorados).toEqual([1])
+  })
+
+  it('volumes_criar_em_lote com tags funciona sob RLS (itens e item_tags em comandos separados)', async () => {
+    const { rows: [t] } = await db.query<{ id: string }>(`insert into tags(user_id,nome,tipo) values ($1,'VT','outro') returning id`, [U])
+    const { rows: [s] } = await db.query<{ s: string }>(`select serie_salvar(null, '{"nome":"ComTags","tipo":"hq","tem_numeracao":true}', '{}') s`)
+    await db.query(`select volumes_criar_em_lote($1, '{1,2}', '{"estado":"comprado"}', $2::uuid[])`, [s.s, [t.id]])
+    const { rows } = await db.query(`select 1 from item_tags it join itens i on i.id = it.item_id where i.serie_id = $1`, [s.s])
+    expect(rows).toHaveLength(2)
+  })
+
+  it('outro usuário não usa as funções com dados alheios (RLS)', async () => {
+    const { rows: [serie] } = await db.query<{ s: string }>(`select serie_salvar(null, '{"nome":"Minha","tipo":"hq"}', '{}') s`)
+    const { rows: [tag] } = await db.query<{ id: string }>(`insert into tags(user_id,nome,tipo) values ($1,'Minha tag','outro') returning id`, [U])
+    await db.query(`select set_config('app.uid','${OUTRO}',false)`)
+    try {
+      await expect(db.query(`select serie_salvar($1, '{"nome":"HACK","tipo":"hq"}', '{}')`, [serie.s])).rejects.toThrow('serie_nao_encontrada')
+      await expect(db.query(`select volumes_criar_em_lote($1, '{9}', '{"estado":"comprado"}', '{}')`, [serie.s])).rejects.toThrow('serie_nao_encontrada')
+      await expect(db.query(`select item_salvar(null, $1::jsonb, '{}')`, [JSON.stringify({ titulo: 'x', tipo: 'hq', estado: 'desejo', serie_id: serie.s })])).rejects.toThrow()
+      await expect(db.query(`select tags_mesclar($1::uuid[], $2)`, [[tag.id], tag.id])).rejects.toThrow('tag_nao_encontrada')
+      expect((await db.query(`select 1 from series_com_resumo(null)`)).rows).toHaveLength(0)
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
   })
 })

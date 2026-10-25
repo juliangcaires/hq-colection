@@ -202,6 +202,10 @@ begin
   if cardinality(v_origens) = 0 then
     return;
   end if;
+  -- Origem que o usuário não enxerga (de outro usuário ou inexistente) não pode passar em silêncio.
+  if (select count(*) from tags where id = any (v_origens)) <> (select count(distinct o) from unnest(v_origens) as o) then
+    raise exception 'tag_nao_encontrada';
+  end if;
 
   insert into serie_tags (serie_id, tag_id)
   select serie_id, p_destino from serie_tags where tag_id = any (v_origens)
@@ -237,6 +241,7 @@ declare
   v_numeros numeric[];
   v_repetidos numeric[];
   v_criados jsonb;
+  v_ids uuid[];
 begin
   perform pg_advisory_xact_lock(hashtextextended(p_serie::text, 0));
 
@@ -255,6 +260,8 @@ begin
     raise exception 'volumes_repetidos:%', array_to_string(v_repetidos, ',');
   end if;
 
+  -- Dois comandos (e não um CTE só): a policy de item_tags confere o dono do item consultando
+  -- `itens`, e um comando não enxerga as linhas que ele mesmo acabou de inserir.
   with novos as (
     insert into itens (user_id, serie_id, titulo, numero_volume, tipo, estado, prioridade,
                        preco, loja, data_aquisicao)
@@ -268,14 +275,14 @@ begin
     from unnest(v_numeros) as n
     where n <> all (v_ocupados)
     returning id, titulo, tipo
-  ),
-  vinculos as (
-    insert into item_tags (item_id, tag_id)
-    select novos.id, t from novos, unnest(coalesce(p_tag_ids, '{}')) as t
-    returning 1
   )
-  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'titulo', titulo, 'tipo', tipo)), '[]'::jsonb)
-    into v_criados from novos;
+  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'titulo', titulo, 'tipo', tipo)), '[]'::jsonb),
+         coalesce(array_agg(id), '{}')
+    into v_criados, v_ids
+    from novos;
+
+  insert into item_tags (item_id, tag_id)
+  select i, t from unnest(v_ids) as i, unnest(coalesce(p_tag_ids, '{}')) as t;
 
   return jsonb_build_object('criados', v_criados, 'ignorados', to_jsonb(v_repetidos));
 end;
