@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { Trash2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -30,8 +32,8 @@ const TIPOS: { value: TipoTag; label: string }[] = [
 type TagRow = { id: string; nome: string; tipo: TipoTag; cor: string | null }
 
 export function TagsManager({ initialTags }: { initialTags: TagRow[] }) {
-  const [novoNome, setNovoNome] = useState('')
-  const [novoTipo, setNovoTipo] = useState<TipoTag>('outro')
+  const [novos, setNovos] = useState<Partial<Record<TipoTag, string>>>({})
+  const [tipoAtivo, setTipoAtivo] = useState<TipoTag>('editora')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [mergeTarget, setMergeTarget] = useState<string>('')
   const [isPending, startTransition] = useTransition()
@@ -45,12 +47,13 @@ export function TagsManager({ initialTags }: { initialTags: TagRow[] }) {
     })
   }
 
-  function handleCreate() {
-    if (!novoNome.trim()) return
+  function handleCreate(tipo: TipoTag) {
+    const nome = (novos[tipo] ?? '').trim()
+    if (!nome) return
     startTransition(async () => {
       try {
-        desembrulhar(await createTag({ nome: novoNome.trim(), tipo: novoTipo }))
-        setNovoNome('')
+        desembrulhar(await createTag({ nome, tipo }))
+        setNovos((prev) => ({ ...prev, [tipo]: '' }))
         toast.success('Tag criada')
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao criar tag')
@@ -77,38 +80,25 @@ export function TagsManager({ initialTags }: { initialTags: TagRow[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-neutral-400">Nova tag</label>
-          <Input
-            value={novoNome}
-            onChange={(e) => setNovoNome(e.target.value)}
-            placeholder="Nome"
-            className="w-48"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-neutral-400">Tipo</label>
-          <Select items={TIPOS} value={novoTipo} onValueChange={(v) => v && setNovoTipo(v as TipoTag)}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TIPOS.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <Button onClick={handleCreate} disabled={isPending || !novoNome.trim()}>
-          Adicionar
-        </Button>
+      <div role="group" aria-label="Tipo de tag" className="-mx-5 flex gap-2 overflow-x-auto px-5 lg:hidden">
+        {TIPOS.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            aria-pressed={tipoAtivo === t.value}
+            onClick={() => setTipoAtivo(t.value)}
+            className={cn(
+              'h-11 shrink-0 rounded-full border px-3.5 text-sm',
+              tipoAtivo === t.value ? 'border-primary bg-primary/15 text-foreground' : 'border-border bg-card text-muted-foreground'
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {selected.size >= 2 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-900 bg-amber-950/40 p-3 text-sm">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/45 bg-warning/10 p-3 text-sm">
           <span>
             Mesclar {selected.size} tags ({selectedList.map((t) => t.nome).join(', ')}) em:
           </span>
@@ -134,18 +124,49 @@ export function TagsManager({ initialTags }: { initialTags: TagRow[] }) {
         </div>
       )}
 
-      <div className="flex flex-col divide-y divide-neutral-800 rounded-lg border border-neutral-800">
-        {initialTags.length === 0 && (
-          <p className="p-4 text-sm text-neutral-500">Nenhuma tag cadastrada ainda.</p>
-        )}
-        {initialTags.map((tag) => (
-          <TagRow
-            key={tag.id}
-            tag={tag}
-            selected={selected.has(tag.id)}
-            onToggleSelected={() => toggleSelected(tag.id)}
-          />
-        ))}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[repeat(auto-fill,minmax(380px,1fr))]">
+        {TIPOS.map((t) => {
+          const doTipo = initialTags.filter((tag) => tag.tipo === t.value)
+          return (
+            <section
+              key={t.value}
+              className={cn('flex-col gap-3 rounded-xl border border-border bg-card p-4', tipoAtivo === t.value ? 'flex' : 'hidden lg:flex')}
+            >
+              <h2 className="font-heading text-[19px] font-bold text-foreground">
+                {t.label} <span className="text-sm font-normal text-muted-foreground">· {doTipo.length}</span>
+              </h2>
+              <form
+                className="flex gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  handleCreate(t.value)
+                }}
+              >
+                <Input
+                  aria-label={`Nova tag de ${t.label.toLowerCase()}`}
+                  placeholder={`Nova tag de ${t.label.toLowerCase()}`}
+                  value={novos[t.value] ?? ''}
+                  onChange={(e) => setNovos((prev) => ({ ...prev, [t.value]: e.target.value }))}
+                  className="h-11 rounded-xl bg-surface-2"
+                />
+                <Button type="submit" className="h-11" disabled={isPending || !(novos[t.value] ?? '').trim()}>
+                  Criar
+                </Button>
+              </form>
+              {doTipo.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma tag deste tipo.</p>}
+              <div className="flex flex-col divide-y divide-border">
+                {doTipo.map((tag) => (
+                  <TagRow
+                    key={tag.id}
+                    tag={tag}
+                    selected={selected.has(tag.id)}
+                    onToggleSelected={() => toggleSelected(tag.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          )
+        })}
       </div>
     </div>
   )
@@ -190,15 +211,16 @@ function TagRow({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 p-3">
-      <Checkbox checked={selected} onCheckedChange={onToggleSelected} />
+    <div className="flex flex-wrap items-center gap-2 py-2">
+      <Checkbox checked={selected} onCheckedChange={onToggleSelected} aria-label={`Selecionar ${tag.nome} para mesclar`} />
+      <span aria-hidden className="size-3 shrink-0 rounded-full" style={{ background: tag.cor ?? 'var(--muted-foreground)' }} />
       <Input
         value={nome}
         onChange={(e) => setNome(e.target.value)}
-        className="w-44"
+        className="h-11 min-w-0 flex-1 rounded-xl bg-surface-2"
       />
       <Select items={TIPOS} value={tipo} onValueChange={(v) => v && setTipo(v as TipoTag)}>
-        <SelectTrigger className="w-36">
+        <SelectTrigger className="h-11 w-32 rounded-xl bg-surface-2">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -211,12 +233,18 @@ function TagRow({
       </Select>
       <div className="ml-auto flex gap-2">
         {dirty && (
-          <Button size="sm" variant="secondary" onClick={handleSave} disabled={isPending}>
+          <Button variant="secondary" className="h-11" onClick={handleSave} disabled={isPending}>
             Salvar
           </Button>
         )}
-        <Button size="sm" variant="ghost" onClick={() => setDeleteOpen(true)} disabled={isPending}>
-          Excluir
+        <Button
+          variant="ghost"
+          className="size-11 p-0 text-danger-text"
+          aria-label={`Excluir ${tag.nome}`}
+          onClick={() => setDeleteOpen(true)}
+          disabled={isPending}
+        >
+          <Trash2 className="size-4" aria-hidden />
         </Button>
       </div>
 

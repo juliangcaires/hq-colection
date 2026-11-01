@@ -8,13 +8,7 @@ export default async function SeriesPage() {
   return (
     <div className="flex flex-col gap-6">
       <ScrollRestore />
-      <div>
-        <h1 className="text-2xl font-semibold">Séries</h1>
-        <p className="text-sm text-neutral-500">
-          Gerencie suas séries sem precisar passar por um item. Edição completa (editora, tags,
-          total de volumes) fica na página de cada série.
-        </p>
-      </div>
+      <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">Séries</h1>
       <SeriesManager initialSeries={series} />
     </div>
   )

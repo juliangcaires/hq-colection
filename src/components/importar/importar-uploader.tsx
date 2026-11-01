@@ -3,7 +3,11 @@
 import { useRef, useState, useTransition } from 'react'
 import Papa from 'papaparse'
 import { toast } from 'sonner'
+import { FileText } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { ProgressBar } from '@/components/ui/progress-bar'
+import { StatTile } from '@/components/ui/stat-tile'
 import { importarCsv, type RascunhoRow, type ResumoImportacao } from '@/app/(app)/importar/actions'
 import { desembrulhar } from '@/lib/resultado'
 import { COLUNAS_CSV, LINHAS_POR_LOTE, MAX_LINHAS_CSV, normalizarCabecalho } from '@/lib/csv-importacao'
@@ -129,20 +133,37 @@ export function ImportarUploader() {
     })
   }
 
+  const passo = resumo || progresso ? 3 : rows ? 2 : 1
   const preview = rows?.slice(0, 15) ?? []
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+      <ol className="flex gap-1.5" aria-label="Etapas da importação">
+        {['Arquivo', 'Revisar', 'Importar'].map((nome, i) => (
+          <li
+            key={nome}
+            aria-current={passo === i + 1 ? 'step' : undefined}
+            className={cn('flex-1 border-t-4 pt-1.5 text-xs', passo >= i + 1 ? 'border-primary text-foreground' : 'border-border text-muted-foreground')}
+          >
+            {i + 1}. {nome}
+          </li>
+        ))}
+      </ol>
+
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
         <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
-        <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-          Escolher CSV
+        <FileText className="size-6 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+          {fileName ?? 'Nenhum arquivo escolhido'}
+          {rows && <span className="block text-xs text-muted-foreground">{rows.length} linhas</span>}
+        </span>
+        <Button variant="outline" className="h-11" onClick={() => fileInputRef.current?.click()}>
+          {fileName ? 'Trocar' : 'Escolher CSV'}
         </Button>
-        {fileName && <span className="text-sm text-neutral-400">{fileName}</span>}
       </div>
 
       {bloqueios.length > 0 && (
-        <div role="alert" className="rounded border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
+        <div role="alert" className="rounded border border-read/50 bg-read/10 p-3 text-sm text-danger-soft-text">
           {bloqueios.map((m, i) => (
             <p key={i}>{m}</p>
           ))}
@@ -150,7 +171,7 @@ export function ImportarUploader() {
       )}
 
       {avisos.length > 0 && (
-        <div className="rounded border border-amber-900 bg-amber-950/40 p-3 text-sm text-amber-300">
+        <div className="rounded border border-warning/45 bg-warning/10 p-3 text-sm text-warning-text">
           {avisos.map((m, i) => (
             <p key={i}>{m}</p>
           ))}
@@ -159,12 +180,12 @@ export function ImportarUploader() {
 
       {rows && rows.length > 0 && !resumo && !isPending && (
         <div className="flex flex-col gap-3">
-          <p className="text-sm text-neutral-400">
+          <p className="text-sm text-muted-foreground">
             {rows.length} linha(s) no arquivo — mostrando as primeiras {preview.length}
           </p>
-          <div className="overflow-x-auto rounded-lg border border-neutral-800">
+          <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-900 text-neutral-400">
+              <thead className="bg-card text-muted-foreground">
                 <tr>
                   {['titulo', 'serie', 'numero_volume', 'tipo', 'estado', 'editora', 'universo', 'personagem'].map(
                     (h) => (
@@ -175,7 +196,7 @@ export function ImportarUploader() {
                   )}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-800">
+              <tbody className="divide-y divide-border">
                 {preview.map((r, i) => (
                   <tr key={i}>
                     <td className="px-2 py-1.5">{r.titulo}</td>
@@ -191,37 +212,39 @@ export function ImportarUploader() {
               </tbody>
             </table>
           </div>
-          <Button onClick={handleImport} className="w-fit">
+          <Button onClick={handleImport} className="h-12 w-full lg:w-fit">
             Importar {rows.length} item(ns)
           </Button>
         </div>
       )}
 
       {progresso && (
-        <div role="status" className="flex flex-col gap-1.5 text-sm text-neutral-400">
+        <div role="status" className="flex flex-col gap-1.5 text-sm text-muted-foreground">
           <p>
             Importando… {progresso.feitas} de {progresso.total} linhas (não feche esta página)
           </p>
-          <progress className="h-2 w-full" value={progresso.feitas} max={progresso.total} />
+          <ProgressBar value={progresso.feitas} max={progresso.total} label="Progresso da importação" />
         </div>
       )}
 
       {interrompidoNaLinha && (
-        <div role="alert" className="rounded border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
+        <div role="alert" className="rounded border border-read/50 bg-read/10 p-3 text-sm text-danger-soft-text">
           A importação parou na linha {interrompidoNaLinha}. O que está abaixo já foi gravado; escolha o mesmo
           arquivo e importe de novo — as linhas que já existem são ignoradas.
         </div>
       )}
 
       {resumo && (
-        <div className="flex flex-col gap-2 rounded-lg border border-emerald-900 bg-emerald-950/30 p-4 text-sm">
-          <p>{resumo.itensCriados} item(ns) criado(s)</p>
-          <p>{resumo.itensIgnorados} já existiam e foram ignorados (idempotente)</p>
-          <p>{resumo.seriesCriadas} série(s) nova(s)</p>
-          <p>{resumo.tagsCriadas} tag(s) nova(s)</p>
-          <p>{resumo.capasAplicadas} capa(s) aplicada(s) automaticamente (via ISBN)</p>
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+            <StatTile value={resumo.itensCriados} label="item(ns) criado(s)" variant="success" />
+            <StatTile value={resumo.itensIgnorados} label="já existiam (ignorados)" />
+            <StatTile value={resumo.seriesCriadas} label="série(s) nova(s)" />
+            <StatTile value={resumo.tagsCriadas} label="tag(s) nova(s)" />
+          </div>
+          <p className="text-sm text-muted-foreground">{resumo.capasAplicadas} capa(s) aplicada(s) automaticamente (via ISBN)</p>
           {resumo.erros.length > 0 && (
-            <details className="text-amber-300">
+            <details className="rounded-xl border border-warning/45 bg-warning/10 p-3 text-sm text-warning-text">
               <summary className="cursor-pointer">{resumo.erros.length} linha(s) com problema</summary>
               <ul className="mt-1 list-disc pl-5">
                 {resumo.erros.slice(0, 20).map((e, i) => (
