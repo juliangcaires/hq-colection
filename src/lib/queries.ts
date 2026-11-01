@@ -227,16 +227,8 @@ export async function listarItem(
   return toItemComRelacoes(data as unknown as RawItemRow)
 }
 
-export type ItemRecente = {
-  id: string
-  titulo: string
-  tipo: TipoObra
-  estado: EstadoItem
-  created_at: string
-  serie: { id: string; nome: string } | null
-}
+export type ItemRecente = ItemDeLista & { created_at: string }
 
-/** Últimos itens adicionados à coleção (por created_at), para o dashboard. Consulta leve, sem tags/capa. */
 export async function listarUltimosItens(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any>,
@@ -244,12 +236,29 @@ export async function listarUltimosItens(
 ): Promise<ItemRecente[]> {
   const { data, error } = await supabase
     .from('itens')
-    .select('id, titulo, tipo, estado, created_at, serie:series(id, nome)')
+    .select(`${CARD_SELECT}, created_at`)
     .order('created_at', { ascending: false })
     .limit(limite)
 
   if (error) throw new Error(error.message)
   return (data ?? []) as unknown as ItemRecente[]
+}
+
+/** Itens comprados e ainda não lidos, mais recentes primeiro — o carrossel "Na fila de leitura". */
+export async function listarFilaDeLeitura(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any>,
+  limite = 8
+): Promise<ItemDeLista[]> {
+  const { data, error } = await supabase
+    .from('itens')
+    .select(CARD_SELECT)
+    .eq('estado', 'comprado')
+    .order('created_at', { ascending: false })
+    .limit(limite)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []) as unknown as ItemDeLista[]
 }
 
 export type SerieComFuros = {
