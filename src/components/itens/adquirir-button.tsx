@@ -113,7 +113,11 @@ export function AdquirirButton({ itemId, titulo }: { itemId: string; titulo: str
 
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}>
+      <Button
+        variant="outline"
+        onClick={() => setOpen(true)}
+        className="h-11 border-success/60 px-4 text-success-text hover:text-success-text"
+      >
         Adquiri
       </Button>
       <AdquirirDialog itemIds={[itemId]} titulo={titulo} open={open} onOpenChange={setOpen} />

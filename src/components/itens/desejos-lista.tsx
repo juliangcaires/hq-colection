@@ -52,8 +52,8 @@ export function DesejosLista({
               {selecionados.size} selecionado(s)
             </span>
             <Button
-              size="sm"
               variant="ghost"
+              className="h-11 text-link"
               onClick={() =>
                 setSelecionados(todosMarcados ? new Set() : new Set(itens.map((i) => i.id)))
               }
@@ -61,39 +61,52 @@ export function DesejosLista({
               {todosMarcados ? 'Limpar' : 'Selecionar todos'}
             </Button>
             <Button
-              size="sm"
+              className="h-11"
               disabled={selecionados.size === 0}
               onClick={() => setAdquirindo(true)}
             >
               Adquirir {selecionados.size}
             </Button>
-            <Button size="sm" variant="ghost" onClick={sairDaSelecao}>
+            <Button variant="ghost" className="h-11 text-link" onClick={sairDaSelecao}>
               Cancelar
             </Button>
           </>
         ) : (
-          <Button size="sm" variant="ghost" onClick={() => setSelecionando(true)}>
+          <Button variant="ghost" className="h-11 text-link" onClick={() => setSelecionando(true)}>
             Selecionar
           </Button>
         )}
       </div>
 
-      <div className="flex flex-col divide-y divide-neutral-800 rounded-lg border border-neutral-800">
+      <div className="flex flex-col divide-y divide-border rounded-xl border border-border bg-card">
         {itens.map((item) => {
           const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
           const marcado = selecionados.has(item.id)
 
           const conteudo = (
             <>
-              <div className="relative h-16 w-11 flex-shrink-0 overflow-hidden rounded border-2 border-dashed border-neutral-600 bg-neutral-800">
+              <div className="relative h-[78px] w-[52px] flex-shrink-0 overflow-hidden rounded border-2 border-dashed border-warning/70 bg-surface-2">
                 {capaUrl && (
-                  <Image unoptimized src={capaUrl} alt={item.titulo} fill sizes="44px" className="object-cover" />
+                  <Image unoptimized src={capaUrl} alt={item.titulo} fill sizes="52px" className="object-cover" />
                 )}
               </div>
               <div className="flex min-w-0 flex-col">
                 <span className="truncate text-sm font-medium">{item.titulo}</span>
-                {item.serie && <span className="truncate text-xs text-neutral-500">{item.serie.nome}</span>}
-                <span className="text-xs text-neutral-600">prioridade {item.prioridade}</span>
+                {item.serie && <span className="truncate text-xs text-muted-foreground">{item.serie.nome}</span>}
+                <span className="mt-1 flex items-center gap-2">
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                      item.prioridade > 0 ? 'bg-warning text-primary-foreground' : 'bg-border text-muted-foreground'
+                    }`}
+                  >
+                    Prioridade {item.prioridade}
+                  </span>
+                  {item.preco !== null && (
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {item.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </span>
+                  )}
+                </span>
               </div>
             </>
           )

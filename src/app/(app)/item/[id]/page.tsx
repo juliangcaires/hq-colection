@@ -22,7 +22,7 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
   const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-2xl lg:max-w-4xl">
       <ScrollRestore />
       <ItemForm item={item} capaUrl={capaUrl} series={seriesData ?? []} />
     </div>

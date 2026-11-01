@@ -109,11 +109,11 @@ export async function listarItens(
 /** O que um card de item precisa — sem tags, observações, preço etc. (o payload da lista era 1,1 MB). */
 export type ItemDeLista = Pick<
   ItemComRelacoes,
-  'id' | 'titulo' | 'estado' | 'prioridade' | 'numero_volume' | 'capa_url' | 'serie'
+  'id' | 'titulo' | 'estado' | 'prioridade' | 'preco' | 'numero_volume' | 'capa_url' | 'serie'
 >
 
 const CARD_SELECT =
-  'id, titulo, estado, prioridade, numero_volume, capa_url, serie:series(id, nome, tipo, tem_numeracao)'
+  'id, titulo, estado, prioridade, preco, numero_volume, capa_url, serie:series(id, nome, tipo, tem_numeracao)'
 
 /** Itens por chamada no `.in('id', …)` — URL do PostgREST tem limite de tamanho. */
 const IDS_POR_CONSULTA = 100

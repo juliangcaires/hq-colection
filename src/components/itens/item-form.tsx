@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
+import { Layers } from 'lucide-react'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { BackButton } from '@/components/ui/back-button'
 import { TagTypeCombobox } from '@/components/tags/tag-type-combobox'
@@ -202,20 +203,20 @@ export function ItemForm({
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 pb-16 lg:pb-0">
       <BackButton />
 
-      <div className="flex gap-4">
-        <div className="relative h-40 w-28 flex-shrink-0 overflow-hidden rounded-md bg-neutral-800">
+      <div className="flex flex-col items-center gap-4 lg:items-start">
+        <div className="relative h-[252px] w-[168px] flex-shrink-0 shadow-xl shadow-black/40 lg:h-[420px] lg:w-[280px] overflow-hidden rounded-md bg-surface-2">
           {capaUrl ? (
             <Image unoptimized src={capaUrl} alt={titulo} fill sizes="112px" className="object-cover" />
           ) : (
-            <div className="flex h-full items-center justify-center text-center text-xs text-neutral-500">
+            <div className="flex h-full items-center justify-center text-center text-xs text-muted-foreground">
               sem capa
             </div>
           )}
         </div>
-        <div className="flex flex-col justify-end gap-2">
+        <div className="flex flex-col items-center gap-2 lg:items-start">
           {item && (
             <>
               <input
@@ -241,7 +242,7 @@ export function ItemForm({
               >
                 {isUploading ? 'Enviando...' : 'Enviar foto da capa'}
               </Button>
-              <p className="max-w-56 text-xs text-neutral-500">
+              <p className="max-w-56 text-xs text-muted-foreground">
                 Cobertura automática de edição brasileira é irregular — enviar foto é normal, não erro.
               </p>
             </>
@@ -250,8 +251,8 @@ export function ItemForm({
       </div>
 
       {candidatos && candidatos.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-lg border border-neutral-800 bg-neutral-900 p-3">
-          <p className="text-sm text-neutral-300">
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3">
+          <p className="text-sm text-foreground">
             Encontrei {candidatos.length} candidato(s) — escolha a capa certa:
           </p>
           <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
@@ -263,7 +264,7 @@ export function ItemForm({
                 alt={c.label}
                 title={c.label}
                 onClick={() => handleEscolherCandidato(c)}
-                className={`aspect-[2/3] cursor-pointer rounded border-2 border-transparent object-cover transition hover:border-neutral-400 ${
+                className={`aspect-[2/3] cursor-pointer rounded border-2 border-transparent object-cover transition hover:border-primary ${
                   aplicandoCandidato ? 'pointer-events-none opacity-50' : ''
                 }`}
               />
@@ -277,7 +278,7 @@ export function ItemForm({
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="titulo">Título</Label>
-        <Input id="titulo" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+        <Input className="h-12 rounded-xl bg-surface-2" id="titulo" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -288,7 +289,7 @@ export function ItemForm({
             value={serieId || '__nenhuma__'}
             onValueChange={(v) => setSerieId(v === '__nenhuma__' ? '' : v ?? '')}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="h-12 w-full rounded-xl bg-surface-2">
               <SelectValue placeholder="Avulso" />
             </SelectTrigger>
             <SelectContent>
@@ -301,18 +302,33 @@ export function ItemForm({
             </SelectContent>
           </Select>
           {item?.serie && (
-            <Link href={`/serie/${item.serie.id}`} className="text-xs text-neutral-500 hover:underline">
+            <Link href={`/serie/${item.serie.id}`} className="text-xs text-muted-foreground hover:underline">
               Ver série
             </Link>
           )}
         </div>
         <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="numero">Número / volume</Label>
-          <Input id="numero" value={numeroVolume} onChange={(e) => setNumeroVolume(e.target.value)} />
+          <Input className="h-12 rounded-xl bg-surface-2" id="numero" value={numeroVolume} onChange={(e) => setNumeroVolume(e.target.value)} />
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label>Estado</Label>
+        <SegmentedControl<EstadoItem>
+          ariaLabel="Estado"
+          value={estado}
+          onChange={setEstado}
+          options={[
+            { value: 'desejo', label: 'Desejo', activeClassName: 'bg-warning font-semibold text-primary-foreground' },
+            { value: 'comprado', label: 'Comprado', activeClassName: 'bg-primary font-semibold text-primary-foreground' },
+            { value: 'lido', label: 'Lido', activeClassName: 'bg-read font-semibold text-primary-foreground' },
+          ]}
+          className="[&_button]:h-11"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
         <div className="flex min-w-0 flex-col gap-1.5">
           <Label>Tipo</Label>
           <Select
@@ -323,7 +339,7 @@ export function ItemForm({
             value={tipo}
             onValueChange={(v) => v && setTipo(v as TipoObra)}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="h-12 w-full rounded-xl bg-surface-2">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -333,30 +349,8 @@ export function ItemForm({
           </Select>
         </div>
         <div className="flex min-w-0 flex-col gap-1.5">
-          <Label>Estado</Label>
-          <Select
-            items={[
-              { value: 'desejo', label: 'Desejo' },
-              { value: 'comprado', label: 'Comprado' },
-              { value: 'lido', label: 'Lido' },
-            ]}
-            value={estado}
-            onValueChange={(v) => v && setEstado(v as EstadoItem)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="desejo">Desejo</SelectItem>
-              <SelectItem value="comprado">Comprado</SelectItem>
-              <SelectItem value="lido">Lido</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="prioridade">Prioridade</Label>
-          <Input
-            id="prioridade"
+          <Input className="h-12 rounded-xl bg-surface-2" id="prioridade"
             type="number"
             value={prioridade}
             onChange={(e) => setPrioridade(e.target.value)}
@@ -366,23 +360,22 @@ export function ItemForm({
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="isbn">ISBN</Label>
-        <Input id="isbn" value={isbn} onChange={(e) => setIsbn(e.target.value)} />
+        <Input className="h-12 rounded-xl bg-surface-2" id="isbn" value={isbn} onChange={(e) => setIsbn(e.target.value)} />
       </div>
 
       {estado !== 'desejo' && (
         <div className="grid grid-cols-3 gap-3">
           <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="preco">Preço</Label>
-            <Input id="preco" type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} />
+            <Input className="h-12 rounded-xl bg-surface-2" id="preco" type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} />
           </div>
           <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="loja">Loja</Label>
-            <Input id="loja" value={loja} onChange={(e) => setLoja(e.target.value)} />
+            <Input className="h-12 rounded-xl bg-surface-2" id="loja" value={loja} onChange={(e) => setLoja(e.target.value)} />
           </div>
           <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="data">Data aquisição</Label>
-            <Input
-              id="data"
+            <Input className="h-12 rounded-xl bg-surface-2" id="data"
               type="date"
               value={dataAquisicao ?? ''}
               onChange={(e) => setDataAquisicao(e.target.value)}
@@ -394,27 +387,33 @@ export function ItemForm({
       {estado === 'lido' && (
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="nota">Nota (1-5)</Label>
-          <Input id="nota" type="number" min={1} max={5} value={nota} onChange={(e) => setNota(e.target.value)} />
+          <Input className="h-12 rounded-xl bg-surface-2" id="nota" type="number" min={1} max={5} value={nota} onChange={(e) => setNota(e.target.value)} />
         </div>
       )}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="obs">Observações</Label>
-        <Textarea id="obs" value={observacoes ?? ''} onChange={(e) => setObservacoes(e.target.value)} rows={3} />
+        <Textarea className="rounded-xl bg-surface-2" id="obs" value={observacoes ?? ''} onChange={(e) => setObservacoes(e.target.value)} rows={3} />
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-neutral-800 pt-3">
+      <div className="flex flex-col gap-3 border-t border-border pt-3">
         {tagsHerdadas.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            <span className="text-xs text-neutral-500">herdadas da série:</span>
-            {tagsHerdadas.map((t) => (
-              <Badge key={t.id} variant="secondary" className="text-xs">
-                {t.nome}
-              </Badge>
-            ))}
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {tagsHerdadas.map((t) => (
+                <span
+                  key={t.id}
+                  className="inline-flex items-center gap-1 rounded-full border border-dashed border-border-strong px-2.5 py-1 text-xs text-foreground"
+                >
+                  <Layers className="size-3" aria-hidden />
+                  {t.nome}
+                </span>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">Tags tracejadas são herdadas da série.</p>
           </div>
         )}
-        <p className="text-xs text-neutral-500">Tags específicas deste item (além das herdadas da série)</p>
+        <p className="text-xs text-muted-foreground">Tags específicas deste item (além das herdadas da série)</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {TIPOS_TAG_DEDICADOS.map(({ tipo: tipoTag, label, multiple }) => (
             <TagTypeCombobox
@@ -429,12 +428,12 @@ export function ItemForm({
         </div>
       </div>
 
-      <div className="flex items-center justify-between pt-2">
-        <Button onClick={handleSave} disabled={isPending}>
+      <div className="fixed inset-x-0 bottom-[calc(var(--nav-h)+env(safe-area-inset-bottom))] z-30 flex items-center justify-between gap-3 border-t border-border bg-background/90 px-5 py-3 backdrop-blur lg:static lg:border-0 lg:bg-transparent lg:p-0 lg:pt-2 lg:backdrop-blur-none">
+        <Button className="h-12 flex-1 lg:h-11 lg:flex-none" onClick={handleSave} disabled={isPending}>
           {isPending ? 'Salvando...' : item ? 'Salvar alterações' : 'Criar item'}
         </Button>
         {item && (
-          <Button variant="ghost" onClick={() => setDeleteOpen(true)} disabled={isPending} className="text-red-400">
+          <Button variant="ghost" onClick={() => setDeleteOpen(true)} disabled={isPending} className="text-danger-text">
             Excluir item
           </Button>
         )}
