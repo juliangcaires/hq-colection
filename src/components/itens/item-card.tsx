@@ -1,6 +1,10 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import type { ItemDeLista } from '@/lib/queries'
+import { cn } from '@/lib/utils'
+
+const SELO =
+  'absolute top-1.5 right-1.5 rounded-[4px] px-1.5 py-0.5 text-[10px] font-bold tracking-wide uppercase text-primary-foreground'
 
 export function ItemCard({ item, capaUrl }: { item: ItemDeLista; capaUrl: string | null }) {
   const isDesejo = item.estado === 'desejo'
@@ -10,12 +14,14 @@ export function ItemCard({ item, capaUrl }: { item: ItemDeLista; capaUrl: string
   return (
     <Link href={`/item/${item.id}`} className="group flex flex-col gap-1.5">
       <div
-        className={`relative aspect-[2/3] overflow-hidden rounded-lg bg-card ring-1 ring-border transition-shadow group-hover:ring-primary/40 ${
-          isDesejo ? 'border-2 border-dashed border-chart-3/60 opacity-70' : ''
-        }`}
+        className={cn(
+          'relative aspect-[2/3] overflow-hidden rounded-lg bg-card ring-1 ring-white/10 transition-shadow group-hover:ring-primary/40',
+          isDesejo && 'border-2 border-dashed border-warning opacity-60'
+        )}
       >
         {capaUrl ? (
-          <Image unoptimized
+          <Image
+            unoptimized
             src={capaUrl}
             alt={item.titulo}
             fill
@@ -23,25 +29,22 @@ export function ItemCard({ item, capaUrl }: { item: ItemDeLista; capaUrl: string
             className="object-cover transition-transform group-hover:scale-105"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
-            {item.titulo}
+          <div className="flex h-full w-full flex-col justify-end p-2 text-left">
+            <span className="font-heading text-sm leading-[1.05] font-extrabold text-foreground">
+              {item.titulo}
+            </span>
           </div>
         )}
-        {isLido && (
-          <span className="absolute top-1.5 right-1.5 rounded-full bg-destructive px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
-            Lido
-          </span>
-        )}
+        {isLido && <span className={cn(SELO, 'bg-read')}>Lido</span>}
+        {isDesejo && <span className={cn(SELO, 'bg-warning')}>Desejo</span>}
       </div>
-      <div className="flex flex-col">
-        <span className="truncate text-sm font-medium text-foreground">{item.titulo}</span>
+      <div className="flex flex-col text-[13px] leading-tight">
+        <span className="truncate font-medium text-foreground">{item.titulo}</span>
         {item.serie && (
           <span className="truncate text-xs text-muted-foreground">
-            {item.serie.nome}
             {/* Só em série numerada: nas demais o número não significa ordem e só confundiria. */}
-            {mostrarNumero && (
-              <span className="ml-1 font-medium text-foreground/80">#{item.numero_volume}</span>
-            )}
+            {mostrarNumero && <span className="mr-1 font-semibold text-foreground">#{item.numero_volume}</span>}
+            {item.serie.nome}
           </span>
         )}
       </div>

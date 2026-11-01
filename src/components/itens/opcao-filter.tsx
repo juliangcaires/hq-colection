@@ -62,8 +62,9 @@ export function OpcaoFilter({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(
-          buttonVariants({ variant: selectedIds.length > 0 ? 'secondary' : 'outline' }),
-          'justify-start font-normal'
+          buttonVariants({ variant: 'outline' }),
+          'h-11 shrink-0 justify-start rounded-full px-3.5 font-normal',
+          selectedIds.length > 0 ? 'border-primary bg-primary/15 hover:bg-primary/20' : 'bg-card'
         )}
       >
         {triggerLabel}

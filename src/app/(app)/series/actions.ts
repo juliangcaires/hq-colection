@@ -509,6 +509,8 @@ export type SerieListada = {
   em_publicacao: boolean
   /** Derivada na hora (nada é gravado): tem total declarado e você já tem tudo. */
   completa: boolean
+  /** Números de volume que faltam (calculados no banco), vazio se não há furos. */
+  faltantes: number[]
 }
 
 export async function listarSeries(query: string): Promise<SerieListada[]> {
@@ -523,13 +525,14 @@ export async function listarSeries(query: string): Promise<SerieListada[]> {
   if (error) throw new Error(error.message)
 
   return ((data ?? []) as (Omit<SerieListada, 'completa'> & { completa: boolean; tem_numeracao: boolean })[]).map(
-    ({ id, nome, tipo, total_volumes, em_publicacao, completa }) => ({
+    ({ id, nome, tipo, total_volumes, em_publicacao, completa, faltantes }) => ({
       id,
       nome,
       tipo,
       total_volumes,
       em_publicacao,
       completa,
+      faltantes: faltantes ?? [],
     })
   )
 }

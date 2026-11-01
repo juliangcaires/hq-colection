@@ -4,22 +4,51 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Check } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ItemCard } from '@/components/itens/item-card'
 import { removerItensDaSerie } from '@/app/(app)/series/actions'
 import type { ItemComRelacoes } from '@/lib/types'
 import { desembrulhar } from '@/lib/resultado'
 
+type Celula = { tipo: 'item'; item: ItemComRelacoes } | { tipo: 'furo'; numero: number }
+
+/** Intercala os furos entre os volumes pela posição numérica; itens sem número vão ao fim. */
+function montarCelulas(itens: ItemComRelacoes[], faltantes: number[]): Celula[] {
+  const numerados = itens.filter((i) => i.numero_volume !== null)
+  const avulsos = itens.filter((i) => i.numero_volume === null)
+  const todos: (Celula & { pos: number })[] = [
+    ...numerados.map((item) => ({ tipo: 'item' as const, item, pos: item.numero_volume as number })),
+    ...faltantes.map((numero) => ({ tipo: 'furo' as const, numero, pos: numero })),
+  ]
+  todos.sort((a, b) => a.pos - b.pos)
+  return [...todos, ...avulsos.map((item) => ({ tipo: 'item' as const, item }))]
+}
+
+function VolumeVazio({ numero }: { numero: number }) {
+  return (
+    <div
+      className="flex aspect-[2/3] flex-col items-center justify-center rounded-lg border-2 border-dashed border-warning text-warning-text"
+      aria-label={`Volume ${numero} faltando`}
+    >
+      <span className="font-heading text-base font-extrabold">#{numero}</span>
+      <span className="text-[10px]">falta</span>
+    </div>
+  )
+}
+
 export function VolumesGrid({
   serieId,
   itens,
   capas,
+  faltantes = [],
 }: {
   serieId: string
   itens: ItemComRelacoes[]
   /** Entries do Map de signed URLs — Map não atravessa a fronteira servidor→cliente. */
   capas: [string, string][]
+  /** Números de volume que faltam: aparecem na grade, na posição numérica, como slots vazios. */
+  faltantes?: number[]
 }) {
   const router = useRouter()
   const capaMap = new Map(capas)
@@ -57,35 +86,41 @@ export function VolumesGrid({
     })
   }
 
+  const celulas = montarCelulas(itens, faltantes)
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-end gap-2">
-        {selecionando ? (
-          <>
-            <span className="mr-auto text-sm text-muted-foreground">
-              {selecionados.size} selecionado(s)
-            </span>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={selecionados.size === 0 || isPending}
-              onClick={() => setConfirmando(true)}
-            >
-              Remover da série
-            </Button>
-            <Button size="sm" variant="ghost" onClick={sairDaSelecao} disabled={isPending}>
-              Cancelar
-            </Button>
-          </>
-        ) : (
-          <Button size="sm" variant="ghost" onClick={() => setSelecionando(true)}>
+      {selecionando ? (
+        <div
+          role="toolbar"
+          aria-label="Ações da seleção"
+          className="fixed inset-x-3 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-50 flex items-center gap-2 rounded-[18px] border border-border-strong bg-surface-2 p-2 pl-4 shadow-xl shadow-black/40 lg:static lg:rounded-[14px] lg:shadow-none"
+        >
+          <span className="mr-auto text-sm text-foreground">{selecionados.size} selecionado(s)</span>
+          <Button
+            variant="destructive"
+            className="h-11"
+            disabled={selecionados.size === 0 || isPending}
+            onClick={() => setConfirmando(true)}
+          >
+            Remover da série
+          </Button>
+          <Button variant="ghost" className="h-11 text-link" onClick={sairDaSelecao} disabled={isPending}>
+            Cancelar
+          </Button>
+        </div>
+      ) : (
+        <div className="flex justify-end">
+          <Button variant="ghost" className="h-11 text-link" onClick={() => setSelecionando(true)}>
             Selecionar
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-        {itens.map((item) => {
+      <div className="grid grid-cols-5 gap-2.5 lg:grid-cols-[repeat(auto-fill,minmax(88px,1fr))] lg:gap-3.5">
+        {celulas.map((celula) => {
+          if (celula.tipo === 'furo') return <VolumeVazio key={`furo-${celula.numero}`} numero={celula.numero} />
+          const item = celula.item
           const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
 
           if (!selecionando) {
@@ -115,18 +150,18 @@ export function VolumesGrid({
               </div>
               <span
                 aria-hidden
-                className={`pointer-events-none absolute inset-0 rounded-lg ring-2 transition-colors ${
-                  marcado ? 'ring-primary' : 'ring-transparent'
+                className={`pointer-events-none absolute inset-0 rounded-lg transition-shadow ${
+                  marcado ? 'shadow-[0_0_0_2px_var(--background),0_0_0_4px_var(--primary)]' : ''
                 }`}
               />
-              <Checkbox
-                checked={marcado}
-                onCheckedChange={() => toggle(item.id)}
-                onClick={(e) => e.stopPropagation()}
-                tabIndex={-1}
-                aria-hidden
-                className="absolute top-2 left-2 bg-background"
-              />
+              {marcado && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute top-1.5 left-1.5 flex size-[22px] items-center justify-center rounded-full bg-primary text-primary-foreground"
+                >
+                  <Check className="size-3.5" strokeWidth={3} />
+                </span>
+              )}
             </div>
           )
         })}

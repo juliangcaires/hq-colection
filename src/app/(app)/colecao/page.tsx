@@ -55,10 +55,9 @@ export default async function ColecaoPage({
   return (
     <div className="flex flex-col gap-6">
       <ScrollRestore />
-      <div>
-        <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground">Coleção</h1>
-        <p className="text-sm text-muted-foreground">{total} item(ns)</p>
-      </div>
+      <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">
+        Coleção <span className="font-normal text-muted-foreground">· {total} {total === 1 ? 'item' : 'itens'}</span>
+      </h1>
 
       <ColecaoFilters series={series} tags={tagsData ?? []} />
 
@@ -67,7 +66,7 @@ export default async function ColecaoPage({
       ) : agrupar ? (
         <ColecaoAgrupada itens={itens} capaMap={capaMap} />
       ) : (
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+        <div className="grid grid-cols-3 gap-x-3 gap-y-3.5 lg:grid-cols-[repeat(auto-fill,minmax(132px,1fr))] lg:gap-x-[18px] lg:gap-y-5">
           {itens.map((item) => (
             <ItemCard key={item.id} item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
           ))}
@@ -107,7 +106,7 @@ function ColecaoAgrupada({
               grupo.nome
             )}
           </h2>
-          <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-3.5 lg:grid-cols-[repeat(auto-fill,minmax(132px,1fr))] lg:gap-x-[18px] lg:gap-y-5">
             {grupo.itens.map((item) => (
               <ItemCard key={item.id} item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
             ))}

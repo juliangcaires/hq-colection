@@ -6,8 +6,8 @@ export default function ImportarPage() {
     <div className="flex flex-col gap-6">
       <ScrollRestore />
       <div>
-        <h1 className="text-2xl font-semibold">Importar</h1>
-        <p className="max-w-2xl text-sm text-neutral-500">
+        <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">Importar CSV</h1>
+        <p className="max-w-2xl text-sm text-muted-foreground">
           Suba um CSV já revisado (vindo do Notion ou de fotos das prateleiras analisadas por IA).
           Colunas aceitas: <code>titulo, serie, numero_volume, tipo, estado, editora, universo,
           personagem, selo, autor, isbn, tags_extra, observacoes</code>. Rodar o mesmo arquivo duas
