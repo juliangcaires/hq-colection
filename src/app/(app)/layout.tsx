@@ -1,8 +1,9 @@
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { signOut } from './actions'
-import { NavLinks } from '@/components/nav-links'
-import { QuickAddButton } from '@/components/quick-add/quick-add-button'
+import { AppHeader } from '@/components/shell/app-header'
+import { AppSidebar } from '@/components/shell/app-sidebar'
+import { BottomNav } from '@/components/shell/bottom-nav'
+import { QuickAddProvider } from '@/components/quick-add/quick-add-provider'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -11,33 +12,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const email = typeof data?.claims.email === 'string' ? data.claims.email : undefined
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-          <div className="flex items-center gap-6">
-            <Link href="/" className="font-heading text-lg font-semibold tracking-tight text-foreground">
-              Minha Coleção
-            </Link>
-            <NavLinks className="hidden gap-5 text-sm text-muted-foreground sm:flex" />
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden text-xs text-muted-foreground sm:inline">{email}</span>
-            <form action={signOut}>
-              <button className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
-                Sair
-              </button>
-            </form>
-          </div>
+    <QuickAddProvider>
+      <div className="flex min-h-screen">
+        <AppSidebar email={email} signOut={signOut} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AppHeader email={email} signOut={signOut} />
+          <main className="mx-auto w-full max-w-[1160px] flex-1 px-5 pt-3 pb-[calc(var(--nav-h)+env(safe-area-inset-bottom)+16px)] lg:px-10 lg:py-7">
+            {children}
+          </main>
         </div>
-        <NavLinks
-          className="flex gap-4 overflow-x-auto border-t border-border px-4 py-2 text-sm text-muted-foreground sm:hidden"
-          linkClassName="whitespace-nowrap"
-        />
-      </header>
-
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 pb-24">{children}</main>
-
-      <QuickAddButton />
-    </div>
+      </div>
+      <BottomNav />
+    </QuickAddProvider>
   )
 }
