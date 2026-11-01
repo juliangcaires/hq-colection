@@ -2,7 +2,10 @@
 
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { useEffect, useState, useTransition } from 'react'
+import { Search } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
   Select,
   SelectContent,
@@ -24,11 +27,13 @@ const ESTADO_ITEMS = [
   { value: 'lido', label: 'Lido' },
 ]
 
-const TIPO_ITEMS = [
-  { value: 'todos', label: 'HQ e mangá' },
+const TIPO_OPCOES: { value: 'todos' | TipoObra; label: string }[] = [
+  { value: 'todos', label: 'Todos' },
   { value: 'hq', label: 'HQ' },
   { value: 'manga', label: 'Mangá' },
 ]
+
+const CHIP = 'h-11 shrink-0 rounded-full px-3.5 text-sm'
 
 function idsDoParam(searchParams: URLSearchParams, key: string): string[] {
   const raw = searchParams.get(key)
@@ -82,27 +87,44 @@ export function ColecaoFilters({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3"
+      className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center lg:rounded-[14px] lg:border lg:border-border lg:bg-card lg:p-3"
       aria-busy={isPending}
     >
       {/* A lista é renderizada no servidor: sem isto, filtrar parece não fazer nada até a resposta chegar. */}
       {isPending && (
         <div role="status" aria-label="Carregando" className="fixed inset-x-0 top-0 z-50 h-0.5 animate-pulse bg-primary" />
       )}
-      <Input
-        placeholder="Buscar por título..."
-        value={busca}
-        onChange={(e) => setBusca(e.target.value)}
-        className="w-48"
+      <div className="relative lg:w-64">
+        <Search
+          className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden
+        />
+        <Input
+          type="search"
+          aria-label="Buscar por título"
+          placeholder="Buscar por título..."
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          className="h-12 rounded-xl bg-surface-2 pl-10"
+        />
+      </div>
+
+      <SegmentedControl
+        ariaLabel="Tipo"
+        options={TIPO_OPCOES}
+        value={(searchParams.get('tipo') as TipoObra | null) ?? 'todos'}
+        onChange={(v) => setParam('tipo', v === 'todos' ? null : v)}
+        className="lg:w-64"
       />
 
+      <div className="-mx-5 flex items-center gap-2 overflow-x-auto px-5 lg:mx-0 lg:contents lg:overflow-visible lg:px-0">
       {mostrarEstado && (
         <Select
           items={ESTADO_ITEMS}
           value={searchParams.get('estado') ?? 'todos'}
           onValueChange={(v) => setParam('estado', v === 'todos' ? null : v)}
         >
-          <SelectTrigger className="w-36">
+          <SelectTrigger className={cn(CHIP, "w-auto gap-2 border-border bg-card", searchParams.get('estado') && "border-primary bg-primary/15")}>
             <SelectValue placeholder="Estado" />
           </SelectTrigger>
           <SelectContent>
@@ -114,23 +136,6 @@ export function ColecaoFilters({
           </SelectContent>
         </Select>
       )}
-
-      <Select
-        items={TIPO_ITEMS}
-        value={searchParams.get('tipo') ?? 'todos'}
-        onValueChange={(v) => setParam('tipo', v === 'todos' ? null : (v as TipoObra))}
-      >
-        <SelectTrigger className="w-32">
-          <SelectValue placeholder="Tipo" />
-        </SelectTrigger>
-        <SelectContent>
-          {TIPO_ITEMS.map((i) => (
-            <SelectItem key={i.value} value={i.value}>
-              {i.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
 
       <OpcaoFilter
         label="Série"
@@ -161,8 +166,9 @@ export function ColecaoFilters({
 
       {mostrarAgrupar && (
         <Button
-          variant={agrupar ? 'secondary' : 'outline'}
-          size="sm"
+          variant="outline"
+          aria-pressed={agrupar}
+          className={cn(CHIP, agrupar ? 'border-primary bg-primary/15' : 'bg-card')}
           onClick={() => setParam('agrupar', agrupar ? null : '1')}
         >
           Agrupar por série
@@ -171,17 +177,19 @@ export function ColecaoFilters({
 
       {mostrarSemCapa && (
         <Button
-          variant={semCapa ? 'secondary' : 'outline'}
-          size="sm"
+          variant="outline"
+          aria-pressed={semCapa}
+          className={cn(CHIP, semCapa ? 'border-primary bg-primary/15' : 'bg-card')}
           onClick={() => setParam('capa', semCapa ? null : 'sem')}
         >
           Sem capa
         </Button>
       )}
 
-      <Button variant="ghost" size="sm" onClick={() => startTransition(() => router.push(pathname))}>
+      <Button variant="ghost" className="h-11 shrink-0 rounded-full px-3.5 text-link" onClick={() => startTransition(() => router.push(pathname))}>
         Limpar filtros
       </Button>
+      </div>
     </div>
   )
 }
