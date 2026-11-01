@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Tags — Minha Coleção</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#100d16}
+a{color:#b9a6ff}a:hover{color:#d4c8ff}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #100d16; color: #f1eef7; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box">
+
+  <header style="display: flex; align-items: center; gap: 4px; padding: 8px 12px 0 8px">
+    <a href="Main.dc.html" aria-label="Voltar" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #f1eef7">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+    </a>
+    <h1 style="margin: 0; flex: 1; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 26px; letter-spacing: -0.02em">Tags</h1>
+  </header>
+
+  <section style="padding: 8px 20px 0; display: flex; flex-direction: column; gap: 14px">
+    <div role="group" aria-label="Tipo" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: #14111d; border: 1px solid #2b2540">
+      <button aria-pressed="false" style="height: 40px; border: 0; border-radius: 9px; background: transparent; color: #a89cc4; font: inherit; font-size: 14px">Todas</button>
+      <button aria-pressed="false" style="height: 40px; border: 0; border-radius: 9px; background: transparent; color: #a89cc4; font: inherit; font-size: 14px">HQ</button>
+      <button aria-pressed="true" style="height: 40px; border: 0; border-radius: 9px; background: #f1eef7; color: #100d16; font: inherit; font-size: 14px; font-weight: 600">Mangá</button>
+    </div>
+
+    <form style="display: flex; gap: 8px">
+      <label for="t-nova" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Nova tag</label>
+      <input id="t-nova" placeholder="Nova tag de mangá…" style="flex: 1; min-width: 0; height: 48px; padding: 0 14px; border-radius: 12px; border: 1px solid #2b2540; background: #1b1726; color: #f1eef7; font: inherit; font-size: 15px; box-sizing: border-box">
+      <button style="flex: none; height: 48px; padding: 0 16px; border-radius: 12px; border: 0; background: #8b6cf5; color: #100d16; font: inherit; font-size: 15px; font-weight: 700">Criar</button>
+    </form>
+
+    <div style="font-size: 13px; color: #a89cc4">Tags aplicadas a uma série são herdadas por todos os volumes dela.</div>
+
+    <ul style="list-style: none; margin: 0; padding: 0; background: #14111d; border: 1px solid #2b2540; border-radius: 14px; overflow: hidden">
+      <sc-for list="{{tags}}" as="t" hint-placeholder-count="8">
+        <li style="display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 14px; min-height: 56px; box-sizing: border-box; border-top: {{t.borda}}">
+          <span style="width: 10px; height: 10px; border-radius: 5px; background: {{t.cor}}; flex: none"></span>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-weight: 600; font-size: 15px">{{t.nome}}</div>
+            <div style="font-size: 12px; color: #a89cc4">{{t.uso}}</div>
+          </div>
+          <button aria-label="Editar tag {{t.nome}}" style="width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; color: #a89cc4; display: flex; align-items: center; justify-content: center">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"></path></svg>
+          </button>
+        </li>
+      </sc-for>
+    </ul>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var cores = ['#8b6cf5', '#2fbf9a', '#c85fd6', '#e0912a', '#d16a5c', '#8fb4f0'];
+    var data = [
+      ['seinen', '4 séries · 92 volumes'],
+      ['shounen', '3 séries · 48 volumes'],
+      ['samurai', '1 série · 34 volumes'],
+      ['fantasia sombria', '1 série · 20 volumes'],
+      ['finalizada', '2 séries · 26 volumes'],
+      ['releitura', '7 volumes'],
+      ['emprestado', '2 volumes'],
+      ['capa variante', '3 volumes']
+    ];
+    return {
+      tags: data.map(function (d, i) {
+        return { nome: d[0], uso: d[1], cor: cores[i % cores.length], borda: i === 0 ? '0' : '1px solid #2b2540' };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

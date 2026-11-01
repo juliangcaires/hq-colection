@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Desejos — Minha Coleção</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#100d16}
+a{color:#b9a6ff}a:hover{color:#d4c8ff}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #100d16; color: #f1eef7; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box">
+
+  <header style="padding: 12px 20px 0; display: flex; flex-direction: column; gap: 12px">
+    <h1 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 28px; letter-spacing: -0.02em">Desejos</h1>
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 14px; border: 1px dashed #e0912a; background: rgba(224,145,42,0.08)">
+      <div>
+        <div style="font-size: 13px; color: #a89cc4">Para completar a lista</div>
+        <div style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 26px; color: #f0c48a">R$ 312,40</div>
+      </div>
+      <div style="text-align: right; font-size: 13px; color: #a89cc4">12 itens<br>5 de alta prioridade</div>
+    </div>
+    <div style="display: flex; gap: 8px">
+      <button aria-pressed="true" style="height: 44px; padding: 0 14px; border-radius: 22px; border: 0; background: #f1eef7; color: #100d16; font: inherit; font-size: 14px; font-weight: 600">Prioridade</button>
+      <button aria-pressed="false" style="height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid #2b2540; background: #14111d; color: #f1eef7; font: inherit; font-size: 14px">Preço</button>
+      <button aria-pressed="false" style="height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid #2b2540; background: #14111d; color: #f1eef7; font: inherit; font-size: 14px">Série</button>
+    </div>
+  </header>
+
+  <ul style="list-style: none; margin: 14px 0 0; padding: 0 20px; display: flex; flex-direction: column; gap: 10px">
+    <sc-for list="{{lista}}" as="d" hint-placeholder-count="5">
+      <li style="display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 14px; background: #14111d; border: 1px solid #2b2540">
+        <div style="flex: none; width: 52px; aspect-ratio: 2 / 3; border-radius: 6px; border: 2px dashed #e0912a; background: {{d.cor}}; opacity: 0.7; box-sizing: border-box"></div>
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+          <div style="font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{d.titulo}}</div>
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px">
+            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 4px; color: {{d.pTinta}}; background: {{d.pFundo}}">{{d.prioridade}}</span>
+            <span style="color: #a89cc4">{{d.preco}}</span>
+          </div>
+        </div>
+        <button style="flex: none; height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid #2fbf9a; background: transparent; color: #5fd8b6; font: inherit; font-size: 14px; font-weight: 600">Adquirir</button>
+      </li>
+    </sc-for>
+  </ul>
+
+  <nav aria-label="Navegação principal" style="position: absolute; left: 0; right: 0; bottom: 0; height: 84px; padding: 6px 8px 22px; box-sizing: border-box; background: rgba(20,17,29,0.92); border-top: 1px solid #2b2540; backdrop-filter: blur(16px); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center">
+    <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; justify-content: center; text-decoration: none; color: #a89cc4; font-size: 11px; font-weight: 500">
+      <span style="display: flex; padding: 4px 16px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg></span>Início
+    </a>
+    <a href="Colecao.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; justify-content: center; text-decoration: none; color: #a89cc4; font-size: 11px; font-weight: 500">
+      <span style="display: flex; padding: 4px 16px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="10" rx="1"></rect><rect x="14" y="3" width="7" height="10" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect><rect x="14" y="16" width="7" height="5" rx="1"></rect></svg></span>Coleção
+    </a>
+    <a href="InsercaoRapida.dc.html" aria-label="Adicionar item" style="justify-self: center; width: 56px; height: 56px; border-radius: 28px; background: #8b6cf5; color: #100d16; display: flex; align-items: center; justify-content: center; margin-top: -18px; box-shadow: 0 6px 18px rgba(139,108,245,0.4)">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    </a>
+    <a href="Series.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; justify-content: center; text-decoration: none; color: #a89cc4; font-size: 11px; font-weight: 500">
+      <span style="display: flex; padding: 4px 16px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5z"></path><path d="m3 13 9 5 9-5"></path></svg></span>Séries
+    </a>
+    <a href="Desejos.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; justify-content: center; text-decoration: none; color: #f1eef7; font-size: 11px; font-weight: 600">
+      <span style="display: flex; padding: 4px 16px; border-radius: 14px; background: rgba(139,108,245,0.22)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"></path></svg></span>Desejos
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var P = {
+      Alta: { pTinta: '#100d16', pFundo: '#e0912a' },
+      'Média': { pTinta: '#f0c48a', pFundo: 'rgba(224,145,42,0.16)' },
+      Baixa: { pTinta: '#a89cc4', pFundo: '#2b2540' }
+    };
+    var mk = function (titulo, prioridade, preco, cor) {
+      return Object.assign({ titulo: titulo, prioridade: prioridade, preco: preco, cor: cor }, P[prioridade]);
+    };
+    return {
+      lista: [
+        mk('Vagabond #4', 'Alta', 'R$ 39,90', '#2a3b34'),
+        mk('Vagabond #17', 'Alta', 'R$ 39,90', '#263a3e'),
+        mk('Saga #7', 'Alta', 'R$ 54,90', '#1f3550'),
+        mk('Chainsaw Man #9', 'Média', 'R$ 32,90', '#5a2a1a'),
+        mk('Sandman — Edição Definitiva 4', 'Média', 'R$ 129,90', '#3a2350'),
+        mk('Berserk #16', 'Baixa', 'R$ 44,90', '#4b1f22')
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
