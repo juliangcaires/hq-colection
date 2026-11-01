@@ -313,7 +313,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
 
       <div className="flex flex-col gap-1.5">
         <Label>
-          Série {editoraSelecionada.length > 0 && <span className="text-neutral-500">(dessa editora)</span>}
+          Série {editoraSelecionada.length > 0 && <span className="text-muted-foreground">(dessa editora)</span>}
         </Label>
         <Popover open={serieOpen} onOpenChange={setSerieOpen}>
           <PopoverTrigger
@@ -332,7 +332,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
                 <CommandEmpty>
                   {serieQuery.trim() ? (
                     <button
-                      className="w-full px-2 py-1.5 text-left text-sm hover:text-neutral-100"
+                      className="w-full px-2 py-1.5 text-left text-sm hover:text-foreground"
                       onClick={() => {
                         selecionarSerie({ novo: true, nome: serieQuery.trim() })
                         setSerieOpen(false)
@@ -365,7 +365,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
         {serieSelecionada && (
           <button
             type="button"
-            className="self-start text-xs text-neutral-500 hover:text-neutral-300"
+            className="self-start text-xs text-muted-foreground hover:text-foreground"
             onClick={() => selecionarSerie(null)}
           >
             limpar seleção
@@ -373,7 +373,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
         )}
         {tagsHerdadas.length > 0 && (
           <div className="flex flex-wrap gap-1 pt-1">
-            <span className="text-xs text-neutral-500">herda:</span>
+            <span className="text-xs text-muted-foreground">herda:</span>
             {tagsHerdadas.map((t) => (
               <Badge key={t.id} variant="secondary" className="text-xs">
                 {t.nome}
@@ -480,7 +480,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
             <Label htmlFor="titulo">
               Título{' '}
               {serieSelecionada && (
-                <span className="text-neutral-500">(opcional — gerado da série)</span>
+                <span className="text-muted-foreground">(opcional — gerado da série)</span>
               )}
             </Label>
             <Input
@@ -494,7 +494,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="isbn">
               ISBN{' '}
-              <span className="text-neutral-500">
+              <span className="text-muted-foreground">
                 (opcional — melhora a chance de achar a capa sozinho)
               </span>
             </Label>
@@ -536,7 +536,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
                       >
                         {jaSelecionada ? '✓ ' : ''}
                         {t.nome}
-                        <span className="ml-2 text-xs text-neutral-500">{t.tipo}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{t.tipo}</span>
                       </CommandItem>
                     )
                   })}
@@ -561,7 +561,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
         )}
       </div>
 
-      <Button onClick={handleSubmit} disabled={isPending || (varios && analiseVolumes.bloqueado)}>
+      <Button className="h-12" onClick={handleSubmit} disabled={isPending || (varios && analiseVolumes.bloqueado)}>
         {isPending
           ? 'Salvando...'
           : varios

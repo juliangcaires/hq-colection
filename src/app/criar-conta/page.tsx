@@ -16,12 +16,13 @@ export default async function CriarContaPage({
 
   return (
     <AuthShell
+      aba="criar"
       title="Criar conta"
       description="Crie sua conta pessoal para começar a catalogar sua coleção."
       footer={
         <>
           Já tem conta?{' '}
-          <Link href="/login" className="font-medium text-primary hover:underline">
+          <Link href="/login" className="font-medium text-link hover:underline">
             Entrar
           </Link>
         </>
@@ -36,12 +37,12 @@ export default async function CriarContaPage({
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="email">E-mail</Label>
-          <Input id="email" name="email" type="email" placeholder="voce@email.com" required className="h-10" />
+          <Input id="email" name="email" type="email" placeholder="voce@email.com" required className="h-12" />
         </div>
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="password">Senha</Label>
-          <Input id="password" name="password" type="password" placeholder="Mínimo 8 caracteres" required minLength={8} maxLength={72} className="h-10" />
+          <Input id="password" name="password" type="password" placeholder="Mínimo 8 caracteres" required minLength={8} maxLength={72} className="h-12" />
         </div>
 
         <SubmitButton pendingLabel="Criando conta...">Criar conta</SubmitButton>

@@ -8,7 +8,7 @@ export function SubmitButton({ children, pendingLabel }: { children: React.React
   const { pending } = useFormStatus()
 
   return (
-    <Button type="submit" disabled={pending} className="mt-2 h-10 w-full">
+    <Button type="submit" disabled={pending} className="mt-2 h-13 w-full">
       {pending ? pendingLabel : children}
     </Button>
   )

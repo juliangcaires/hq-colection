@@ -18,12 +18,13 @@ export default async function LoginPage({
 
   return (
     <AuthShell
+      aba="entrar"
       title="Entrar"
       description="Acesse sua coleção pessoal de HQs e mangás."
       footer={
         <>
           Não tem conta?{' '}
-          <Link href="/criar-conta" className="font-medium text-primary hover:underline">
+          <Link href="/criar-conta" className="font-medium text-link hover:underline">
             Criar conta
           </Link>
         </>
@@ -43,12 +44,12 @@ export default async function LoginPage({
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="email">E-mail</Label>
-          <Input id="email" name="email" type="email" placeholder="voce@email.com" required className="h-10" />
+          <Input id="email" name="email" type="email" placeholder="voce@email.com" required className="h-12" />
         </div>
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="password">Senha</Label>
-          <Input id="password" name="password" type="password" placeholder="••••••••" required maxLength={72} className="h-10" />
+          <Input id="password" name="password" type="password" placeholder="••••••••" required maxLength={72} className="h-12" />
         </div>
 
         <SubmitButton pendingLabel="Entrando...">Entrar</SubmitButton>
