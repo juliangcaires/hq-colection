@@ -23,8 +23,6 @@ export function AvaliarSerie({
   const [nota, setNota] = useState<number | null>(notaAtual)
   const [isPending, startTransition] = useTransition()
 
-  if (lidos === 0) return null
-
   function aplicar() {
     startTransition(async () => {
       try {
@@ -42,11 +40,13 @@ export function AvaliarSerie({
       <div className="mr-auto">
         <p className="text-sm font-medium text-foreground">Nota da série</p>
         <p className="text-xs text-muted-foreground">
-          Vale para os {lidos} {lidos === 1 ? 'volume lido' : 'volumes lidos'}.
+          {lidos === 0
+            ? 'Marque algum volume como lido para poder avaliar a série.'
+            : `Vale para os ${lidos} ${lidos === 1 ? 'volume lido' : 'volumes lidos'}.`}
         </p>
       </div>
-      <Estrelas valor={nota} onChange={setNota} />
-      <Button className="h-11" onClick={aplicar} disabled={isPending || nota === notaAtual}>
+      <Estrelas valor={nota} onChange={lidos === 0 ? undefined : setNota} />
+      <Button className="h-11" onClick={aplicar} disabled={isPending || lidos === 0 || nota === notaAtual}>
         Aplicar aos volumes
       </Button>
     </section>

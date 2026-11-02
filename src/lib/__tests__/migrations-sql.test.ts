@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -150,5 +150,64 @@ describe('funções transacionais', () => {
     } finally {
       await db.query(`select set_config('app.uid','${U}',false)`)
     }
+  })
+})
+
+describe('nota e crítica (migration 0008)', () => {
+  const dados = (extra: object) => JSON.stringify({ titulo: 'N', tipo: 'hq', estado: 'lido', prioridade: 0, ...extra })
+
+  it('item_salvar grava nota de meia estrela e a crítica', async () => {
+    const { rows: [{ id }] } = await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') as id`, [dados({ nota: 4.5, critica: 'Ótimo' })])
+    const { rows: [i] } = await db.query<{ nota: string; critica: string }>(`select nota, critica from itens where id = $1`, [id])
+    expect(Number(i.nota)).toBe(4.5)
+    expect(i.critica).toBe('Ótimo')
+  })
+
+  it('recusa nota fora de 0,5–5 ou que não seja de meia em meia estrela', async () => {
+    for (const nota of [4.3, 5.5, 0, -1]) {
+      await expect(db.query(`select item_salvar(null, $1::jsonb, '{}')`, [dados({ nota })])).rejects.toThrow()
+    }
+    for (const nota of [0.5, 1, 2.5, 5]) {
+      await expect(db.query(`select item_salvar(null, $1::jsonb, '{}')`, [dados({ nota })])).resolves.toBeDefined()
+    }
+  })
+
+  it('nota da série: vale só para os volumes lidos daquela série (e só os do próprio usuário)', async () => {
+    const mk = async (nome: string) =>
+      (await db.query<{ s: string }>(`select serie_salvar(null, $1::jsonb, '{}') s`, [JSON.stringify({ nome, tipo: 'hq', tem_numeracao: true })])).rows[0].s
+    const serie = await mk('Avaliada')
+    const outra = await mk('Outra')
+    const item = async (serie_id: string, n: number, estado: string, nota: number | null = null) =>
+      (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') as id`, [dados({ serie_id, numero_volume: n, estado, nota })])).rows[0].id
+    const lido1 = await item(serie, 1, 'lido', 2)
+    const lido2 = await item(serie, 2, 'lido')
+    const comprado = await item(serie, 3, 'comprado')
+    const desejo = await item(serie, 4, 'desejo')
+    const deOutra = await item(outra, 1, 'lido', 1)
+
+    // Mesmo filtro da action `avaliarSerie`.
+    const { rows } = await db.query<{ id: string }>(`update itens set nota = $2 where serie_id = $1 and estado = 'lido' returning id`, [serie, 4.5])
+    expect(rows.map((r) => r.id).sort()).toEqual([lido1, lido2].sort())
+
+    const nota = async (id: string) => (await db.query<{ nota: string | null }>(`select nota from itens where id = $1`, [id])).rows[0].nota
+    expect(Number(await nota(lido1))).toBe(4.5)
+    expect(Number(await nota(lido2))).toBe(4.5)
+    expect(await nota(comprado)).toBeNull()
+    expect(await nota(desejo)).toBeNull()
+    expect(Number(await nota(deOutra))).toBe(1)
+
+    // Limpar a nota da série também só alcança os lidos.
+    await db.query(`update itens set nota = null where serie_id = $1 and estado = 'lido'`, [serie])
+    expect(await nota(lido1)).toBeNull()
+  })
+
+  it('marcar como lido só vale para itens comprados', async () => {
+    const mk = async (estado: string) =>
+      (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') as id`, [dados({ estado })])).rows[0].id
+    const comprado = await mk('comprado')
+    const desejo = await mk('desejo')
+    const { rows } = await db.query(`update itens set estado = 'lido', nota = 4, critica = 'ok' where id = any($1::uuid[]) and estado = 'comprado' returning id`, [[comprado, desejo]])
+    expect(rows).toHaveLength(1)
+    expect((await db.query<{ estado: string }>(`select estado from itens where id = $1`, [desejo])).rows[0].estado).toBe('desejo')
   })
 })
