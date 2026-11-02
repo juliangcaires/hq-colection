@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+import { FONTES_IMG_CAPA } from '@/lib/capa-hosts'
 import { OPCOES_COOKIE } from '@/lib/supabase/cookies'
 
 const PUBLIC_PATHS = ['/login', '/criar-conta']
@@ -16,7 +17,8 @@ function politicaDeSeguranca(nonce: string): string {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' blob: data:",
+    // Hosts de capa: a grade de candidatos da busca automática carrega as imagens direto da fonte.
+    `img-src 'self' blob: data: ${FONTES_IMG_CAPA.join(' ')}`,
     "font-src 'self'",
     "connect-src 'self'",
     "object-src 'none'",

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { TipoObra } from '@/lib/types'
 import type { TermoBusca } from '@/lib/capa-termo'
 import { novoCaminhoDeCapa } from '@/lib/supabase/capas'
+import { DOMINIOS_CAPA, HOSTS_CAPA_EXATOS } from '@/lib/capa-hosts'
 
 export type Provedor = 'google_books' | 'open_library' | 'anilist' | 'mangadex'
 
@@ -350,14 +351,6 @@ export function descreverFalhaProvedor(diagnostico: ResultadoProvedor[]): string
 const LIMITE_BYTES_CAPA = 5 * 1024 * 1024
 const MAX_REDIRECTS = 3
 const TIMEOUT_DOWNLOAD_MS = 15_000
-
-/** Hosts de onde as capas podem vir (os mesmos dos provedores da cascata). Open Library redireciona para archive.org e seus subdomínios. */
-const HOSTS_CAPA_EXATOS = new Set([
-  'books.google.com',
-  'covers.openlibrary.org',
-  'uploads.mangadex.org',
-])
-const DOMINIOS_CAPA = ['googleusercontent.com', 'anilist.co', 'archive.org']
 
 /** Só https e só hosts conhecidos: a URL pode vir do cliente (aplicarCapaEscolhida), então nunca confiamos nela. */
 export function urlDeCapaPermitida(valor: string): URL | null {
