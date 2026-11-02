@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { ChevronRight, FileUp, LogOut, Tags } from 'lucide-react'
+import { ChevronRight, FileUp, LogOut, Tags, Trophy } from 'lucide-react'
 import { iniciais } from '@/lib/nav'
 import { Sheet, SheetClose, SheetContent, SheetTitle } from '@/components/ui/sheet'
 
 const LINKS = [
+  { href: '/ranking', label: 'Ranking', desc: 'Os melhores avaliados', Icon: Trophy, cor: 'bg-warning/15 text-warning-text' },
   { href: '/tags', label: 'Tags', desc: 'Editoras, personagens, autores…', Icon: Tags, cor: 'bg-chart-5/15 text-chart-5' },
   { href: '/importar', label: 'Importar CSV', desc: 'Traga sua planilha', Icon: FileUp, cor: 'bg-success/15 text-success-text' },
 ]

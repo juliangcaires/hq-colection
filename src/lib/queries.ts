@@ -287,3 +287,58 @@ export async function listarSeriesComFuros(
     .slice(0, limite)
     .map(({ id, nome, tipo, faltantes }) => ({ id, nome, tipo, faltantes }))
 }
+
+export type ItemDoRanking = ItemDeLista & { nota: number; critica: string | null }
+
+export type ResumoDoRanking = {
+  /** Lidos com nota (os que entram no ranking). */
+  avaliados: number
+  /** Lidos ainda sem nota — o lembrete "falta avaliar". */
+  semNota: number
+  /** Média das notas, ou `null` sem nenhuma avaliação. */
+  media: number | null
+}
+
+/**
+ * Ranking de lidos por nota: maior nota primeiro; empate pelo mais recentemente alterado
+ * (não há data de leitura no banco) e, por fim, título e id para a ordem ser estável entre páginas.
+ */
+export async function listarRanking(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any>,
+  tipo: TipoObra | undefined,
+  limite: number
+): Promise<{ itens: ItemDoRanking[]; resumo: ResumoDoRanking }> {
+  let consulta = supabase
+    .from('itens')
+    .select(`${CARD_SELECT}, nota, critica`)
+    .eq('estado', 'lido')
+    .not('nota', 'is', null)
+    .order('nota', { ascending: false })
+    .order('updated_at', { ascending: false })
+    .order('titulo')
+    .order('id')
+    .limit(limite)
+  if (tipo) consulta = consulta.eq('tipo', tipo)
+
+  const [{ data, error }, notas] = await Promise.all([
+    consulta,
+    lerTodasAsLinhas<{ id: string; nota: number | null }>((de, ate) => {
+      let q = supabase.from('itens').select('id, nota').eq('estado', 'lido').order('id')
+      if (tipo) q = q.eq('tipo', tipo)
+      return q.range(de, ate)
+    }),
+  ])
+  if (error) throw new Error(error.message)
+
+  const itens = ((data ?? []) as unknown as ItemDoRanking[]).map((i) => ({ ...i, nota: Number(i.nota) }))
+  const comNota = notas.filter((n) => n.nota !== null).map((n) => Number(n.nota))
+  return {
+    itens,
+    resumo: {
+      avaliados: comNota.length,
+      semNota: notas.length - comNota.length,
+      media: comNota.length > 0 ? comNota.reduce((a, b) => a + b, 0) / comNota.length : null,
+    },
+  }
+}

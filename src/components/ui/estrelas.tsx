@@ -2,13 +2,9 @@
 
 import { Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatarNota } from '@/lib/nota'
 
 const TOTAL = 5
-
-/** Formata a nota no padrão brasileiro: 4,5 / 3. */
-export function formatarNota(nota: number) {
-  return nota.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
-}
 
 function Preenchimento({ fracao, className }: { fracao: 0 | 0.5 | 1; className?: string }) {
   return (

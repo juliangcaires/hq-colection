@@ -8,11 +8,14 @@ export function CarregarMais({
   limite,
   mostrando,
   total,
+  passo = ITENS_POR_PAGINA,
 }: {
   params: Record<string, string | undefined>
   limite: number
   mostrando: number
   total: number
+  /** Quantos itens a mais cada clique traz (padrão: uma página da Coleção). */
+  passo?: number
 }) {
   if (mostrando >= total) return null
 
@@ -20,7 +23,7 @@ export function CarregarMais({
   for (const [chave, valor] of Object.entries(params)) {
     if (valor && chave !== 'limite') proximo.set(chave, valor)
   }
-  proximo.set('limite', String(limite + ITENS_POR_PAGINA))
+  proximo.set('limite', String(limite + passo))
 
   return (
     <div className="flex flex-col items-center gap-2 pt-2">

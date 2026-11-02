@@ -46,3 +46,17 @@ export function lerLimite(valor: string | undefined): number {
   if (!Number.isInteger(n) || n < ITENS_POR_PAGINA) return ITENS_POR_PAGINA
   return Math.min(n, LIMITE_MAXIMO)
 }
+
+export const RANKING_POR_PAGINA = 25
+
+/** `?limite=` do ranking: de uma página (25) até 500, em inteiros; o resto vale uma página. */
+export function lerLimiteRanking(valor: string | undefined): number {
+  const n = Number(valor)
+  if (!Number.isInteger(n) || n < RANKING_POR_PAGINA) return RANKING_POR_PAGINA
+  return Math.min(n, 500)
+}
+
+/** Só `hq` ou `manga`; qualquer outra coisa vale "todos". */
+export function lerTipoDaUrl(valor: string | undefined) {
+  return tipoObra.safeParse(valor).data
+}
