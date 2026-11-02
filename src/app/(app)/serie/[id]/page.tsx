@@ -11,6 +11,7 @@ import { AdicionarVolumesDialog } from '@/components/series/adicionar-volumes-di
 import { CriarVolumesDialog } from '@/components/series/criar-volumes-dialog'
 import { TipoBadge } from '@/components/ui/tipo-badge'
 import { SerieProgress } from '@/components/series/serie-progress'
+import { AvaliarSerie } from '@/components/series/avaliar-serie'
 import { VolumesGrid } from '@/components/series/volumes-grid'
 import { BackButton } from '@/components/ui/back-button'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
@@ -54,6 +55,8 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
   const possuidos = itens.filter((i) => i.estado !== 'desejo').length
   const desejados = itens.length - possuidos
   const lidos = itens.filter((i) => i.estado === 'lido').length
+  const notasLidos = itens.filter((i) => i.estado === 'lido').map((i) => i.nota)
+  const notaComum = notasLidos.length > 0 && notasLidos.every((n) => n === notasLidos[0]) ? notasLidos[0] : null
   const naFila = itens.filter((i) => i.estado === 'comprado').length
   const capaHero = itens.map((i) => capaMap.get(i.capa_url ?? '')).find(Boolean) ?? null
   const faltantesExibidos = volumesFaltantes.slice(0, MAX_FALTANTES_EXIBIDOS)
@@ -100,6 +103,8 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
           </p>
         </div>
       )}
+
+      <AvaliarSerie serieId={id} notaAtual={notaComum} lidos={lidos} />
 
       <SerieForm serie={{ ...serie, tagIds }} allTags={allTags ?? []} />
 

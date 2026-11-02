@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Layers } from 'lucide-react'
+import { Estrelas } from '@/components/ui/estrelas'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { BackButton } from '@/components/ui/back-button'
@@ -58,8 +59,8 @@ export function ItemForm({
   const [preco, setPreco] = useState(item?.preco?.toString() ?? '')
   const [loja, setLoja] = useState(item?.loja ?? '')
   const [dataAquisicao, setDataAquisicao] = useState(item?.data_aquisicao ?? '')
-  const [nota, setNota] = useState(item?.nota?.toString() ?? '')
-  const [observacoes, setObservacoes] = useState(item?.observacoes ?? '')
+  const [nota, setNota] = useState<number | null>(item?.nota ?? null)
+  const [critica, setCritica] = useState(item?.critica ?? '')
   const [tagsPorTipo, setTagsPorTipo] = useState<Record<TipoTag, TagLite[]>>(() =>
     agruparTagsPorTipo(
       (item?.tagsItem ?? []).map((t) => t.id),
@@ -98,8 +99,8 @@ export function ItemForm({
           preco: parseNumeroPtBr(preco),
           loja: loja || null,
           data_aquisicao: dataAquisicao || null,
-          nota: nota ? Number(nota) : null,
-          observacoes: observacoes || null,
+          nota: nota,
+          critica: critica || null,
           tagIds: Object.values(tagsPorTipo).flatMap((tags) => tags.map((t) => t.id)),
         }
         if (item) {
@@ -386,14 +387,14 @@ export function ItemForm({
 
       {estado === 'lido' && (
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="nota">Nota (1-5)</Label>
-          <Input className="h-12 rounded-xl bg-surface-2" id="nota" type="number" min={1} max={5} value={nota} onChange={(e) => setNota(e.target.value)} />
+          <Label>Nota</Label>
+          <Estrelas valor={nota} onChange={setNota} />
         </div>
       )}
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="obs">Observações</Label>
-        <Textarea className="rounded-xl bg-surface-2" id="obs" value={observacoes ?? ''} onChange={(e) => setObservacoes(e.target.value)} rows={3} />
+        <Label htmlFor="critica">Crítica</Label>
+        <Textarea className="rounded-xl bg-surface-2" id="critica" value={critica} onChange={(e) => setCritica(e.target.value)} rows={3} placeholder="O que você achou da leitura?" />
       </div>
 
       <div className="flex flex-col gap-3 border-t border-border pt-3">

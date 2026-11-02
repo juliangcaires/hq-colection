@@ -52,7 +52,7 @@ export type Item = {
   loja: string | null
   data_aquisicao: string | null
   nota: number | null
-  observacoes: string | null
+  critica: string | null
   created_at: string
   updated_at: string
 }

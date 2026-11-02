@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { MarcarLidoDialog } from '@/components/itens/marcar-lido-dialog'
 import { AdquirirDialog } from '@/components/itens/adquirir-button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { marcarLidoEmLote, removerItensEmLote } from '@/app/(app)/itens/actions'
@@ -20,7 +21,7 @@ type Contexto = {
 
 const SelecaoContext = createContext<Contexto | null>(null)
 
-export type ItemSelecionavel = { id: string; estado: EstadoItem }
+export type ItemSelecionavel = { id: string; estado: EstadoItem; titulo: string }
 
 /**
  * Modo de seleção da coleção: a barra (Selecionar / Remover / Marcar como lido) e o contexto que os
@@ -32,6 +33,7 @@ export function SelecaoItens({ itens, children }: { itens: ItemSelecionavel[]; c
   const [selecionados, setSelecionados] = useState<Map<string, EstadoItem>>(new Map())
   const [confirmandoRemocao, setConfirmandoRemocao] = useState(false)
   const [adquirindo, setAdquirindo] = useState(false)
+  const [avaliando, setAvaliando] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   function alternar(id: string, estado: EstadoItem) {
@@ -54,6 +56,11 @@ export function SelecaoItens({ itens, children }: { itens: ItemSelecionavel[]; c
   const ids = Array.from(selecionados.keys())
 
   function marcarLido() {
+    // Um item só: abre o diálogo de nota e crítica. Em lote, marca direto, sem pedir avaliação a cada um.
+    if (ids.length === 1) {
+      setAvaliando(true)
+      return
+    }
     startTransition(async () => {
       try {
         const n = desembrulhar(await marcarLidoEmLote(ids))
@@ -143,6 +150,19 @@ export function SelecaoItens({ itens, children }: { itens: ItemSelecionavel[]; c
 
         {children}
       </div>
+
+      {ids.length === 1 && (
+        <MarcarLidoDialog
+          itemId={ids[0]}
+          titulo={itens.find((i) => i.id === ids[0])?.titulo ?? ''}
+          open={avaliando}
+          onOpenChange={setAvaliando}
+          onDone={() => {
+            sair()
+            router.refresh()
+          }}
+        />
+      )}
 
       <AdquirirDialog
         itemIds={ids}

@@ -269,7 +269,7 @@ async function importarCsvImpl(rowsBrutas: unknown[], primeiraLinha: number): Pr
           tipo,
           isbn: row.isbn?.trim() || null,
           estado,
-          observacoes: row.observacoes?.trim() || null,
+          critica: row.critica?.trim() || null,
         })
         .select('id')
         .single()

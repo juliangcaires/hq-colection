@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ItemCard } from '@/components/itens/item-card'
 import { removerItensDaSerie } from '@/app/(app)/series/actions'
 import { marcarLidoEmLote } from '@/app/(app)/itens/actions'
+import { MarcarLidoDialog } from '@/components/itens/marcar-lido-dialog'
 import { AdquirirDialog } from '@/components/itens/adquirir-button'
 import type { ItemComRelacoes } from '@/lib/types'
 import { desembrulhar } from '@/lib/resultado'
@@ -58,6 +59,7 @@ export function VolumesGrid({
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [confirmando, setConfirmando] = useState(false)
   const [adquirindo, setAdquirindo] = useState(false)
+  const [avaliando, setAvaliando] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   function toggle(id: string) {
@@ -79,6 +81,11 @@ export function VolumesGrid({
   const todosComprados = estadosMarcados.length > 0 && estadosMarcados.every((e) => e === 'comprado')
 
   function handleMarcarLido() {
+    // Um volume só: pede nota e crítica. Vários: marca direto.
+    if (selecionados.size === 1) {
+      setAvaliando(true)
+      return
+    }
     startTransition(async () => {
       try {
         const n = desembrulhar(await marcarLidoEmLote(Array.from(selecionados)))
@@ -204,6 +211,19 @@ export function VolumesGrid({
           )
         })}
       </div>
+
+      {selecionados.size === 1 && (
+        <MarcarLidoDialog
+          itemId={Array.from(selecionados)[0]}
+          titulo={itens.find((i) => selecionados.has(i.id))?.titulo ?? ''}
+          open={avaliando}
+          onOpenChange={setAvaliando}
+          onDone={() => {
+            sairDaSelecao()
+            router.refresh()
+          }}
+        />
+      )}
 
       <AdquirirDialog
         itemIds={Array.from(selecionados)}

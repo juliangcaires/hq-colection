@@ -20,7 +20,7 @@ export const COLUNAS_CSV = [
   'autor',
   'isbn',
   'tags_extra',
-  'observacoes',
+  'critica',
 ] as const
 
 const texto = (max: number) => z.string().max(max, `texto longo demais (máximo ${max} caracteres)`).optional()
@@ -39,7 +39,7 @@ export const linhaCsvSchema = z.object({
   autor: texto(80),
   isbn: texto(20),
   tags_extra: texto(500),
-  observacoes: texto(2000),
+  critica: texto(2000),
 })
 
 export type LinhaCsv = z.infer<typeof linhaCsvSchema>
@@ -100,5 +100,7 @@ export function normalizarNumeroVolume(bruto: string | undefined): { ok: true; v
 
 /** Cabeçalho tolerante: BOM, caixa, acento e espaços não impedem de reconhecer a coluna. */
 export function normalizarCabecalho(cabecalho: string): string {
-  return normalizarChave(cabecalho.replace(/^﻿/, '')).replace(/\s+/g, '_')
+  const chave = normalizarChave(cabecalho.replace(/^﻿/, '')).replace(/\s+/g, '_')
+  // Arquivos antigos usam `observacoes`: o campo virou `critica`, e os dois nomes são aceitos.
+  return chave === 'observacoes' ? 'critica' : chave
 }

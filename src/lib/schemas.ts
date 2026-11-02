@@ -1,6 +1,13 @@
 import { z } from 'zod'
 
 export const tipoObraSchema = z.enum(['hq', 'manga'])
+/** Nota da leitura: de 0,5 a 5, em passos de meia estrela. */
+export const notaSchema = z.coerce
+  .number()
+  .min(0.5)
+  .max(5)
+  .refine((n) => Number.isInteger(n * 2), 'A nota vai de meia em meia estrela')
+
 export const estadoItemSchema = z.enum(['desejo', 'comprado', 'lido'])
 export const tipoTagSchema = z.enum([
   'personagem',
@@ -39,8 +46,8 @@ export const itemInputSchema = z.object({
   preco: z.coerce.number().nonnegative().optional().nullable(),
   loja: z.string().trim().max(120).optional().nullable(),
   data_aquisicao: z.string().optional().nullable(),
-  nota: z.coerce.number().int().min(1).max(5).optional().nullable(),
-  observacoes: z.string().trim().max(2000).optional().nullable(),
+  nota: notaSchema.optional().nullable(),
+  critica: z.string().trim().max(2000).optional().nullable(),
   tagIds: z.array(z.string().uuid()).default([]),
 })
 

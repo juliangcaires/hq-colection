@@ -52,7 +52,7 @@ export default async function ColecaoPage({
   }))
 
   const agrupar = params.agrupar === '1'
-  const seletor = itens.map((i) => ({ id: i.id, estado: i.estado }))
+  const seletor = itens.map((i) => ({ id: i.id, estado: i.estado, titulo: i.titulo }))
 
   return (
     <div className="flex flex-col gap-6">
@@ -73,7 +73,7 @@ export default async function ColecaoPage({
         <SelecaoItens itens={seletor}>
         <div className="grid grid-cols-3 gap-x-3 gap-y-3.5 lg:grid-cols-[repeat(auto-fill,minmax(132px,1fr))] lg:gap-x-[18px] lg:gap-y-5">
           {itens.map((item) => (
-            <CardSelecionavel key={item.id} item={{ id: item.id, estado: item.estado }}>
+            <CardSelecionavel key={item.id} item={{ id: item.id, estado: item.estado, titulo: item.titulo }}>
               <ItemCard item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
             </CardSelecionavel>
           ))}
@@ -116,7 +116,7 @@ function ColecaoAgrupada({
           </h2>
           <div className="grid grid-cols-3 gap-x-3 gap-y-3.5 lg:grid-cols-[repeat(auto-fill,minmax(132px,1fr))] lg:gap-x-[18px] lg:gap-y-5">
             {grupo.itens.map((item) => (
-              <CardSelecionavel key={item.id} item={{ id: item.id, estado: item.estado }}>
+              <CardSelecionavel key={item.id} item={{ id: item.id, estado: item.estado, titulo: item.titulo }}>
                 <ItemCard item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
               </CardSelecionavel>
             ))}

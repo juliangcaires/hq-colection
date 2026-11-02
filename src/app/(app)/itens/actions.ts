@@ -7,6 +7,7 @@ import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
 import {
   adquirirLoteSchema,
+  notaSchema,
   candidatoCapaSchema,
   criarVolumesInputSchema,
   itemInputSchema,
@@ -44,7 +45,7 @@ function dadosDoItem(p: ItemInput) {
     loja: p.loja || null,
     data_aquisicao: p.data_aquisicao || null,
     nota: p.nota ?? null,
-    observacoes: p.observacoes || null,
+    critica: p.critica || null,
   }
 }
 
@@ -148,6 +149,12 @@ export async function marcarAdquiriEmLote(itemIds: string[], input: AdquirirInpu
   return executar(() => marcarAdquiriEmLoteImpl(itemIds, input))
 }
 
+const avaliacaoSchema = z.object({
+  nota: notaSchema.nullish(),
+  critica: z.string().trim().max(2000).nullish(),
+})
+export type AvaliacaoLeitura = { nota?: number | null; critica?: string | null }
+
 const idsEmLoteSchema = z.array(z.string().uuid()).min(1, 'Selecione ao menos um item').max(500)
 
 /** Remove vários itens (e as capas deles) de uma vez — coleção ou desejos. */
@@ -172,13 +179,15 @@ export async function removerItensEmLote(itemIds: string[]) {
 }
 
 /** Marca vários itens comprados como lidos. Só vale para quem está "comprado": desejo ainda não foi lido. */
-async function marcarLidoEmLoteImpl(itemIds: string[]) {
+async function marcarLidoEmLoteImpl(itemIds: string[], avaliacao?: AvaliacaoLeitura) {
   const ids = idsEmLoteSchema.parse(itemIds)
+  const av = avaliacaoSchema.parse(avaliacao ?? {})
   const supabase = await createClient()
 
+  // Estado, nota e crítica na mesma escrita: não existe "lido" sem a avaliação que acabou de ser dada.
   const { data, error } = await supabase
     .from('itens')
-    .update({ estado: 'lido' })
+    .update({ estado: 'lido', ...(av.nota != null && { nota: av.nota }), ...(av.critica && { critica: av.critica }) })
     .in('id', ids)
     .eq('estado', 'comprado')
     .select('id')
@@ -191,8 +200,33 @@ async function marcarLidoEmLoteImpl(itemIds: string[]) {
   return data.length
 }
 
-export async function marcarLidoEmLote(itemIds: string[]) {
-  return executar(() => marcarLidoEmLoteImpl(itemIds))
+export async function marcarLidoEmLote(itemIds: string[], avaliacao?: AvaliacaoLeitura) {
+  return executar(() => marcarLidoEmLoteImpl(itemIds, avaliacao))
+}
+
+/** Dá a mesma nota a todos os volumes já lidos de uma série ("a série inteira merece 4,5"). */
+async function avaliarSerieImpl(serieId: string, nota: number | null) {
+  const id = z.string().uuid().parse(serieId)
+  const valor = nota === null ? null : notaSchema.parse(nota)
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('itens')
+    .update({ nota: valor })
+    .eq('serie_id', id)
+    .eq('estado', 'lido')
+    .select('id')
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) throw new ErroDeNegocio('Esta série ainda não tem volumes lidos.')
+
+  revalidateListagens()
+  revalidatePath(`/serie/${id}`)
+  for (const i of data) revalidatePath(`/item/${i.id}`)
+  return data.length
+}
+
+export async function avaliarSerie(serieId: string, nota: number | null) {
+  return executar(() => avaliarSerieImpl(serieId, nota))
 }
 
 export type ResumoCriacaoVolumes = {
