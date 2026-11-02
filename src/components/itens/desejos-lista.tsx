@@ -1,10 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { removerItensEmLote } from '@/app/(app)/itens/actions'
+import { desembrulhar } from '@/lib/resultado'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AdquirirButton, AdquirirDialog } from '@/components/itens/adquirir-button'
 import type { ItemDeLista } from '@/lib/queries'
@@ -24,6 +28,22 @@ export function DesejosLista({
   const [selecionando, setSelecionando] = useState(false)
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [adquirindo, setAdquirindo] = useState(false)
+  const [removendo, setRemovendo] = useState(false)
+  const [isPending, startTransition] = useTransition()
+
+  function remover() {
+    startTransition(async () => {
+      try {
+        const n = desembrulhar(await removerItensEmLote(Array.from(selecionados)))
+        toast.success(`${n} ${n === 1 ? 'desejo removido' : 'desejos removidos'}`)
+        setRemovendo(false)
+        sairDaSelecao()
+        router.refresh()
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Erro ao remover')
+      }
+    })
+  }
 
   function toggle(id: string) {
     setSelecionados((prev) => {
@@ -66,6 +86,14 @@ export function DesejosLista({
               onClick={() => setAdquirindo(true)}
             >
               Adquirir {selecionados.size}
+            </Button>
+            <Button
+              variant="destructive"
+              className="h-11"
+              disabled={selecionados.size === 0}
+              onClick={() => setRemovendo(true)}
+            >
+              Remover {selecionados.size > 0 ? selecionados.size : ''}
             </Button>
             <Button variant="ghost" className="h-11 text-link" onClick={sairDaSelecao}>
               Cancelar
@@ -154,6 +182,16 @@ export function DesejosLista({
           )
         })}
       </div>
+
+      <ConfirmDialog
+        open={removendo}
+        onOpenChange={setRemovendo}
+        title={`Remover ${selecionados.size} ${selecionados.size === 1 ? 'desejo' : 'desejos'}?`}
+        description="Isso apaga os itens e as capas deles. Não dá para desfazer."
+        confirmLabel="Remover"
+        onConfirm={remover}
+        isPending={isPending}
+      />
 
       <AdquirirDialog
         itemIds={Array.from(selecionados)}

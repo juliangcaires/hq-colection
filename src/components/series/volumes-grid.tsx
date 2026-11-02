@@ -8,6 +8,8 @@ import { Check } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ItemCard } from '@/components/itens/item-card'
 import { removerItensDaSerie } from '@/app/(app)/series/actions'
+import { marcarLidoEmLote } from '@/app/(app)/itens/actions'
+import { AdquirirDialog } from '@/components/itens/adquirir-button'
 import type { ItemComRelacoes } from '@/lib/types'
 import { desembrulhar } from '@/lib/resultado'
 
@@ -55,6 +57,7 @@ export function VolumesGrid({
   const [selecionando, setSelecionando] = useState(false)
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [confirmando, setConfirmando] = useState(false)
+  const [adquirindo, setAdquirindo] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   function toggle(id: string) {
@@ -69,6 +72,23 @@ export function VolumesGrid({
   function sairDaSelecao() {
     setSelecionando(false)
     setSelecionados(new Set())
+  }
+
+  const estadosMarcados = itens.filter((i) => selecionados.has(i.id)).map((i) => i.estado)
+  const todosDesejo = estadosMarcados.length > 0 && estadosMarcados.every((e) => e === 'desejo')
+  const todosComprados = estadosMarcados.length > 0 && estadosMarcados.every((e) => e === 'comprado')
+
+  function handleMarcarLido() {
+    startTransition(async () => {
+      try {
+        const n = desembrulhar(await marcarLidoEmLote(Array.from(selecionados)))
+        toast.success(`${n} volume(s) marcados como lidos`)
+        sairDaSelecao()
+        router.refresh()
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Erro ao marcar como lido')
+      }
+    })
   }
 
   function handleRemover() {
@@ -97,6 +117,24 @@ export function VolumesGrid({
           className="fixed inset-x-3 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-50 flex items-center gap-2 rounded-[18px] border border-border-strong bg-surface-2 p-2 pl-4 shadow-xl shadow-black/40 lg:static lg:rounded-[14px] lg:shadow-none"
         >
           <span className="mr-auto text-sm text-foreground">{selecionados.size} selecionado(s)</span>
+          <Button
+            variant="outline"
+            className="h-11"
+            disabled={!todosDesejo || isPending}
+            title={selecionados.size > 0 && !todosDesejo ? 'Só para volumes que estão como desejo' : undefined}
+            onClick={() => setAdquirindo(true)}
+          >
+            Marcar como comprado
+          </Button>
+          <Button
+            variant="outline"
+            className="h-11"
+            disabled={!todosComprados || isPending}
+            title={selecionados.size > 0 && !todosComprados ? 'Só para volumes que estão como comprado' : undefined}
+            onClick={handleMarcarLido}
+          >
+            Marcar como lido
+          </Button>
           <Button
             variant="destructive"
             className="h-11"
@@ -166,6 +204,16 @@ export function VolumesGrid({
           )
         })}
       </div>
+
+      <AdquirirDialog
+        itemIds={Array.from(selecionados)}
+        open={adquirindo}
+        onOpenChange={setAdquirindo}
+        onDone={() => {
+          sairDaSelecao()
+          router.refresh()
+        }}
+      />
 
       <ConfirmDialog
         open={confirmando}

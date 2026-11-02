@@ -7,6 +7,7 @@ import { ItemCard } from '@/components/itens/item-card'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
 import { lerFiltrosDaUrl, lerLimite } from '@/lib/filtros-url'
 import { CarregarMais } from '@/components/itens/carregar-mais'
+import { CardSelecionavel, SelecaoItens } from '@/components/itens/selecao-itens'
 
 type SearchParams = {
   limite?: string
@@ -51,6 +52,7 @@ export default async function ColecaoPage({
   }))
 
   const agrupar = params.agrupar === '1'
+  const seletor = itens.map((i) => ({ id: i.id, estado: i.estado }))
 
   return (
     <div className="flex flex-col gap-6">
@@ -64,13 +66,19 @@ export default async function ColecaoPage({
       {itens.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhum item encontrado com esses filtros.</p>
       ) : agrupar ? (
-        <ColecaoAgrupada itens={itens} capaMap={capaMap} />
+        <SelecaoItens itens={seletor}>
+          <ColecaoAgrupada itens={itens} capaMap={capaMap} />
+        </SelecaoItens>
       ) : (
+        <SelecaoItens itens={seletor}>
         <div className="grid grid-cols-3 gap-x-3 gap-y-3.5 lg:grid-cols-[repeat(auto-fill,minmax(132px,1fr))] lg:gap-x-[18px] lg:gap-y-5">
           {itens.map((item) => (
-            <ItemCard key={item.id} item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
+            <CardSelecionavel key={item.id} item={{ id: item.id, estado: item.estado }}>
+              <ItemCard item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
+            </CardSelecionavel>
           ))}
         </div>
+        </SelecaoItens>
       )}
 
       <CarregarMais params={params} limite={limite} mostrando={itens.length} total={total} />
@@ -108,7 +116,9 @@ function ColecaoAgrupada({
           </h2>
           <div className="grid grid-cols-3 gap-x-3 gap-y-3.5 lg:grid-cols-[repeat(auto-fill,minmax(132px,1fr))] lg:gap-x-[18px] lg:gap-y-5">
             {grupo.itens.map((item) => (
-              <ItemCard key={item.id} item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
+              <CardSelecionavel key={item.id} item={{ id: item.id, estado: item.estado }}>
+                <ItemCard item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
+              </CardSelecionavel>
             ))}
           </div>
         </div>

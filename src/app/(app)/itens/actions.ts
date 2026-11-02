@@ -148,6 +148,53 @@ export async function marcarAdquiriEmLote(itemIds: string[], input: AdquirirInpu
   return executar(() => marcarAdquiriEmLoteImpl(itemIds, input))
 }
 
+const idsEmLoteSchema = z.array(z.string().uuid()).min(1, 'Selecione ao menos um item').max(500)
+
+/** Remove vários itens (e as capas deles) de uma vez — coleção ou desejos. */
+async function removerItensEmLoteImpl(itemIds: string[]) {
+  const ids = idsEmLoteSchema.parse(itemIds)
+  const supabase = await createClient()
+
+  const { data, error } = await supabase.from('itens').delete().in('id', ids).select('id, capa_url')
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) throw new ErroDeNegocio('Esses itens já não existem.')
+
+  await Promise.all(data.map((i) => removerCapaAntiga(supabase, i.capa_url, null)))
+
+  revalidateListagens()
+  revalidatePath('/series')
+  for (const id of ids) revalidatePath(`/item/${id}`)
+  return data.length
+}
+
+export async function removerItensEmLote(itemIds: string[]) {
+  return executar(() => removerItensEmLoteImpl(itemIds))
+}
+
+/** Marca vários itens comprados como lidos. Só vale para quem está "comprado": desejo ainda não foi lido. */
+async function marcarLidoEmLoteImpl(itemIds: string[]) {
+  const ids = idsEmLoteSchema.parse(itemIds)
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('itens')
+    .update({ estado: 'lido' })
+    .in('id', ids)
+    .eq('estado', 'comprado')
+    .select('id')
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) throw new ErroDeNegocio('Só itens comprados podem ser marcados como lidos.')
+
+  revalidateListagens()
+  revalidatePath('/series')
+  for (const id of ids) revalidatePath(`/item/${id}`)
+  return data.length
+}
+
+export async function marcarLidoEmLote(itemIds: string[]) {
+  return executar(() => marcarLidoEmLoteImpl(itemIds))
+}
+
 export type ResumoCriacaoVolumes = {
   /** Título e tipo voltam junto para a busca de capa do lote não ter que reconstruí-los. */
   criados: { id: string; titulo: string; tipo: TipoObra }[]
