@@ -22,9 +22,15 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
   const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
 
   return (
-    <div className="mx-auto max-w-2xl lg:max-w-4xl">
+    <div className="mx-auto max-w-[1120px]">
       <ScrollRestore />
-      <ItemForm item={item} capaUrl={capaUrl} series={seriesData ?? []} />
+      {/* key: depois de salvar (ou de adquirir / marcar como lido) o formulário recomeça dos valores do banco, sem
+          remontar quando só a capa muda (busca/upload de capa não pode apagar edição em andamento). */}
+      <ItemForm
+        key={JSON.stringify([item.updated_at, item.estado, item.nota, item.critica, item.titulo, item.preco, item.loja, item.data_aquisicao, item.prioridade])}
+        item={item} capaUrl={capaUrl}
+        series={seriesData ?? []}
+      />
     </div>
   )
 }

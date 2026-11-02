@@ -30,12 +30,15 @@ export function Estrelas({
   valor,
   onChange,
   tamanho = 32,
+  mostrarValor = true,
   className,
 }: {
   valor: number | null
   onChange?: (nota: number | null) => void
   /** Lado de cada estrela em px. */
   tamanho?: number
+  /** Número ao lado das estrelas (some quando quem usa mostra o valor à sua maneira). */
+  mostrarValor?: boolean
   className?: string
 }) {
   const nota = valor ?? 0
@@ -115,9 +118,11 @@ export function Estrelas({
           </span>
         ))}
       </div>
-      <span className="min-w-8 text-sm text-muted-foreground tabular-nums">
-        {valor === null ? '—' : formatarNota(valor)}
-      </span>
+      {mostrarValor && (
+        <span className="min-w-8 text-sm text-muted-foreground tabular-nums">
+          {valor === null ? '—' : formatarNota(valor)}
+        </span>
+      )}
     </div>
   )
 }

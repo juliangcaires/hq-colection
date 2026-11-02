@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -25,6 +25,8 @@ export function TagTypeCombobox({
   onChange,
   multiple = true,
   placeholder,
+  gatilho,
+  gatilhoClassName,
 }: {
   tipo: TipoTag
   label: string
@@ -32,6 +34,9 @@ export function TagTypeCombobox({
   onChange: (tags: TagLite[]) => void
   multiple?: boolean
   placeholder?: string
+  /** Modo chip: só o gatilho (este conteúdo), sem rótulo nem lista de selecionadas — quem usa mostra as tags. */
+  gatilho?: ReactNode
+  gatilhoClassName?: string
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -82,13 +87,17 @@ export function TagTypeCombobox({
   const semResultadoExato = query.trim() && !results.some((r) => r.nome.toLowerCase() === query.trim().toLowerCase())
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-neutral-400">{label}</span>
+    <div className={cn('flex flex-col gap-1.5', gatilho !== undefined && 'contents')}>
+      {gatilho === undefined && <span className="text-xs text-neutral-400">{label}</span>}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
-          className={cn(buttonVariants({ variant: 'outline' }), 'w-full justify-start font-normal')}
+          className={
+            gatilho !== undefined
+              ? gatilhoClassName
+              : cn(buttonVariants({ variant: 'outline' }), 'w-full justify-start font-normal')
+          }
         >
-          {triggerLabel}
+          {gatilho !== undefined ? gatilho : triggerLabel}
         </PopoverTrigger>
         <PopoverContent className="w-64 p-0" align="start">
           <Command shouldFilter={false}>
@@ -128,7 +137,7 @@ export function TagTypeCombobox({
           </Command>
         </PopoverContent>
       </Popover>
-      {multiple && value.length > 0 && (
+      {gatilho === undefined && multiple && value.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {value.map((tag) => (
             <Badge
@@ -142,7 +151,7 @@ export function TagTypeCombobox({
           ))}
         </div>
       )}
-      {!multiple && value.length > 0 && (
+      {gatilho === undefined && !multiple && value.length > 0 && (
         <Button
           type="button"
           variant="ghost"

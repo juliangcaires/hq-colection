@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Item — Opção A</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#100d16}
+a{color:#b9a6ff}a:hover{color:#d4c8ff}
+</style>
+</helmet>
+<div style="min-height: 1000px; background: #100d16; color: #f1eef7; font-family: 'IBM Plex Sans', sans-serif; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <aside style="flex: 1 1 232px; max-width: 100%; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid #2b2540; background: #14111d; display: flex; flex-direction: column; gap: 20px">
+    <div style="padding: 0 8px; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 22px; letter-spacing: -0.02em">Minha Coleção</div>
+    <button style="height: 44px; border-radius: 12px; border: 0; background: #8b6cf5; color: #100d16; font: inherit; font-weight: 700; font-size: 15px">+ Adicionar item</button>
+    <nav aria-label="Navegação principal" style="display: flex; flex-direction: column; gap: 2px; font-size: 15px">
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 10px; color: #a89cc4; text-decoration: none">Início</a>
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 10px; background: rgba(139,108,245,0.18); color: #f1eef7; font-weight: 600; text-decoration: none">Coleção</a>
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 10px; color: #a89cc4; text-decoration: none">Séries</a>
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 10px; color: #a89cc4; text-decoration: none">Desejos</a>
+    </nav>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 20px 40px 0; position: relative">
+    <div style="max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <a href="#" style="display: flex; align-items: center; gap: 6px; min-height: 44px; font-size: 14px; font-weight: 500">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg>Coleção</a>
+        <button aria-label="Mais opções (excluir item)" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #2b2540; background: #14111d; color: #f1eef7; display: flex; align-items: center; justify-content: center">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></svg></button>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 36px; align-items: flex-start">
+
+        <div style="flex: 0 1 300px; min-width: 240px; position: sticky; top: 20px; display: flex; flex-direction: column; gap: 12px">
+          <div style="position: relative; width: 100%; aspect-ratio: 2 / 3; border-radius: 12px; background: #1f3550; box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 20px 48px rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; color: rgba(241,238,247,0.55); font-size: 14px">Capa</div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+            <button style="height: 44px; border-radius: 10px; border: 1px solid #2b2540; background: #14111d; color: #f1eef7; font: inherit; font-size: 13px; font-weight: 500" title="A cobertura automática de edições brasileiras é irregular — enviar foto é normal.">Buscar capa</button>
+            <button style="height: 44px; border-radius: 10px; border: 1px solid #2b2540; background: #14111d; color: #f1eef7; font: inherit; font-size: 13px; font-weight: 500">Enviar foto</button>
+          </div>
+          <dl style="margin: 4px 0 0; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 14px; background: #14111d; border: 1px solid #2b2540; font-size: 14px">
+            <div style="display: flex; justify-content: space-between; gap: 8px"><dt style="color: #a89cc4">Estado</dt><dd style="margin: 0; font-weight: 600; color: #e08a7e">Lido</dd></div>
+            <div style="display: flex; justify-content: space-between; gap: 8px"><dt style="color: #a89cc4">Nota</dt><dd style="margin: 0; font-weight: 600; color: #f0c48a">★ 4,5</dd></div>
+            <div style="display: flex; justify-content: space-between; gap: 8px"><dt style="color: #a89cc4">Adquirido</dt><dd style="margin: 0">—</dd></div>
+            <div style="display: flex; justify-content: space-between; gap: 8px"><dt style="color: #a89cc4">ISBN</dt><dd style="margin: 0; font-variant-numeric: tabular-nums">9786525952345</dd></div>
+          </dl>
+        </div>
+
+        <div style="flex: 1 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 18px; padding-bottom: 110px">
+          <div>
+            <h1 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 40px; line-height: 1.05; letter-spacing: -0.02em">Batman: Padrões Sombrios</h1>
+            <div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: #a89cc4">
+              <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #8fb4f0; border: 1px solid #8fb4f0; border-radius: 4px; padding: 1px 6px">HQ</span>Avulso (sem série) · #1</div>
+          </div>
+
+          <div role="group" aria-label="Estado" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; max-width: 460px; border-radius: 12px; background: #14111d; border: 1px solid #2b2540">
+            <button aria-pressed="false" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #a89cc4; font: inherit; font-size: 14px">Desejo</button>
+            <button aria-pressed="false" style="height: 44px; border: 0; border-radius: 9px; background: transparent; color: #a89cc4; font: inherit; font-size: 14px">Comprado</button>
+            <button aria-pressed="true" style="height: 44px; border: 0; border-radius: 9px; background: #d16a5c; color: #100d16; font: inherit; font-size: 14px; font-weight: 700">Lido</button>
+          </div>
+
+          <section style="padding: 18px; border-radius: 16px; background: #14111d; border: 1px solid #2b2540; display: flex; flex-direction: column; gap: 14px">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+              <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-size: 19px; font-weight: 700">Minha leitura</h2>
+              <div role="radiogroup" aria-label="Nota 4,5 de 5" style="display: flex; align-items: center; gap: 2px">
+                <sc-for list="{{estrelas}}" as="e" hint-placeholder-count="5">
+                  <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 6.5 7 .8-5.2 4.8 1.4 7L12 17.8 5.8 21.1l1.4-7L2 9.3l7-.8z" fill="{{e.fill}}" stroke="#e0912a" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+                </sc-for>
+                <span style="margin-left: 8px; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 20px; color: #f0c48a">4,5</span>
+              </div>
+            </div>
+            <label for="a-critica" style="font-size: 13px; color: #a89cc4">Crítica</label>
+            <textarea id="a-critica" rows="5" style="padding: 12px 14px; border-radius: 12px; border: 1px solid #4e4569; background: #1b1726; color: #f1eef7; font: inherit; font-size: 15px; line-height: 1.55; resize: vertical; margin-top: -8px">História divertida e ponto de vista novo sendo representado no universo atual do Batman, com uma ótima arte.</textarea>
+          </section>
+
+          <section style="padding: 18px; border-radius: 16px; background: #14111d; border: 1px solid #2b2540; display: flex; flex-direction: column; gap: 12px">
+            <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-size: 19px; font-weight: 700">Tags</h2>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+              <span style="font-size: 12px; color: #a89cc4; margin-right: 2px">Personagem</span>
+              <span style="display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 6px 0 12px; border-radius: 16px; background: rgba(139,108,245,0.18); font-size: 13px; font-weight: 500">Batman
+                <button aria-label="Remover Batman" style="width: 24px; height: 24px; border: 0; border-radius: 12px; background: transparent; color: #a89cc4; font: inherit">×</button></span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px">
+              <sc-for list="{{tiposVazios}}" as="t" hint-placeholder-count="6">
+                <button style="height: 36px; padding: 0 12px; border-radius: 18px; border: 1px dashed #4e4569; background: transparent; color: #b9a6ff; font: inherit; font-size: 13px">+ {{t}}</button>
+              </sc-for>
+            </div>
+          </section>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px">
+            <section style="padding: 18px; border-radius: 16px; background: #14111d; border: 1px solid #2b2540; display: flex; flex-direction: column; gap: 12px">
+              <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-size: 19px; font-weight: 700">Dados</h2>
+              <div style="display: flex; flex-direction: column; gap: 6px"><label for="a-tit" style="font-size: 13px; color: #a89cc4">Título</label><input id="a-tit" value="Batman: Padrões Sombrios" style="height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #4e4569; background: #1b1726; color: #f1eef7; font: inherit; font-size: 15px"></div>
+              <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px">
+                <div style="display: flex; flex-direction: column; gap: 6px"><label for="a-serie" style="font-size: 13px; color: #a89cc4">Série</label><input id="a-serie" value="Avulso (sem série)" style="min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #4e4569; background: #1b1726; color: #f1eef7; font: inherit; font-size: 15px"></div>
+                <div style="display: flex; flex-direction: column; gap: 6px"><label for="a-num" style="font-size: 13px; color: #a89cc4">Nº</label><input id="a-num" value="1" style="min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #4e4569; background: #1b1726; color: #f1eef7; font: inherit; font-size: 15px"></div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 10px">
+                <div style="display: flex; flex-direction: column; gap: 6px"><label for="a-tipo" style="font-size: 13px; color: #a89cc4">Tipo</label><input id="a-tipo" value="HQ" style="min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #4e4569; background: #1b1726; color: #f1eef7; font: inherit; font-size: 15px"></div>
+                <div style="display: flex; flex-direction: column; gap: 6px"><label for="a-isbn" style="font-size: 13px; color: #a89cc4">ISBN</label><input id="a-isbn" value="9786525952345" style="min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #4e4569; background: #1b1726; color: #f1eef7; font: inherit; font-size: 15px"></div>
+              </div>
+            </section>
+            <section style="padding: 18px; border-radius: 16px; background: #14111d; border: 1px solid #2b2540; display: flex; flex-direction: column; gap: 12px">
+              <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-size: 19px; font-weight: 700">Compra</h2>
+              <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+                <div style="display: flex; flex-direction: column; gap: 6px"><label for="a-preco" style="font-size: 13px; color: #a89cc4">Preço</label><input id="a-preco" placeholder="R$ 0,00" style="min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #4e4569; background: #1b1726; color: #f1eef7; font: inherit; font-size: 15px"></div>
+                <div style="display: flex; flex-direction: column; gap: 6px"><label for="a-data" style="font-size: 13px; color: #a89cc4">Data de aquisição</label><input id="a-data" placeholder="dd/mm/aaaa" style="min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #4e4569; background: #1b1726; color: #f1eef7; font: inherit; font-size: 15px"></div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px"><label for="a-loja" style="font-size: 13px; color: #a89cc4">Loja</label><input id="a-loja" placeholder="Onde comprou" style="height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #4e4569; background: #1b1726; color: #f1eef7; font: inherit; font-size: 15px"></div>
+              <div style="font-size: 12px; color: #a89cc4">Prioridade aparece só quando o item é um desejo.</div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="position: sticky; bottom: 0; margin: 0 -40px; padding: 14px 40px; background: rgba(20,17,29,0.95); border-top: 1px solid #3a3256; backdrop-filter: blur(12px)">
+      <div style="max-width: 1120px; margin: 0 auto; display: flex; align-items: center; gap: 12px">
+        <span style="flex: 1; font-size: 14px; color: #f0c48a">● Alterações não salvas</span>
+        <button style="height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #2b2540; background: transparent; color: #f1eef7; font: inherit; font-size: 15px">Descartar</button>
+        <button style="height: 44px; padding: 0 22px; border-radius: 12px; border: 0; background: #8b6cf5; color: #100d16; font: inherit; font-size: 15px; font-weight: 700">Salvar alterações</button>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      estrelas: [{ fill: '#e0912a' }, { fill: '#e0912a' }, { fill: '#e0912a' }, { fill: '#e0912a' }, { fill: 'rgba(224,145,42,0.35)' }],
+      tiposVazios: ['Editora', 'Autor', 'Arco', 'Selo', 'Universo', 'Outras']
+    };
+  }
+}
+</script>
+</body>
+</html>
