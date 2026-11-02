@@ -154,7 +154,8 @@ export function TagsManager({ initialTags }: { initialTags: TagRow[] }) {
                 </Button>
               </form>
               {doTipo.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma tag deste tipo.</p>}
-              <div className="flex flex-col divide-y divide-border">
+              {/* Rolagem própria: com dezenas de tags, cada guia rola por dentro e a página não vira uma lista sem fim. */}
+              <div className="-mr-2 flex max-h-[60vh] flex-col divide-y divide-border overflow-y-auto overscroll-contain pr-2">
                 {doTipo.map((tag) => (
                   <TagRow
                     key={tag.id}
