@@ -25,6 +25,9 @@ export type Serie = {
   /** Série numerada: exige `numero_volume` único em todo volume incluído por "Adicionar volumes". */
   tem_numeracao: boolean
   observacoes: string | null
+  /** Nota própria da série (0,5–5). Null = vale a média dos volumes lidos. */
+  nota: number | null
+  critica: string | null
   /** memória de busca de capa — o que já deu certo num volume desta série */
   busca_termo: string | null
   busca_provedor: string | null

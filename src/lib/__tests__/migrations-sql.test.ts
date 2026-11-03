@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -172,7 +172,7 @@ describe('nota e crítica (migration 0008)', () => {
     }
   })
 
-  it('nota da série: vale só para os volumes lidos daquela série (e só os do próprio usuário)', async () => {
+  it('avaliação da série: própria, replicada só nos lidos da série, ou média (nota nula)', async () => {
     const mk = async (nome: string) =>
       (await db.query<{ s: string }>(`select serie_salvar(null, $1::jsonb, '{}') s`, [JSON.stringify({ nome, tipo: 'hq', tem_numeracao: true })])).rows[0].s
     const serie = await mk('Avaliada')
@@ -182,23 +182,29 @@ describe('nota e crítica (migration 0008)', () => {
     const lido1 = await item(serie, 1, 'lido', 2)
     const lido2 = await item(serie, 2, 'lido')
     const comprado = await item(serie, 3, 'comprado')
-    const desejo = await item(serie, 4, 'desejo')
     const deOutra = await item(outra, 1, 'lido', 1)
+    const notaItem = async (id: string) => Number((await db.query<{ nota: string | null }>(`select nota from itens where id = $1`, [id])).rows[0].nota)
+    const notaSerie = async (id: string) => (await db.query<{ nota: string | null; critica: string | null }>(`select nota, critica from series where id = $1`, [id])).rows[0]
 
-    // Mesmo filtro da action `avaliarSerie`.
-    const { rows } = await db.query<{ id: string }>(`update itens set nota = $2 where serie_id = $1 and estado = 'lido' returning id`, [serie, 4.5])
+    // Modo "serie": só a série muda, volumes intocados.
+    await db.query(`update series set nota = 4.5, critica = 'ótima' where id = $1`, [serie])
+    expect(await notaSerie(serie)).toEqual({ nota: '4.5', critica: 'ótima' })
+    expect(await notaItem(lido1)).toBe(2)
+
+    // Modo "serie_e_volumes": mesmo filtro da action — só os lidos da própria série.
+    const { rows } = await db.query<{ id: string }>(`update itens set nota = 4.5, critica = 'ótima' where serie_id = $1 and estado = 'lido' returning id`, [serie])
     expect(rows.map((r) => r.id).sort()).toEqual([lido1, lido2].sort())
+    expect(await notaItem(lido2)).toBe(4.5)
+    expect((await db.query<{ nota: string | null }>(`select nota from itens where id = $1`, [comprado])).rows[0].nota).toBeNull()
+    expect(await notaItem(deOutra)).toBe(1)
 
-    const nota = async (id: string) => (await db.query<{ nota: string | null }>(`select nota from itens where id = $1`, [id])).rows[0].nota
-    expect(Number(await nota(lido1))).toBe(4.5)
-    expect(Number(await nota(lido2))).toBe(4.5)
-    expect(await nota(comprado)).toBeNull()
-    expect(await nota(desejo)).toBeNull()
-    expect(Number(await nota(deOutra))).toBe(1)
+    // Modo "media": nota própria vai a null; a crítica fica.
+    await db.query(`update series set nota = null where id = $1`, [serie])
+    expect(await notaSerie(serie)).toEqual({ nota: null, critica: 'ótima' })
 
-    // Limpar a nota da série também só alcança os lidos.
-    await db.query(`update itens set nota = null where serie_id = $1 and estado = 'lido'`, [serie])
-    expect(await nota(lido1)).toBeNull()
+    // Nota inválida da série é rejeitada pelo banco.
+    await expect(db.query(`update series set nota = 4.3 where id = $1`, [serie])).rejects.toThrow()
+    await expect(db.query(`update series set nota = 6 where id = $1`, [serie])).rejects.toThrow()
   })
 
   it('marcar como lido só vale para itens comprados', async () => {

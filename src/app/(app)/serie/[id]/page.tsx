@@ -55,8 +55,10 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
   const possuidos = itens.filter((i) => i.estado !== 'desejo').length
   const desejados = itens.length - possuidos
   const lidos = itens.filter((i) => i.estado === 'lido').length
-  const notasLidos = itens.filter((i) => i.estado === 'lido').map((i) => i.nota)
-  const notaComum = notasLidos.length > 0 && notasLidos.every((n) => n === notasLidos[0]) ? notasLidos[0] : null
+  const notasAvaliadas = itens
+    .filter((i) => i.estado === 'lido' && i.nota !== null)
+    .map((i) => Number(i.nota))
+  const mediaVolumes = notasAvaliadas.length > 0 ? notasAvaliadas.reduce((a, b) => a + b, 0) / notasAvaliadas.length : null
   const naFila = itens.filter((i) => i.estado === 'comprado').length
   const capaHero = itens.map((i) => capaMap.get(i.capa_url ?? '')).find(Boolean) ?? null
   const faltantesExibidos = volumesFaltantes.slice(0, MAX_FALTANTES_EXIBIDOS)
@@ -104,7 +106,14 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
-      <AvaliarSerie serieId={id} notaAtual={notaComum} lidos={lidos} />
+      <AvaliarSerie
+        serieId={id}
+        notaAtual={serie.nota === null ? null : Number(serie.nota)}
+        criticaAtual={serie.critica}
+        media={mediaVolumes}
+        avaliados={notasAvaliadas.length}
+        lidos={lidos}
+      />
 
       <SerieForm serie={{ ...serie, tagIds }} allTags={allTags ?? []} />
 

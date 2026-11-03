@@ -204,29 +204,64 @@ export async function marcarLidoEmLote(itemIds: string[], avaliacao?: AvaliacaoL
   return executar(() => marcarLidoEmLoteImpl(itemIds, avaliacao))
 }
 
-/** Dá a mesma nota a todos os volumes já lidos de uma série ("a série inteira merece 4,5"). */
-async function avaliarSerieImpl(serieId: string, nota: number | null) {
-  const id = z.string().uuid().parse(serieId)
-  const valor = nota === null ? null : notaSchema.parse(nota)
-  const supabase = await createClient()
+export type ModoAvaliacaoSerie =
+  /** Só a série: nota e crítica gerais, volumes intocados. */
+  | 'serie'
+  /** Série e volumes: a mesma nota e crítica também em cada volume lido (substitui as atuais). */
+  | 'serie_e_volumes'
+  /** Sem nota própria: a série passa a valer a média dos volumes (a crítica da série é mantida). */
+  | 'media'
 
-  const { data, error } = await supabase
-    .from('itens')
-    .update({ nota: valor })
-    .eq('serie_id', id)
-    .eq('estado', 'lido')
-    .select('id')
+const avaliarSerieSchema = z.object({
+  serieId: z.string().uuid(),
+  modo: z.enum(['serie', 'serie_e_volumes', 'media']),
+  nota: notaSchema.nullish(),
+  critica: z.string().trim().max(2000).nullish(),
+})
+
+async function avaliarSerieImpl(input: {
+  serieId: string
+  modo: ModoAvaliacaoSerie
+  nota?: number | null
+  critica?: string | null
+}) {
+  const { serieId, modo, nota, critica } = avaliarSerieSchema.parse(input)
+  const supabase = await createClient()
+  let volumes = 0
+
+  // Volumes primeiro: sem nenhum lido o erro de negócio sai antes de qualquer gravação.
+  if (modo === 'serie_e_volumes') {
+    const { data, error } = await supabase
+      .from('itens')
+      .update({ nota: nota ?? null, critica: critica || null })
+      .eq('serie_id', serieId)
+      .eq('estado', 'lido')
+      .select('id')
+    if (error) throw new Error(error.message)
+    if (!data || data.length === 0) throw new ErroDeNegocio('Esta série ainda não tem volumes lidos.')
+    volumes = data.length
+    for (const i of data) revalidatePath(`/item/${i.id}`)
+  }
+
+  const campos = modo === 'media' ? { nota: null } : { nota: nota ?? null, critica: critica || null }
+  const { data: serie, error } = await supabase.from('series').update(campos).eq('id', serieId).select('id')
   if (error) throw new Error(error.message)
-  if (!data || data.length === 0) throw new ErroDeNegocio('Esta série ainda não tem volumes lidos.')
+  if (!serie || serie.length === 0) throw new ErroDeNegocio('Série não encontrada.')
 
   revalidateListagens()
-  revalidatePath(`/serie/${id}`)
-  for (const i of data) revalidatePath(`/item/${i.id}`)
-  return data.length
+  revalidatePath(`/serie/${serieId}`)
+  revalidatePath('/series')
+  revalidatePath('/ranking')
+  return { volumes }
 }
 
-export async function avaliarSerie(serieId: string, nota: number | null) {
-  return executar(() => avaliarSerieImpl(serieId, nota))
+export async function avaliarSerie(input: {
+  serieId: string
+  modo: ModoAvaliacaoSerie
+  nota?: number | null
+  critica?: string | null
+}) {
+  return executar(() => avaliarSerieImpl(input))
 }
 
 export type ResumoCriacaoVolumes = {
