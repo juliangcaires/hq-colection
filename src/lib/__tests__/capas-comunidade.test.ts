@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/capa-busca', async (orig) => ({ ...(await orig<typeof import('@/lib/capa-busca')>()), baixarImagemSegura: vi.fn() }))
 
-import { ordenarCandidatos, type CandidatoCapa } from '@/lib/capa-busca'
+import { ordenarCandidatos, rotuloDeUsos, USOS_PARA_DESTAQUE, type CandidatoCapa } from '@/lib/capa-busca'
 import { buscarCapasDaComunidade, candidatosDaComunidade, memoriaGlobalDaSerie, registrarMemoriaGlobal } from '@/lib/capa-catalogo'
 import { urlPublicaDeCapa, urlsDeCapas, ehCapaPublica } from '@/lib/supabase/capas'
 
@@ -92,5 +92,15 @@ describe('acesso ao catálogo', () => {
     expect(rpc).not.toHaveBeenCalled()
     await registrarMemoriaGlobal(fake(rpc), 'berserk|manga', 'Berserk', 'mangadex', 'abc')
     expect(rpc).toHaveBeenCalledWith('series_busca_global_registrar', { p_serie_chave: 'berserk|manga', p_termo: 'Berserk', p_provedor: 'mangadex', p_ref: 'abc' })
+  })
+})
+
+describe('selo de usos', () => {
+  it('singular e plural', () => {
+    expect(rotuloDeUsos(1)).toBe('usada por 1 colecionador')
+    expect(rotuloDeUsos(3)).toBe('usada por 3 colecionadores')
+  })
+  it('o destaque começa em 2 pessoas', () => {
+    expect(USOS_PARA_DESTAQUE).toBe(2)
   })
 })

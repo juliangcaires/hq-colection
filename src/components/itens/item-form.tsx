@@ -36,6 +36,7 @@ import {
 } from '@/app/(app)/itens/actions'
 import { agruparTagsPorTipo, TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
 import type { EstadoItem, ItemComRelacoes, TagLite, TipoObra, TipoTag } from '@/lib/types'
+import { CandidatosDeCapa } from '@/components/itens/candidatos-de-capa'
 import { descreverFalhaProvedor, type CandidatoCapa, type ResultadoProvedor } from '@/lib/capa-busca'
 import { desembrulhar } from '@/lib/resultado'
 import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
@@ -479,27 +480,12 @@ export function ItemForm({
         {/* Coluna principal */}
         <div className="flex min-w-0 flex-col gap-[18px] lg:flex-[1_1_520px]">
           {candidatos && candidatos.length > 0 && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3">
-              <p className="text-sm text-foreground">Encontrei {candidatos.length} candidato(s) — escolha a capa certa:</p>
-              <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
-                {candidatos.map((c, i) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={`${c.url}-${i}`}
-                    src={c.url}
-                    alt={c.label}
-                    title={c.label}
-                    onClick={() => handleEscolherCandidato(c)}
-                    className={`aspect-[2/3] cursor-pointer rounded border-2 border-transparent object-cover transition hover:border-primary ${
-                      aplicandoCandidato ? 'pointer-events-none opacity-50' : ''
-                    }`}
-                  />
-                ))}
-              </div>
-              <Button variant="ghost" size="sm" className="w-fit" onClick={() => setCandidatos(null)}>
-                Cancelar
-              </Button>
-            </div>
+            <CandidatosDeCapa
+              candidatos={candidatos}
+              aplicando={aplicandoCandidato}
+              onEscolher={handleEscolherCandidato}
+              onCancelar={() => setCandidatos(null)}
+            />
           )}
 
           <div>

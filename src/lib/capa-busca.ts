@@ -338,6 +338,11 @@ export async function buscarCandidatos(
 /** Nível em que a capa da comunidade casou com o item (ver `capas_comunidade_buscar`). */
 export type NivelComunidade = 'isbn' | 'chave' | 'nome'
 
+/** "usada por 1 colecionador" / "usada por 3 colecionadores". */
+export function rotuloDeUsos(usos: number): string {
+  return `usada por ${usos} ${usos === 1 ? 'colecionador' : 'colecionadores'}`
+}
+
 /** Uma capa só vira a primeira sugestão com 2+ pessoas usando; antes disso aparece na grade sem destaque. */
 export const USOS_PARA_DESTAQUE = 2
 const TETO_GRADE = 16

@@ -578,3 +578,19 @@ async function aplicarCapaEscolhidaImpl(itemId: string, candidatoBruto: Candidat
 export async function aplicarCapaEscolhida(itemId: string, candidatoBruto: CandidatoCapa) {
   return executar(() => aplicarCapaEscolhidaImpl(itemId, candidatoBruto))
 }
+
+/**
+ * "Capa errada ou imprópria": uma denúncia por pessoa; na terceira a capa sai das sugestões até alguém
+ * revisar no Supabase. Quem já usa a capa continua vendo a sua. Devolve true se a capa foi ocultada.
+ */
+async function denunciarCapaImpl(capaId: string) {
+  const id = z.string().uuid().parse(capaId)
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('capa_denunciar', { p_capa: id })
+  if (error) lancarErroRpc(error)
+  return data === true
+}
+
+export async function denunciarCapa(capaId: string) {
+  return executar(() => denunciarCapaImpl(capaId))
+}
