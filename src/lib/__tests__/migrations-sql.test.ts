@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -349,5 +349,107 @@ describe('lido_em (migration 0010)', () => {
     const { rows: [{ id }] } = await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [dados({ estado: 'comprado' })])
     await db.query(`update itens set estado = 'lido' where id = $1 and estado = 'comprado'`, [id])
     expect(await lidoEm(id)).not.toBeNull()
+  })
+})
+
+describe('catálogo de edições (migration 0011)', () => {
+  const ed = (extra: object = {}) => JSON.stringify({ isbn13: '9788545702870', chave_normalizada: 'hellboy|1|hq|mythos', titulo: 'Hellboy', origem: 'google_books', autores: ['Mike Mignola'], ...extra })
+  const registrar = async (dados: string) => (await db.query<{ id: string }>(`select edicao_registrar($1::jsonb) id`, [dados])).rows[0].id
+  const linha = async (id: string) => (await db.query<Record<string, unknown>>(`select * from edicoes where id = $1`, [id])).rows[0]
+
+  it('isbn13_valido confere prefixo e dígito verificador', async () => {
+    const r = async (v: string) => (await db.query<{ ok: boolean }>(`select isbn13_valido($1) ok`, [v])).rows[0].ok
+    expect(await r('9788545702870')).toBe(true)
+    expect(await r('9788545702871')).toBe(false)
+    expect(await r('1234567890123')).toBe(false)
+    expect(await r('978854570287')).toBe(false)
+  })
+
+  it('usuário lê o catálogo mas não escreve direto', async () => {
+    const id = await registrar(ed())
+    expect((await db.query(`select 1 from edicoes where id = $1`, [id])).rows).toHaveLength(1)
+    await expect(db.query(`insert into edicoes(chave_normalizada,titulo,origem) values ('x','x','usuario')`)).rejects.toThrow()
+    await db.query(`update edicoes set titulo = 'HACK' where id = $1`, [id])
+    expect((await linha(id)).titulo).toBe('Hellboy')
+    await db.query(`delete from edicoes where id = $1`, [id])
+    expect((await db.query(`select 1 from edicoes where id = $1`, [id])).rows).toHaveLength(1)
+  })
+
+  it('isbn13 é único: registrar de novo devolve a mesma edição', async () => {
+    const a = await registrar(ed({ isbn13: '9788545702863', chave_normalizada: 'unico' }))
+    const b = await registrar(ed({ isbn13: '9788545702863', chave_normalizada: 'unico' }))
+    expect(b).toBe(a)
+  })
+
+  it('dado de usuário não sobrescreve edição de API, mas preenche campos vazios', async () => {
+    const id = await registrar(ed({ isbn13: '9788545701231', chave_normalizada: 'api1', titulo: 'Original', paginas: null }))
+    await registrar(ed({ isbn13: '9788545701231', chave_normalizada: 'api1', titulo: 'Do usuário', origem: 'usuario', paginas: 96 }))
+    const l = await linha(id)
+    expect(l.titulo).toBe('Original')
+    expect(l.origem).toBe('google_books')
+    expect(l.paginas).toBe(96)
+  })
+
+  it('dado de API substitui uma edição que veio de usuário', async () => {
+    const id = await registrar(ed({ isbn13: '9788545709336', chave_normalizada: 'u1', titulo: 'Rascunho', origem: 'usuario' }))
+    await registrar(ed({ isbn13: '9788545709336', chave_normalizada: 'u1', titulo: 'Oficial', origem: 'brasilapi' }))
+    const l = await linha(id)
+    expect(l.titulo).toBe('Oficial')
+    expect(l.origem).toBe('brasilapi')
+  })
+
+  it('edição sem ISBN é única por chave', async () => {
+    const a = await registrar(ed({ isbn13: null, chave_normalizada: 'sem-isbn|1', origem: 'usuario' }))
+    const b = await registrar(ed({ isbn13: null, chave_normalizada: 'sem-isbn|1', origem: 'usuario' }))
+    expect(b).toBe(a)
+  })
+
+  it('recusa ISBN inválido, origem inválida e título vazio', async () => {
+    await expect(registrar(ed({ isbn13: '9788545702871' }))).rejects.toThrow('isbn_invalido')
+    await expect(registrar(ed({ origem: 'hacker' }))).rejects.toThrow('edicao_invalida')
+    await expect(registrar(ed({ titulo: '  ' }))).rejects.toThrow('edicao_invalida')
+    await expect(registrar(ed({ isbn13: '9788545709336', capa_url_externa: 'http://x.com/a.jpg' }))).rejects.toThrow()
+  })
+
+  it('apelidos de editora estão semeados e são só de leitura', async () => {
+    const { rows } = await db.query<{ editora: string }>(`select editora from editora_apelidos where apelido = 'panini comics'`)
+    expect(rows[0].editora).toBe('Panini')
+    const { rows: todas } = await db.query<{ editora: string }>(`select distinct editora from editora_apelidos order by 1`)
+    expect(todas.map((r) => r.editora)).toEqual(['Conrad', 'Devir', 'JBC', 'Mythos', 'NewPOP', 'Panini', 'Pipoca & Nanquim'])
+    await expect(db.query(`insert into editora_apelidos values ('x','X')`)).rejects.toThrow()
+  })
+
+  it('itens_por_isbn acha o item ignorando hífens e só do próprio usuário', async () => {
+    await db.query(`insert into itens(user_id,titulo,isbn) values ($1,'Com hífen','978-85-457-0287-0')`, [U])
+    const { rows } = await db.query<{ titulo: string }>(`select titulo from itens_por_isbn('{9788545702870}')`)
+    expect(rows.map((r) => r.titulo)).toContain('Com hífen')
+    await db.query(`select set_config('app.uid','${OUTRO}',false)`)
+    try {
+      expect((await db.query(`select 1 from itens_por_isbn('{9788545702870}')`)).rows).toHaveLength(0)
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  })
+
+  it('item aceita edicao_id e limite de consultas bloqueia depois do teto', async () => {
+    const id = await registrar(ed({ isbn13: '9788545702870', chave_normalizada: 'lim' }))
+    const { rows: [item] } = await db.query<{ ok: boolean }>(`select item_salvar(null, $1::jsonb, '{}') is not null as ok`, [JSON.stringify({ titulo: 'Com edição', tipo: 'hq', estado: 'desejo', edicao_id: id })])
+    expect(item.ok).toBe(true)
+    const { rows: [salvo] } = await db.query<{ id: string }>(`select id from itens where edicao_id = $1`, [id])
+    await db.query(`select item_salvar($1, $2::jsonb, '{}')`, [salvo.id, JSON.stringify({ titulo: 'Editado', tipo: 'hq', estado: 'desejo' })])
+    expect((await db.query(`select 1 from itens where id = $1 and edicao_id = $2`, [salvo.id, id])).rows).toHaveLength(1)
+    await db.query(`select item_salvar($1, $2::jsonb, '{}')`, [salvo.id, JSON.stringify({ titulo: 'Editado', tipo: 'hq', estado: 'desejo', edicao_id: null })])
+    expect((await db.query(`select 1 from itens where id = $1 and edicao_id is null`, [salvo.id])).rows).toHaveLength(1)
+    await db.query(`delete from isbn_consultas`)
+    for (let i = 0; i < 3; i++) {
+      expect((await db.query<{ ok: boolean }>(`select isbn_consulta_registrar(3) ok`)).rows[0].ok).toBe(true)
+    }
+    expect((await db.query<{ ok: boolean }>(`select isbn_consulta_registrar(3) ok`)).rows[0].ok).toBe(false)
+    await db.query(`select set_config('app.uid','${OUTRO}',false)`)
+    try {
+      expect((await db.query<{ ok: boolean }>(`select isbn_consulta_registrar(3) ok`)).rows[0].ok).toBe(true)
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
   })
 })
