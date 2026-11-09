@@ -457,7 +457,8 @@ as $$
       when b.estado = 'lido' and not ('lidos' = any (p_escopo)) then 'comprado'
       else b.estado::text
     end as estado,
-    b.capa_url as capa,
+    -- Capa privada sai só como nome do arquivo (sem a pasta, que é o id do dono); a pública sai como `pub/…`.
+    case when b.capa_url like 'pub/%' then b.capa_url else regexp_replace(b.capa_url, '^.*/', '') end as capa,
     case when b.estado = 'lido' and ('notas_criticas' = any (p_escopo) or p_secao = 'ranking') then b.nota end as nota,
     case when b.estado = 'lido' and 'notas_criticas' = any (p_escopo) and not b.critica_privada then b.critica end as critica,
     case when b.estado = 'lido' and 'lidos' = any (p_escopo) then b.lido_em end as lido_em,
@@ -494,7 +495,8 @@ as $$
     case when 'lidos' = any (p_escopo) then (select count(*)::int from itens i where i.serie_id = s.id and i.estado = 'lido') end as lidos,
     case when 'notas_criticas' = any (p_escopo) then s.nota end as nota,
     case when 'notas_criticas' = any (p_escopo) and not s.critica_privada then s.critica end as critica,
-    (select i.capa_url from itens i where i.serie_id = s.id and i.estado <> 'desejo' and i.capa_url is not null
+    (select case when i.capa_url like 'pub/%' then i.capa_url else regexp_replace(i.capa_url, '^.*/', '') end
+       from itens i where i.serie_id = s.id and i.estado <> 'desejo' and i.capa_url is not null
       order by i.numero_volume nulls last, i.id limit 1) as capa
   from series s
   where s.user_id = p_dono

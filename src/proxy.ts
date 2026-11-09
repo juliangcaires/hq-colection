@@ -2,9 +2,8 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 import { politicaDeSeguranca } from '@/lib/csp'
+import { ehRotaDeCompartilhamento, ehRotaPublica } from '@/lib/rotas'
 import { OPCOES_COOKIE } from '@/lib/supabase/cookies'
-
-const PUBLIC_PATHS = ['/login', '/criar-conta']
 
 export async function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
@@ -41,7 +40,7 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getClaims()
   const user = data?.claims ?? null
 
-  const isPublicPath = PUBLIC_PATHS.some((path) => request.nextUrl.pathname.startsWith(path))
+  const isPublicPath = ehRotaPublica(request.nextUrl.pathname)
 
   if (!user && !isPublicPath) {
     const url = request.nextUrl.clone()
@@ -50,6 +49,11 @@ export async function proxy(request: NextRequest) {
   }
 
   supabaseResponse.headers.set('Content-Security-Policy', csp)
+  // Coleção compartilhada: fora dos buscadores, sem cache compartilhado (o link pode ser revogado a qualquer momento).
+  if (ehRotaDeCompartilhamento(request.nextUrl.pathname)) {
+    supabaseResponse.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive')
+    supabaseResponse.headers.set('Cache-Control', 'private, no-store')
+  }
   return supabaseResponse
 }
 

@@ -742,6 +742,10 @@ describe('compartilhamento por link (migration 0013)', () => {
     const arquivo = '22222222-2222-4222-8222-222222222222-1700000000000.jpg'
     const id = await mkItem({ estado: 'desejo', titulo: 'Com capa' })
     await db.query(`update itens set capa_url = $2 where id = $1`, [id, `${U}/${arquivo}`])
+    // a pasta (id do dono) não vaza na listagem: sai só o nome do arquivo; capa pública sai como pub/…
+    const lista = await itens(await gerar(['desejos']), 'desejos')
+    expect(JSON.stringify(lista)).not.toContain(U)
+    expect(lista.find((r) => r.titulo === 'Com capa')?.capa).toBe(arquivo)
     const semDesejos = await gerar(['colecao'])
     const capa = async (t: string, a: string) => (await db.query<{ c: string | null }>(`select link_capa($1, $2) c`, [t, a])).rows[0].c
     expect(await capa(semDesejos, arquivo)).toBeNull() // desejo fora do escopo
