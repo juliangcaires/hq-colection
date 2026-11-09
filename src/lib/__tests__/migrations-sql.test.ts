@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -603,5 +603,168 @@ describe('capas compartilhadas (migration 0012)', () => {
     await expect(reg('outro', null)).rejects.toThrow('busca_invalida')
     await expect(db.query(`insert into series_busca_global(serie_chave, provedor) values ('x','mangadex')`)).rejects.toThrow()
     expect((await db.query(`select 1 from series_busca_global`)).rows.length).toBeGreaterThan(0)
+  })
+})
+
+describe('compartilhamento por link (migration 0013)', () => {
+  const TODOS = ['colecao', 'series', 'lidos', 'notas_criticas', 'ranking', 'desejos']
+  const comoOutro = async <T,>(fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${OUTRO}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const gerar = async (escopo: string[]) => (await db.query<{ t: string }>(`select compartilhamento_gerar($1::text[]) t`, [escopo])).rows[0].t
+  const itens = async (token: string, secao: string, serie: string | null = null) =>
+    (await db.query<Record<string, unknown>>(`select * from link_itens($1, $2, $3)`, [token, secao, serie])).rows
+  const mkSerie = async (nome: string) => (await db.query<{ s: string }>(`select serie_salvar(null, $1::jsonb, '{}') s`, [JSON.stringify({ nome, tipo: 'hq', tem_numeracao: true })])).rows[0].s
+  const mkItem = async (extra: object) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'T', tipo: 'hq', ...extra })])).rows[0].id
+
+  it('o link só nasce com escopo válido; o token tem 64 hex e o cliente não escreve direto', async () => {
+    await expect(gerar([])).rejects.toThrow('escopo_invalido')
+    await expect(gerar(['tudo'])).rejects.toThrow('escopo_invalido')
+    const token = await gerar(['colecao'])
+    expect(token).toMatch(/^[0-9a-f]{64}$/)
+    await expect(db.query(`insert into compartilhamentos(user_id, token, escopo) values ($1, 'token-escolhido-pelo-cliente-123456', '{colecao}')`, [U])).rejects.toThrow()
+    // atualizar direto também não vale (sem policy de update): o escopo some só pela função
+    await db.query(`update compartilhamentos set escopo = '{colecao,desejos}' where user_id = $1`, [U])
+    expect((await db.query<{ escopo: string[] }>(`select escopo from compartilhamentos where token = $1`, [token])).rows[0].escopo).toEqual(['colecao'])
+    await comoOutro(async () => {
+      expect((await db.query(`select 1 from compartilhamentos`)).rows).toHaveLength(0) // cada um vê só o seu
+    })
+  })
+
+  it('token inexistente, malformado ou revogado devolve vazio; gerar de novo invalida o antigo', async () => {
+    const velho = await gerar(['colecao'])
+    await mkItem({ estado: 'comprado', titulo: 'Visível' })
+    expect((await itens(velho, 'colecao')).length).toBeGreaterThan(0)
+    const novo = await gerar(['colecao'])
+    expect(novo).not.toBe(velho)
+    expect(await itens(velho, 'colecao')).toHaveLength(0)
+    expect((await itens(novo, 'colecao')).length).toBeGreaterThan(0)
+    expect((await db.query<{ r: unknown }>(`select link_resumo($1) r`, [velho])).rows[0].r).toBeNull()
+    expect((await db.query<{ r: boolean }>(`select compartilhamento_revogar() r`)).rows[0].r).toBe(true)
+    expect(await itens(novo, 'colecao')).toHaveLength(0)
+    for (const ruim of ['', 'curto', "' or 1=1 --", 'x'.repeat(200)]) expect(await itens(ruim, 'colecao')).toHaveLength(0)
+  })
+
+  it('preço, loja, data de aquisição, observações e prioridade nunca saem — nem existem no tipo devolvido', async () => {
+    const token = await gerar(TODOS)
+    await mkItem({ estado: 'lido', nota: 4.5, critica: 'boa', preco: 99.9, loja: 'Loja Secreta', data_aquisicao: '2026-01-01', prioridade: 9, titulo: 'Segredos' })
+    const cols = (await db.query<{ attname: string }>(`select attname from pg_attribute where attrelid = (select typrelid from pg_type where oid = 'vitrine_item'::regtype) and attnum > 0`)).rows.map((r) => r.attname)
+    for (const proibida of ['preco', 'loja', 'data_aquisicao', 'observacoes', 'prioridade', 'user_id']) expect(cols).not.toContain(proibida)
+    const colsSerie = (await db.query<{ attname: string }>(`select attname from pg_attribute where attrelid = (select typrelid from pg_type where oid = 'vitrine_serie'::regtype) and attnum > 0`)).rows.map((r) => r.attname)
+    for (const proibida of ['observacoes', 'user_id', 'busca_termo']) expect(colsSerie).not.toContain(proibida)
+    const linhas = await itens(token, 'colecao')
+    const texto = JSON.stringify(linhas)
+    expect(texto).not.toContain('Loja Secreta')
+    expect(texto).not.toContain('99.9')
+    expect(texto).not.toContain('2026-01-01')
+    const resumo = JSON.stringify((await db.query<{ r: unknown }>(`select link_resumo($1) r`, [token])).rows[0].r)
+    expect(resumo).not.toContain(U)
+  })
+
+  it('o escopo manda: sem "lidos" lido aparece como comprado; sem "notas_criticas" não há nota nem crítica', async () => {
+    await mkItem({ estado: 'lido', nota: 5, critica: 'obra-prima', titulo: 'Escopo' })
+    const soColecao = await gerar(['colecao'])
+    const [l] = (await itens(soColecao, 'colecao')).filter((r) => r.titulo === 'Escopo')
+    expect(l).toMatchObject({ estado: 'comprado', nota: null, critica: null, lido_em: null })
+    expect(await itens(soColecao, 'lidos')).toHaveLength(0)
+    expect(await itens(soColecao, 'ranking')).toHaveLength(0)
+    expect(await itens(soColecao, 'desejos')).toHaveLength(0)
+
+    await db.query(`select compartilhamento_escopo_atualizar('{colecao,lidos,notas_criticas,ranking}')`)
+    const [m] = (await itens(soColecao, 'colecao')).filter((r) => r.titulo === 'Escopo')
+    expect(m).toMatchObject({ estado: 'lido', critica: 'obra-prima' })
+    expect(Number(m.nota)).toBe(5)
+    expect((await itens(soColecao, 'ranking')).some((r) => r.titulo === 'Escopo')).toBe(true)
+    expect((await itens(soColecao, 'lidos')).some((r) => r.titulo === 'Escopo')).toBe(true)
+  })
+
+  it('ranking mostra a nota mesmo sem "notas_criticas", mas nunca a crítica', async () => {
+    await mkItem({ estado: 'lido', nota: 3, critica: 'segredo de ranking', titulo: 'Ranqueado' })
+    const token = await gerar(['ranking'])
+    const [r] = (await itens(token, 'ranking')).filter((x) => x.titulo === 'Ranqueado')
+    expect(Number(r.nota)).toBe(3)
+    expect(r.critica).toBeNull()
+    expect(await itens(token, 'colecao')).toHaveLength(0)
+  })
+
+  it('crítica privada nunca sai, em nenhum escopo', async () => {
+    await mkItem({ estado: 'lido', nota: 2, critica: 'só para mim', critica_privada: true, titulo: 'Privada' })
+    await mkItem({ estado: 'lido', nota: 2, critica: 'pode mostrar', titulo: 'Pública' })
+    const token = await gerar(TODOS)
+    const todas = [...(await itens(token, 'colecao')), ...(await itens(token, 'lidos')), ...(await itens(token, 'ranking'))]
+    expect(JSON.stringify(todas)).not.toContain('só para mim')
+    expect(JSON.stringify(todas)).toContain('pode mostrar')
+    // editar o item sem mandar a chave mantém a privacidade
+    const { rows: [{ id }] } = await db.query<{ id: string }>(`select id from itens where titulo = 'Privada'`)
+    await db.query(`select item_salvar($1, '{"titulo":"Privada","tipo":"hq","estado":"lido","critica":"só para mim","nota":2}', '{}')`, [id])
+    expect(JSON.stringify(await itens(token, 'colecao'))).not.toContain('só para mim')
+  })
+
+  it('crítica da série: some quando privada, e a cópia para os volumes herda a privacidade', async () => {
+    const s = await mkSerie('Série Privada')
+    await db.query(`update series set critica_privada = true where id = $1`, [s])
+    await mkItem({ serie_id: s, numero_volume: 1, estado: 'comprado', titulo: 'SP 1' })
+    const token = await gerar(TODOS)
+    await db.query(`select serie_marcar_lida($1, 4, 'crítica secreta da série', 'serie', true)`, [s])
+    const todas = [...(await itens(token, 'colecao')), ...(await itens(token, 'serie', s))]
+    expect(JSON.stringify(todas)).not.toContain('crítica secreta da série')
+    const series = (await db.query<Record<string, unknown>>(`select * from link_series($1)`, [token])).rows
+    expect(JSON.stringify(series)).not.toContain('crítica secreta da série')
+    // desfazer continua funcionando com o novo campo
+    const { rows: [{ r }] } = await db.query<{ r: { snapshot: unknown } }>(`select serie_marcar_lida($1, 5, 'outra', 'serie', true) r`, [s])
+    expect(r.snapshot).toBeTruthy()
+  })
+
+  it('séries e série: só com escopo "series", só o que o dono possui, com contagens', async () => {
+    const s = await mkSerie('Vitrine')
+    await mkItem({ serie_id: s, numero_volume: 1, estado: 'lido', titulo: 'V1' })
+    await mkItem({ serie_id: s, numero_volume: 2, estado: 'comprado', titulo: 'V2' })
+    await mkItem({ serie_id: s, numero_volume: 3, estado: 'desejo', titulo: 'V3' })
+    const so = await gerar(['series'])
+    const lista = (await db.query<{ nome: string; possuidos: number; lidos: number | null }>(`select * from link_series($1)`, [so])).rows.filter((r) => r.nome === 'Vitrine')
+    expect(lista).toEqual([expect.objectContaining({ possuidos: 2, lidos: null })])
+    expect((await itens(so, 'serie', s)).map((r) => r.titulo)).toEqual(['V1', 'V2']) // desejo fora, ordenado por número
+    const sem = await gerar(['colecao'])
+    expect((await db.query(`select * from link_series($1)`, [sem])).rows).toHaveLength(0)
+    expect(await itens(sem, 'serie', s)).toHaveLength(0)
+    const com = await gerar(['series', 'lidos', 'desejos'])
+    expect((await itens(com, 'serie', s)).map((r) => r.titulo)).toEqual(['V1', 'V2', 'V3'])
+    expect((await db.query<{ lidos: number }>(`select * from link_series($1) where nome = 'Vitrine'`, [com])).rows[0].lidos).toBe(1)
+  })
+
+  it('capa privada só é liberada para item visível no escopo; arquivo fora do padrão nunca', async () => {
+    const arquivo = '22222222-2222-4222-8222-222222222222-1700000000000.jpg'
+    const id = await mkItem({ estado: 'desejo', titulo: 'Com capa' })
+    await db.query(`update itens set capa_url = $2 where id = $1`, [id, `${U}/${arquivo}`])
+    const semDesejos = await gerar(['colecao'])
+    const capa = async (t: string, a: string) => (await db.query<{ c: string | null }>(`select link_capa($1, $2) c`, [t, a])).rows[0].c
+    expect(await capa(semDesejos, arquivo)).toBeNull() // desejo fora do escopo
+    const comDesejos = await gerar(['desejos'])
+    expect(await capa(comDesejos, arquivo)).toBe(`${U}/${arquivo}`)
+    expect(await capa(comDesejos, '../' + arquivo)).toBeNull()
+    expect(await capa(comDesejos, `${OUTRO}/${arquivo}`)).toBeNull()
+    expect(await capa(comDesejos, '33333333-3333-4333-8333-333333333333.jpg')).toBeNull()
+  })
+
+  it('a camada interna (schema privado) não é alcançável pelo app', async () => {
+    await expect(db.query(`select * from privado.v_itens('${U}', '{colecao}', 'colecao', null, null, 10, 0)`)).rejects.toThrow()
+    await expect(db.query(`select privado.resolver_token('x')`)).rejects.toThrow()
+  })
+
+  it('migration: toda função pública nova revoga anon/public e só as link_* liberam visitante', () => {
+    const sql = readFileSync(path.join(PASTA, '0013_compartilhamento.sql'), 'utf8')
+    for (const nome of ['compartilhamento_gerar', 'compartilhamento_revogar', 'compartilhamento_escopo_atualizar']) {
+      expect(sql).toMatch(new RegExp(`revoke all on function ${nome}\\([^)]*\\) from public, anon;`))
+      expect(sql).not.toMatch(new RegExp(`grant execute on function ${nome}\\([^)]*\\) to[^;]*anon`))
+    }
+    for (const nome of ['link_resumo', 'link_itens', 'link_series', 'link_capa']) {
+      expect(sql).toMatch(new RegExp(`grant execute on function ${nome}\\([^)]*\\) to anon, authenticated;`))
+    }
   })
 })
