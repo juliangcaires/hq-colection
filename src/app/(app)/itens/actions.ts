@@ -7,6 +7,7 @@ import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
 import {
   adquirirLoteSchema,
+  estadoItemSchema,
   notaSchema,
   candidatoCapaSchema,
   criarVolumesInputSchema,
@@ -16,7 +17,14 @@ import {
   type ItemInput,
 } from '@/lib/schemas'
 import type { TipoObra } from '@/lib/types'
-import { baixarEPersistirCapa, type CandidatoCapa } from '@/lib/capa-busca'
+import { type CandidatoCapa } from '@/lib/capa-busca'
+import {
+  aplicarCapaDeApi,
+  aplicarFotoDoUsuario,
+  chavesDoItem,
+  registrarMemoriaGlobal,
+  usuarioContribuiCapas,
+} from '@/lib/capa-catalogo'
 import { normalizarTermoBusca } from '@/lib/capa-termo'
 import { novoCaminhoDeCapa, removerCapaAntiga } from '@/lib/supabase/capas'
 
@@ -24,6 +32,7 @@ const LIMITE_CAPA_BYTES = 5 * 1024 * 1024
 const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
 import { lancarErroRpc } from '@/lib/rpc'
+import { alimentarCatalogoComItem } from '@/lib/isbn-supabase'
 
 function revalidateListagens(itemId?: string) {
   revalidatePath('/colecao')
@@ -46,6 +55,19 @@ function dadosDoItem(p: ItemInput) {
     data_aquisicao: p.data_aquisicao || null,
     nota: p.nota ?? null,
     critica: p.critica || null,
+    lido_em: p.estado === 'lido' ? p.lido_em || null : null,
+    critica_privada: p.critica_privada,
+  }
+}
+
+function catalogoDoItem(p: ItemInput) {
+  return {
+    isbn: p.isbn,
+    titulo: p.titulo,
+    serieId: p.serie_id,
+    numeroVolume: p.numero_volume,
+    tipo: p.tipo,
+    tagIds: p.tagIds,
   }
 }
 
@@ -64,6 +86,9 @@ async function createItemImpl(input: ItemInput) {
     p_tag_ids: parsed.tagIds,
   })
   if (error) lancarErroRpc(error)
+
+  // Catálogo é acessório: nunca derruba o salvamento (a função não lança).
+  await alimentarCatalogoComItem(supabase, data as string, catalogoDoItem(parsed))
 
   revalidateListagens()
   return data as string
@@ -84,6 +109,8 @@ async function updateItemImpl(id: string, input: ItemInput) {
     p_tag_ids: parsed.tagIds,
   })
   if (error) lancarErroRpc(error)
+
+  await alimentarCatalogoComItem(supabase, itemId, catalogoDoItem(parsed))
 
   revalidateListagens(itemId)
 }
@@ -184,6 +211,7 @@ async function marcarLidoEmLoteImpl(itemIds: string[], avaliacao?: AvaliacaoLeit
   const av = avaliacaoSchema.parse(avaliacao ?? {})
   const supabase = await createClient()
 
+  // `lido_em` é preenchido pelo trigger `trg_itens_lido_em` (migration 0010) quando o estado vira `lido`.
   // Estado, nota e crítica na mesma escrita: não existe "lido" sem a avaliação que acabou de ser dada.
   const { data, error } = await supabase
     .from('itens')
@@ -205,20 +233,27 @@ export async function marcarLidoEmLote(itemIds: string[], avaliacao?: AvaliacaoL
 }
 
 export type ModoAvaliacaoSerie =
-  /** Só a série: nota e crítica gerais, volumes intocados. */
+  /** Só a série: nota e crítica gerais, volumes sem nota nova. */
   | 'serie'
-  /** Série e volumes: a mesma nota e crítica também em cada volume lido (substitui as atuais). */
-  | 'serie_e_volumes'
+  /** Série e volumes lidos sem nota: não toca em volume já avaliado. */
+  | 'serie_e_sem_nota'
+  /** Série e todos os volumes lidos: a nota dos volumes é substituída (a crítica deles nunca). */
+  | 'serie_e_todos'
   /** Sem nota própria: a série passa a valer a média dos volumes (a crítica da série é mantida). */
   | 'media'
 
 const avaliarSerieSchema = z.object({
   serieId: z.string().uuid(),
-  modo: z.enum(['serie', 'serie_e_volumes', 'media']),
+  modo: z.enum(['serie', 'serie_e_sem_nota', 'serie_e_todos', 'media']),
   nota: notaSchema.nullish(),
   critica: z.string().trim().max(2000).nullish(),
 })
 
+/**
+ * Avalia a série sem marcar nada como lido (`serie_marcar_lida` com `p_marcar_lidos = false`).
+ * A crítica da série só vai para volumes lidos que não têm crítica; nenhuma avaliação individual
+ * é sobrescrita, a menos que o usuário escolha `serie_e_todos` (e aí só a nota muda).
+ */
 async function avaliarSerieImpl(input: {
   serieId: string
   modo: ModoAvaliacaoSerie
@@ -227,32 +262,28 @@ async function avaliarSerieImpl(input: {
 }) {
   const { serieId, modo, nota, critica } = avaliarSerieSchema.parse(input)
   const supabase = await createClient()
-  let volumes = 0
 
-  // Volumes primeiro: sem nenhum lido o erro de negócio sai antes de qualquer gravação.
-  if (modo === 'serie_e_volumes') {
-    const { data, error } = await supabase
-      .from('itens')
-      .update({ nota: nota ?? null, critica: critica || null })
-      .eq('serie_id', serieId)
-      .eq('estado', 'lido')
-      .select('id')
+  if (modo === 'media') {
+    const { data: serie, error } = await supabase.from('series').update({ nota: null }).eq('id', serieId).select('id')
     if (error) throw new Error(error.message)
-    if (!data || data.length === 0) throw new ErroDeNegocio('Esta série ainda não tem volumes lidos.')
-    volumes = data.length
-    for (const i of data) revalidatePath(`/item/${i.id}`)
+    if (!serie || serie.length === 0) throw new ErroDeNegocio('Série não encontrada.')
+    revalidarSerie(serieId)
+    return { volumes: 0 }
   }
 
-  const campos = modo === 'media' ? { nota: null } : { nota: nota ?? null, critica: critica || null }
-  const { data: serie, error } = await supabase.from('series').update(campos).eq('id', serieId).select('id')
-  if (error) throw new Error(error.message)
-  if (!serie || serie.length === 0) throw new ErroDeNegocio('Série não encontrada.')
+  const { data, error } = await supabase.rpc('serie_marcar_lida', {
+    p_serie: serieId,
+    p_nota: nota ?? null,
+    // '' limpa a crítica da série; null deixa como está.
+    p_critica: critica ?? null,
+    p_modo: modo,
+    p_marcar_lidos: false,
+  })
+  if (error) lancarErroRpc(error)
 
-  revalidateListagens()
-  revalidatePath(`/serie/${serieId}`)
-  revalidatePath('/series')
-  revalidatePath('/ranking')
-  return { volumes }
+  const r = data as { avaliados: number; snapshot: SnapshotMarcacaoSerie }
+  revalidarSerie(serieId, r.snapshot.itens.map((i) => i.id))
+  return { volumes: r.avaliados }
 }
 
 export async function avaliarSerie(input: {
@@ -262,6 +293,113 @@ export async function avaliarSerie(input: {
   critica?: string | null
 }) {
   return executar(() => avaliarSerieImpl(input))
+}
+
+export type ModoMarcacaoSerie = 'serie' | 'serie_e_sem_nota' | 'serie_e_todos'
+
+/** Estado anterior dos itens e da série afetados, devolvido por `serie_marcar_lida` para o "Desfazer". */
+export type SnapshotMarcacaoSerie = {
+  serie: { id: string; nota: number | null; critica: string | null }
+  itens: { id: string; estado: 'desejo' | 'comprado' | 'lido'; nota: number | null; critica: string | null; lido_em: string | null }[]
+}
+
+export type ResumoMarcacaoSerie = {
+  marcados: number
+  avaliados: number
+  criticas: number
+  desejosIgnorados: number
+  snapshot: SnapshotMarcacaoSerie
+}
+
+const marcarSerieSchema = z.object({
+  serieId: z.string().uuid(),
+  modo: z.enum(['serie', 'serie_e_sem_nota', 'serie_e_todos']).default('serie_e_sem_nota'),
+  nota: notaSchema.nullish(),
+  critica: z.string().trim().max(2000).nullish(),
+})
+
+const snapshotSchema = z.object({
+  serie: z.object({
+    id: z.string().uuid(),
+    nota: z.number().min(0.5).max(5).nullable(),
+    critica: z.string().max(2000).nullable(),
+  }),
+  itens: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        estado: estadoItemSchema,
+        nota: z.number().min(0.5).max(5).nullable(),
+        critica: z.string().max(2000).nullable(),
+        lido_em: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+      }),
+    )
+    .max(2000),
+})
+
+function revalidarSerie(serieId: string, itemIds: string[] = []) {
+  revalidateListagens()
+  revalidatePath(`/serie/${serieId}`)
+  revalidatePath('/series')
+  revalidatePath('/ranking')
+  for (const id of itemIds) revalidatePath(`/item/${id}`)
+}
+
+/**
+ * Marca como lidos os volumes `comprado` da série e aplica nota/crítica (função SQL `serie_marcar_lida`,
+ * transacional). Nota e crítica são opcionais ("Pular" só marca). A crítica nunca sobrescreve a de um volume.
+ */
+async function marcarSerieComoLidaImpl(input: z.input<typeof marcarSerieSchema>): Promise<ResumoMarcacaoSerie> {
+  const { serieId, modo, nota, critica } = marcarSerieSchema.parse(input)
+  const supabase = await createClient()
+
+  const { data, error } = await supabase.rpc('serie_marcar_lida', {
+    p_serie: serieId,
+    p_nota: nota ?? null,
+    p_critica: critica || null,
+    p_modo: modo,
+    p_marcar_lidos: true,
+  })
+  if (error) lancarErroRpc(error)
+
+  const r = data as {
+    marcados: number
+    avaliados: number
+    criticas: number
+    desejos_ignorados: number
+    snapshot: SnapshotMarcacaoSerie
+  }
+  revalidarSerie(serieId, r.snapshot.itens.map((i) => i.id))
+  return {
+    marcados: r.marcados,
+    avaliados: r.avaliados,
+    criticas: r.criticas,
+    desejosIgnorados: r.desejos_ignorados,
+    snapshot: r.snapshot,
+  }
+}
+
+export async function marcarSerieComoLida(input: z.input<typeof marcarSerieSchema>) {
+  return executar(() => marcarSerieComoLidaImpl(input))
+}
+
+/** Desfaz `marcarSerieComoLida`: restaura estado, nota, crítica e `lido_em` dos itens e a avaliação da série. */
+async function desfazerMarcacaoSerieImpl(snapshotBruto: SnapshotMarcacaoSerie) {
+  const snapshot = snapshotSchema.parse(snapshotBruto)
+  const supabase = await createClient()
+
+  const { data, error } = await supabase.rpc('serie_desfazer_marcacao', {
+    p_serie: snapshot.serie.id,
+    p_snapshot: snapshot,
+  })
+  if (error) lancarErroRpc(error)
+
+  revalidarSerie(snapshot.serie.id, snapshot.itens.map((i) => i.id))
+  return data as number
+}
+
+export async function desfazerMarcacaoSerie(snapshot: SnapshotMarcacaoSerie) {
+  return executar(() => desfazerMarcacaoSerieImpl(snapshot))
 }
 
 export type ResumoCriacaoVolumes = {
@@ -341,6 +479,17 @@ async function uploadCapaManualImpl(itemId: string, formData: FormData) {
   const { data: atual } = await supabase.from('itens').select('capa_url').eq('id', itemId).maybeSingle()
   if (!atual) throw new ErroDeNegocio('Item não encontrado')
 
+  // Opt-in "Contribuir com as capas que eu enviar": a foto (sem metadados) vai para o catálogo público e o
+  // item aponta para ela. Sem opt-in, ou se a publicação falhar, segue o caminho privado de sempre.
+  if (await usuarioContribuiCapas(supabase, user.id)) {
+    const publica = await aplicarFotoDoUsuario(supabase, itemId, new Uint8Array(await file.arrayBuffer()))
+    if (publica) {
+      await removerCapaAntiga(supabase, atual.capa_url, publica)
+      revalidateListagens(itemId)
+      return
+    }
+  }
+
   const { error: uploadError } = await supabase.storage
     .from('capas')
     .upload(path, file, { contentType: file.type })
@@ -348,7 +497,7 @@ async function uploadCapaManualImpl(itemId: string, formData: FormData) {
 
   const { error: updateError } = await supabase
     .from('itens')
-    .update({ capa_url: path, capa_origem: 'foto' })
+    .update({ capa_url: path, capa_origem: 'foto', capa_catalogo_id: null })
     .eq('id', itemId)
   if (updateError) throw new Error(updateError.message)
   await removerCapaAntiga(supabase, atual.capa_url, path)
@@ -380,14 +529,28 @@ async function aplicarCapaEscolhidaImpl(itemId: string, candidatoBruto: Candidat
   if (!existente) throw new ErroDeNegocio('Item não encontrado')
 
   const { data: anterior } = await supabase.from('itens').select('capa_url').eq('id', id).maybeSingle()
-  const path = await baixarEPersistirCapa(supabase, user.id, id, candidato.url)
+
+  // Capa que outro colecionador já publicou: só aponta o item para ela (a função confere dono e se não foi ocultada).
+  if (candidato.provedor === 'comunidade') {
+    if (!candidato.ref) throw new ErroDeNegocio('Capa da comunidade inválida')
+    const { data: caminho, error: erroAplicar } = await supabase.rpc('capa_catalogo_aplicar', { p_item: id, p_capa: candidato.ref })
+    if (erroAplicar) {
+      if (erroAplicar.message === 'capa_indisponivel') throw new ErroDeNegocio('Esta capa não está mais disponível.')
+      lancarErroRpc(erroAplicar)
+    }
+    await removerCapaAntiga(supabase, anterior?.capa_url, `pub/${caminho as string}`)
+    revalidateListagens(itemId)
+    return
+  }
+
+  // Baixa, publica no catálogo compartilhado e aponta o item para ela (sem cópia própria).
+  const path = await aplicarCapaDeApi(supabase, id, candidato.url)
   if (!path) throw new ErroDeNegocio('Não foi possível baixar essa imagem')
 
   const { data: item, error } = await supabase
     .from('itens')
-    .update({ capa_url: path, capa_origem: 'api' })
-    .eq('id', id)
     .select('titulo, numero_volume, serie:series(id, nome)')
+    .eq('id', id)
     .single<{ titulo: string; numero_volume: number | null; serie: { id: string; nome: string } | null }>()
   if (error) throw new Error(error.message)
 
@@ -405,6 +568,9 @@ async function aplicarCapaEscolhidaImpl(itemId: string, candidatoBruto: Candidat
         busca_atualizado_em: new Date().toISOString(),
       })
       .eq('id', item.serie.id)
+    // ...e conta uma confirmação na memória compartilhada, para o próximo colecionador da mesma série pular a resolução.
+    const chaves = await chavesDoItem(supabase, id)
+    await registrarMemoriaGlobal(supabase, chaves?.serieChave ?? null, termo.termo, candidato.provedor, candidato.ref ?? null)
   }
 
   revalidateListagens(itemId)
@@ -412,4 +578,20 @@ async function aplicarCapaEscolhidaImpl(itemId: string, candidatoBruto: Candidat
 
 export async function aplicarCapaEscolhida(itemId: string, candidatoBruto: CandidatoCapa) {
   return executar(() => aplicarCapaEscolhidaImpl(itemId, candidatoBruto))
+}
+
+/**
+ * "Capa errada ou imprópria": uma denúncia por pessoa; na terceira a capa sai das sugestões até alguém
+ * revisar no Supabase. Quem já usa a capa continua vendo a sua. Devolve true se a capa foi ocultada.
+ */
+async function denunciarCapaImpl(capaId: string) {
+  const id = z.string().uuid().parse(capaId)
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('capa_denunciar', { p_capa: id })
+  if (error) lancarErroRpc(error)
+  return data === true
+}
+
+export async function denunciarCapa(capaId: string) {
+  return executar(() => denunciarCapaImpl(capaId))
 }

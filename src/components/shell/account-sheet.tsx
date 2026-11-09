@@ -1,14 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { ChevronRight, FileUp, LogOut, Tags, Trophy } from 'lucide-react'
+import { ChevronRight, FileUp, LogOut, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
 import { iniciais } from '@/lib/nav'
 import { Sheet, SheetClose, SheetContent, SheetTitle } from '@/components/ui/sheet'
 
 const LINKS = [
   { href: '/ranking', label: 'Ranking', desc: 'Os melhores avaliados', Icon: Trophy, cor: 'bg-warning/15 text-warning-text' },
+  { href: '/amigos', label: 'Amigos', desc: 'Coleções dos seus amigos', Icon: Users, cor: 'bg-primary/15 text-link' },
+  { href: '/emprestimos', label: 'Empréstimos', desc: 'O que está com outras pessoas', Icon: HandHelping, cor: 'bg-warning/15 text-warning-text' },
   { href: '/tags', label: 'Tags', desc: 'Editoras, personagens, autores…', Icon: Tags, cor: 'bg-chart-5/15 text-chart-5' },
   { href: '/importar', label: 'Importar CSV', desc: 'Traga sua planilha', Icon: FileUp, cor: 'bg-success/15 text-success-text' },
+  { href: '/configuracoes', label: 'Configurações', desc: 'Capas compartilhadas e mais', Icon: Settings, cor: 'bg-primary/15 text-link' },
 ]
 
 export function AccountSheet({

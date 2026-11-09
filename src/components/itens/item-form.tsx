@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Check, ChevronDown, Layers, MoreHorizontal, Star, ArrowLeft, Minus, Plus } from 'lucide-react'
 import { Estrelas } from '@/components/ui/estrelas'
 import { formatarNota } from '@/lib/nota'
@@ -36,6 +37,7 @@ import {
 } from '@/app/(app)/itens/actions'
 import { agruparTagsPorTipo, TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
 import type { EstadoItem, ItemComRelacoes, TagLite, TipoObra, TipoTag } from '@/lib/types'
+import { CandidatosDeCapa } from '@/components/itens/candidatos-de-capa'
 import { descreverFalhaProvedor, type CandidatoCapa, type ResultadoProvedor } from '@/lib/capa-busca'
 import { desembrulhar } from '@/lib/resultado'
 import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
@@ -66,6 +68,8 @@ export function ItemForm({
   const [dataAquisicao, setDataAquisicao] = useState(item?.data_aquisicao ?? '')
   const [nota, setNota] = useState<number | null>(item?.nota ?? null)
   const [critica, setCritica] = useState(item?.critica ?? '')
+  const [lidoEm, setLidoEm] = useState(item?.lido_em ?? '')
+  const [criticaPrivada, setCriticaPrivada] = useState(item?.critica_privada ?? false)
   const [tagsPorTipo, setTagsPorTipo] = useState<Record<TipoTag, TagLite[]>>(() =>
     agruparTagsPorTipo(
       (item?.tagsItem ?? []).map((t) => t.id),
@@ -91,7 +95,7 @@ export function ItemForm({
   // o item salvo muda (key), então o baseline acompanha o que foi salvo.
   const idsTags = (m: Record<TipoTag, TagLite[]>) => Object.values(m).flatMap((ts) => ts.map((t) => t.id).sort())
   const valoresAtuais = JSON.stringify([
-    titulo, serieId, numeroVolume, tipo, isbn, estado, prioridade, preco, loja, dataAquisicao, nota, critica,
+    titulo, serieId, numeroVolume, tipo, isbn, estado, prioridade, preco, loja, dataAquisicao, nota, critica, lidoEm, criticaPrivada,
     idsTags(tagsPorTipo),
   ])
   const [valoresIniciais] = useState(valoresAtuais)
@@ -110,6 +114,8 @@ export function ItemForm({
     setDataAquisicao(item.data_aquisicao ?? '')
     setNota(item.nota ?? null)
     setCritica(item.critica ?? '')
+    setLidoEm(item.lido_em ?? '')
+    setCriticaPrivada(item.critica_privada ?? false)
     setTagsPorTipo(agruparTagsPorTipo(item.tagsItem.map((t) => t.id), item.tagsItem))
   }
 
@@ -141,6 +147,8 @@ export function ItemForm({
           data_aquisicao: dataAquisicao || null,
           nota: nota,
           critica: critica || null,
+          lido_em: estado === 'lido' ? lidoEm || null : null,
+          critica_privada: criticaPrivada,
           tagIds: Object.values(tagsPorTipo).flatMap((tags) => tags.map((t) => t.id)),
         }
         if (item) {
@@ -476,27 +484,12 @@ export function ItemForm({
         {/* Coluna principal */}
         <div className="flex min-w-0 flex-col gap-[18px] lg:flex-[1_1_520px]">
           {candidatos && candidatos.length > 0 && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3">
-              <p className="text-sm text-foreground">Encontrei {candidatos.length} candidato(s) — escolha a capa certa:</p>
-              <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
-                {candidatos.map((c, i) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={`${c.url}-${i}`}
-                    src={c.url}
-                    alt={c.label}
-                    title={c.label}
-                    onClick={() => handleEscolherCandidato(c)}
-                    className={`aspect-[2/3] cursor-pointer rounded border-2 border-transparent object-cover transition hover:border-primary ${
-                      aplicandoCandidato ? 'pointer-events-none opacity-50' : ''
-                    }`}
-                  />
-                ))}
-              </div>
-              <Button variant="ghost" size="sm" className="w-fit" onClick={() => setCandidatos(null)}>
-                Cancelar
-              </Button>
-            </div>
+            <CandidatosDeCapa
+              candidatos={candidatos}
+              aplicando={aplicandoCandidato}
+              onEscolher={handleEscolherCandidato}
+              onCancelar={() => setCandidatos(null)}
+            />
           )}
 
           <div>
@@ -610,6 +603,15 @@ export function ItemForm({
                   </span>
                 </div>
               </div>
+              <Campo rotulo="Lido em" id="lido-em">
+                <Input
+                  className={campoClasse}
+                  id="lido-em"
+                  type="date"
+                  value={lidoEm}
+                  onChange={(e) => setLidoEm(e.target.value)}
+                />
+              </Campo>
               <Campo rotulo="Crítica" id="critica">
                 <Textarea
                   className="rounded-xl bg-surface-2 px-3.5 py-3 text-[15px] leading-[1.55]"
@@ -620,6 +622,10 @@ export function ItemForm({
                   placeholder="O que você achou da leitura?"
                 />
               </Campo>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox checked={criticaPrivada} onCheckedChange={(v) => setCriticaPrivada(v === true)} />
+                Crítica privada (não aparece em link nem para amigos)
+              </label>
             </section>
           )}
 

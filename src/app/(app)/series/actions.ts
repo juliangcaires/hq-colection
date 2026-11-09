@@ -26,6 +26,7 @@ function dadosDaSerie(p: SerieInput) {
     em_publicacao: p.em_publicacao,
     tem_numeracao: p.tem_numeracao,
     observacoes: p.observacoes || null,
+    critica_privada: p.critica_privada,
   }
 }
 
@@ -509,6 +510,8 @@ export type SerieListada = {
   em_publicacao: boolean
   /** Derivada na hora (nada é gravado): tem total declarado e você já tem tudo. */
   completa: boolean
+  /** Derivada na hora: tem volume possuído e todos estão lidos. */
+  lida: boolean
   /** Números de volume que faltam (calculados no banco), vazio se não há furos. */
   faltantes: number[]
 }
@@ -524,14 +527,15 @@ export async function listarSeries(query: string): Promise<SerieListada[]> {
   })
   if (error) throw new Error(error.message)
 
-  return ((data ?? []) as (Omit<SerieListada, 'completa'> & { completa: boolean; tem_numeracao: boolean })[]).map(
-    ({ id, nome, tipo, total_volumes, em_publicacao, completa, faltantes }) => ({
+  return ((data ?? []) as (SerieListada & { tem_numeracao: boolean })[]).map(
+    ({ id, nome, tipo, total_volumes, em_publicacao, completa, lida, faltantes }) => ({
       id,
       nome,
       tipo,
       total_volumes,
       em_publicacao,
       completa,
+      lida: Boolean(lida),
       faltantes: faltantes ?? [],
     })
   )

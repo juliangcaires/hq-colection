@@ -3,11 +3,12 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Estrelas } from '@/components/ui/estrelas'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { OpcaoRadio } from '@/components/series/opcao-radio'
+import { AvisoCritica } from '@/components/series/marcar-serie-lida-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { avaliarSerie, type ModoAvaliacaoSerie } from '@/app/(app)/itens/actions'
 import { desembrulhar } from '@/lib/resultado'
@@ -25,6 +26,8 @@ export function AvaliarSerie({
   media,
   avaliados,
   lidos,
+  lidosSemCritica,
+  lidosComCritica,
 }: {
   serieId: string
   /** Nota própria da série; null quando vale a média. */
@@ -34,12 +37,16 @@ export function AvaliarSerie({
   media: number | null
   avaliados: number
   lidos: number
+  /** Volumes lidos sem crítica própria (recebem a da série). */
+  lidosSemCritica: number
+  /** Volumes lidos que já têm crítica (mantêm a própria). */
+  lidosComCritica: number
 }) {
   const router = useRouter()
   const [nota, setNota] = useState<number | null>(notaAtual)
   const [critica, setCritica] = useState(criticaAtual ?? '')
   const [aberto, setAberto] = useState(false)
-  const [modo, setModo] = useState<'serie' | 'serie_e_volumes'>('serie')
+  const [modo, setModo] = useState<'serie' | 'serie_e_sem_nota' | 'serie_e_todos'>('serie_e_sem_nota')
   const [isPending, startTransition] = useTransition()
 
   const alterado = nota !== notaAtual || critica.trim() !== (criticaAtual ?? '')
@@ -48,14 +55,14 @@ export function AvaliarSerie({
     startTransition(async () => {
       try {
         const r = desembrulhar(
-          await avaliarSerie({ serieId, modo: m, nota, critica: critica.trim() || null }),
+          await avaliarSerie({ serieId, modo: m, nota, critica: critica.trim() }),
         )
         toast.success(
           m === 'media'
             ? 'A série agora vale a média dos volumes'
-            : m === 'serie_e_volumes'
-              ? `Avaliação aplicada à série e a ${r.volumes} volume(s) lido(s)`
-              : 'Avaliação da série salva',
+            : m === 'serie'
+              ? 'Avaliação da série salva'
+              : `Avaliação da série salva e nota aplicada a ${r.volumes} ${r.volumes === 1 ? 'volume' : 'volumes'}`,
         )
         setAberto(false)
         router.refresh()
@@ -111,22 +118,35 @@ export function AvaliarSerie({
               {critica.trim() ? ' e crítica' : ''} da série.
             </DialogDescription>
           </DialogHeader>
+          {critica.trim() && lidos > 0 && <AvisoCritica semCritica={lidosSemCritica} comCritica={lidosComCritica} />}
           <div role="radiogroup" aria-label="Onde aplicar" className="flex flex-col gap-2">
-            <Opcao
+            <OpcaoRadio
               marcada={modo === 'serie'}
               onSelect={() => setModo('serie')}
               titulo="Só a série"
-              texto="Fica como a nota geral da série. Os volumes mantêm as notas e críticas que já têm."
+              texto="Fica como a nota geral da série. Os volumes não recebem nota."
             />
-            <Opcao
-              marcada={modo === 'serie_e_volumes'}
-              onSelect={() => setModo('serie_e_volumes')}
+            <OpcaoRadio
+              marcada={modo === 'serie_e_sem_nota'}
+              onSelect={() => setModo('serie_e_sem_nota')}
               disabled={lidos === 0}
-              titulo={`A série e todos os volumes lidos (${lidos})`}
+              titulo={`Série + volumes lidos sem nota (${lidos - avaliados})`}
               texto={
                 lidos === 0
                   ? 'Nenhum volume lido ainda.'
-                  : 'Replica a nota e a crítica em cada volume lido, substituindo as que já tinham.'
+                  : 'Não toca em volume que já tem nota. Recomendado.'
+              }
+            />
+            <OpcaoRadio
+              marcada={modo === 'serie_e_todos'}
+              onSelect={() => setModo('serie_e_todos')}
+              disabled={lidos === 0}
+              alerta
+              titulo={`Série + todos os volumes lidos (${lidos})`}
+              texto={
+                lidos === 0
+                  ? 'Nenhum volume lido ainda.'
+                  : `Substitui a nota${avaliados > 0 ? ` de ${avaliados} ${avaliados === 1 ? 'volume que já tem' : 'volumes que já têm'} nota` : ''}. A crítica de cada volume continua como está.`
               }
             />
           </div>
@@ -141,36 +161,5 @@ export function AvaliarSerie({
         </DialogContent>
       </Dialog>
     </section>
-  )
-}
-
-function Opcao({
-  marcada,
-  onSelect,
-  titulo,
-  texto,
-  disabled,
-}: {
-  marcada: boolean
-  onSelect: () => void
-  titulo: string
-  texto: string
-  disabled?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={marcada}
-      disabled={disabled}
-      onClick={onSelect}
-      className={cn(
-        'flex flex-col gap-0.5 rounded-lg border p-3 text-left disabled:opacity-50',
-        marcada ? 'border-primary bg-primary/10' : 'border-border bg-surface-2',
-      )}
-    >
-      <span className="text-sm font-medium text-foreground">{titulo}</span>
-      <span className="text-xs text-muted-foreground">{texto}</span>
-    </button>
   )
 }

@@ -18,11 +18,14 @@ type RawItemRow = {
   prioridade: number
   capa_url: string | null
   capa_origem: 'api' | 'foto' | 'nenhuma'
+  capa_catalogo_id: string | null
   preco: number | null
   loja: string | null
   data_aquisicao: string | null
   nota: number | null
   critica: string | null
+  lido_em: string | null
+  critica_privada: boolean
   created_at: string
   updated_at: string
   serie: {

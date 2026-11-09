@@ -2,7 +2,15 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import {
-  baixarEPersistirCapa,
+  aplicarCapaDeApi,
+  buscarCapasDaComunidade,
+  candidatosDaComunidade,
+  chavesDoItem,
+  memoriaGlobalDaSerie,
+  registrarMemoriaGlobal,
+} from '@/lib/capa-catalogo'
+import { normalizarIsbn } from '@/lib/isbn'
+import {
   buscarCandidatos,
   buscarCapaPorIsbn,
   type MemoriaSerie,
@@ -58,24 +66,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Item não encontrado' }, { status: 404 })
   }
 
+  // Identificadores do item no catálogo (ISBN do item ou o informado, chave da edição, chave da série).
+  const chaves = await chavesDoItem(supabase, itemId)
+  const isbnDoItem = chaves?.isbn13 ?? (isbn ? normalizarIsbn(isbn) : null)
+  const noCatalogo = await buscarCapasDaComunidade(supabase, chaves && { ...chaves, isbn13: isbnDoItem })
+
+  // 1. Catálogo por ISBN: é a mesma edição, então aplica direto e não gasta chamada externa.
+  const mesmaEdicaoPorIsbn = noCatalogo.find((c) => c.nivel === 'isbn')
+  if (mesmaEdicaoPorIsbn) {
+    const { error } = await supabase.rpc('capa_catalogo_aplicar', { p_item: itemId, p_capa: mesmaEdicaoPorIsbn.id })
+    if (!error) {
+      await removerCapaAntiga(supabase, item.capa_url, `pub/${mesmaEdicaoPorIsbn.caminho}`)
+      return NextResponse.json({ status: 'aplicada', origem: 'comunidade' })
+    }
+    console.warn('[capa] não aplicou a capa do catálogo:', error.message)
+  }
+
   // Título normalizado — reaproveita o nome da série (título "Série #N" sozinho
   // não é buscável) e o que já deu certo em volumes anteriores da mesma série.
   const termo = normalizarTermoBusca(titulo, item.serie?.nome, item.numero_volume)
-  const memoria: MemoriaSerie | null = item.serie
+  const memoriaPropria: MemoriaSerie | null = item.serie
     ? {
         termo: item.serie.busca_termo,
         provedor: item.serie.busca_provedor,
         ref: item.serie.busca_ref,
       }
     : null
+  // Série que ninguém resolveu ainda neste usuário: tenta o que outros colecionadores já descobriram.
+  const memoria = memoriaPropria?.provedor ? memoriaPropria : ((await memoriaGlobalDaSerie(supabase, chaves?.serieChave ?? null)) ?? memoriaPropria)
 
-  // 1. Por ISBN — melhor taxa de acerto, aplica direto sem ambiguidade
-  if (isbn) {
-    const resultado = await buscarCapaPorIsbn(isbn)
+  // 2. Por ISBN nos provedores — melhor taxa de acerto, aplica direto sem ambiguidade
+  if (isbnDoItem) {
+    const resultado = await buscarCapaPorIsbn(isbnDoItem)
     if (resultado) {
-      const path = await baixarEPersistirCapa(supabase, user.id, itemId, resultado.url)
+      const path = await aplicarCapaDeApi(supabase, itemId, resultado.url)
       if (path) {
-        await supabase.from('itens').update({ capa_url: path, capa_origem: 'api' }).eq('id', itemId)
         await removerCapaAntiga(supabase, item.capa_url, path)
         if (item.serie) {
           await supabase
@@ -87,15 +112,15 @@ export async function POST(req: NextRequest) {
               busca_atualizado_em: new Date().toISOString(),
             })
             .eq('id', item.serie.id)
+          await registrarMemoriaGlobal(supabase, chaves?.serieChave ?? null, termo.termo, resultado.provedor, null)
         }
         return NextResponse.json({ status: 'aplicada' })
       }
     }
   }
 
-  // 2. Por título — cascata de provedores, acumulando candidatos
-
-  const { candidatos, diagnostico } = await buscarCandidatos(termo, tipo, memoria)
+  // 3. Por título — catálogo por chave, provedores e, no fim, capas que só batem no nome (nunca aplicadas sozinhas)
+  const { candidatos, diagnostico } = await buscarCandidatos(termo, tipo, memoria, candidatosDaComunidade(noCatalogo))
 
   if (candidatos.length === 0) {
     return NextResponse.json({ status: 'nao_encontrada', diagnostico })

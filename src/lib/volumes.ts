@@ -84,3 +84,13 @@ export function serieEstaCompleta({
   if (!temNumeracao) return true
   return calcularVolumesFaltantes(volumes, totalVolumes).length === 0
 }
+
+/**
+ * "Série lida": tem ao menos um volume possuído e todos os possuídos estão lidos (nenhum só comprado).
+ * Calculado, não gravado — comprar um volume novo devolve a série para "em andamento" sozinho.
+ * Mesma regra de `lida` em `series_com_resumo` (migration 0010).
+ */
+export function serieEstaLida(volumes: Pick<VolumeParaFuros, 'estado'>[]): boolean {
+  const possuidos = volumes.filter((v) => v.estado !== 'desejo')
+  return possuidos.length > 0 && possuidos.every((v) => v.estado === 'lido')
+}

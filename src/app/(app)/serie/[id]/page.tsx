@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { listarItens } from '@/lib/queries'
 import { urlsDeCapas } from '@/lib/supabase/capas'
-import { calcularVolumesFaltantes, serieEstaCompleta } from '@/lib/volumes'
+import { calcularVolumesFaltantes, serieEstaCompleta, serieEstaLida } from '@/lib/volumes'
 import { uuidOuNull } from '@/lib/filtros-url'
 import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +12,7 @@ import { CriarVolumesDialog } from '@/components/series/criar-volumes-dialog'
 import { TipoBadge } from '@/components/ui/tipo-badge'
 import { SerieProgress } from '@/components/series/serie-progress'
 import { AvaliarSerie } from '@/components/series/avaliar-serie'
+import { MarcarSerieLidaDialog } from '@/components/series/marcar-serie-lida-dialog'
 import { VolumesGrid } from '@/components/series/volumes-grid'
 import { BackButton } from '@/components/ui/back-button'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
@@ -49,6 +50,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
     temNumeracao: Boolean(serie.tem_numeracao),
     volumes: itens,
   })
+  const lida = serieEstaLida(itens)
   const numerosOcupados = itens
     .map((i) => i.numero_volume)
     .filter((n): n is number => n !== null)
@@ -61,6 +63,14 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
   const mediaVolumes = notasAvaliadas.length > 0 ? notasAvaliadas.reduce((a, b) => a + b, 0) / notasAvaliadas.length : null
   const naFila = itens.filter((i) => i.estado === 'comprado').length
   const capaHero = itens.map((i) => capaMap.get(i.capa_url ?? '')).find(Boolean) ?? null
+  const aMarcar = itens.filter((i) => i.estado !== 'desejo')
+  const resumoMarcacao = {
+    comprados: naFila,
+    desejos: desejados,
+    semCritica: aMarcar.filter((i) => !i.critica).length,
+    comCritica: aMarcar.filter((i) => i.critica).length,
+    comNota: aMarcar.filter((i) => i.nota !== null).length,
+  }
   const faltantesExibidos = volumesFaltantes.slice(0, MAX_FALTANTES_EXIBIDOS)
   const faltantesOcultos = volumesFaltantes.length - faltantesExibidos.length
 
@@ -78,6 +88,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
             {serie.tem_numeracao && <span className="text-xs text-muted-foreground">numerada</span>}
             {!serie.em_publicacao && <Badge variant="secondary">encerrada</Badge>}
             {completa && <Badge variant="sucesso">completa</Badge>}
+            {lida && <Badge variant="sucesso">série lida</Badge>}
           </div>
           <h1 className="font-heading text-[28px] leading-tight font-extrabold tracking-tight text-foreground lg:text-[44px]">
             {serie.nome}
@@ -106,6 +117,18 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
+      {naFila > 0 && (
+        <div>
+        <MarcarSerieLidaDialog
+          serieId={id}
+          serieNome={serie.nome}
+          resumo={resumoMarcacao}
+          temNumeracao={Boolean(serie.tem_numeracao)}
+          furos={volumesFaltantes}
+        />
+        </div>
+      )}
+
       <AvaliarSerie
         serieId={id}
         notaAtual={serie.nota === null ? null : Number(serie.nota)}
@@ -113,6 +136,8 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         media={mediaVolumes}
         avaliados={notasAvaliadas.length}
         lidos={lidos}
+        lidosSemCritica={itens.filter((i) => i.estado === 'lido' && !i.critica).length}
+        lidosComCritica={itens.filter((i) => i.estado === 'lido' && i.critica).length}
       />
 
       <SerieForm serie={{ ...serie, tagIds }} allTags={allTags ?? []} />

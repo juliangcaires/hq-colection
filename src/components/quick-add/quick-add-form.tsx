@@ -74,7 +74,7 @@ type SerieOption = {
   tags: TagLite[]
 }
 
-export function QuickAddForm({ onDone }: { onDone: () => void }) {
+export function QuickAddForm({ onDone, isbnInicial = '' }: { onDone: () => void; isbnInicial?: string }) {
   const router = useRouter()
   const [editoraSelecionada, setEditoraSelecionada] = useState<TagLite[]>([])
 
@@ -90,7 +90,7 @@ export function QuickAddForm({ onDone }: { onDone: () => void }) {
   const [volumesTexto, setVolumesTexto] = useState('')
   const [resumoSerie, setResumoSerie] = useState<ResumoVolumesDaSerie | null>(null)
   const [titulo, setTitulo] = useState('')
-  const [isbn, setIsbn] = useState('')
+  const [isbn, setIsbn] = useState(isbnInicial)
   const [prioridade, setPrioridade] = useState('0')
   const [estado, setEstado] = useState<EstadoItem>('desejo')
   const [tipoSelecionado, setTipoSelecionado] = useState<TipoObra>('hq')

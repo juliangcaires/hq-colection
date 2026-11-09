@@ -28,6 +28,8 @@ export type Serie = {
   /** Nota própria da série (0,5–5). Null = vale a média dos volumes lidos. */
   nota: number | null
   critica: string | null
+  /** Crítica da série privada: nunca aparece em link nem para amigos. */
+  critica_privada: boolean
   /** memória de busca de capa — o que já deu certo num volume desta série */
   busca_termo: string | null
   busca_provedor: string | null
@@ -51,11 +53,17 @@ export type Item = {
   prioridade: number
   capa_url: string | null
   capa_origem: OrigemCapa
+  /** Quando a capa vem do catálogo público (`capa_url` começa com `pub/`). */
+  capa_catalogo_id: string | null
   preco: number | null
   loja: string | null
   data_aquisicao: string | null
   nota: number | null
   critica: string | null
+  /** Crítica privada: nunca aparece em link nem para amigos. */
+  critica_privada: boolean
+  /** Data em que virou lido (AAAA-MM-DD); null em item não lido ou lido antes da coluna existir. */
+  lido_em: string | null
   created_at: string
   updated_at: string
 }

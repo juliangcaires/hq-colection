@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { FileUp, Heart, House, Layers, LayoutGrid, Plus, Tags, Trophy } from 'lucide-react'
+import { FileUp, Heart, House, Layers, LayoutGrid, Plus, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { estaAtivo, iniciais } from '@/lib/nav'
 import { useQuickAdd } from '@/components/quick-add/quick-add-provider'
@@ -16,8 +16,11 @@ const PRINCIPAL = [
   { href: '/ranking', label: 'Ranking', Icon: Trophy },
 ]
 const SECUNDARIA = [
+  { href: '/amigos', label: 'Amigos', Icon: Users },
+  { href: '/emprestimos', label: 'Empréstimos', Icon: HandHelping },
   { href: '/tags', label: 'Tags', Icon: Tags },
   { href: '/importar', label: 'Importar CSV', Icon: FileUp },
+  { href: '/configuracoes', label: 'Configurações', Icon: Settings },
 ]
 
 function Item({ href, label, Icon, pathname }: (typeof PRINCIPAL)[number] & { pathname: string }) {

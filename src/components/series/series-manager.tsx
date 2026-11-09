@@ -159,6 +159,7 @@ export function SeriesManager({ initialSeries }: { initialSeries: SerieRow[] }) 
                 {s.total_volumes ? `${s.total_volumes} volumes` : null}
                 {!s.em_publicacao && <Badge variant="secondary">encerrada</Badge>}
                 {s.completa && <Badge variant="sucesso">completa</Badge>}
+                {s.lida && <Badge variant="sucesso">lida</Badge>}
                 {s.faltantes.length > 0 && (
                   <span className="rounded bg-warning px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
                     {s.faltantes.length} {s.faltantes.length === 1 ? 'furo' : 'furos'}

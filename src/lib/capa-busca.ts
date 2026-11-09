@@ -1,17 +1,23 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
 import type { TipoObra } from '@/lib/types'
 import type { TermoBusca } from '@/lib/capa-termo'
-import { novoCaminhoDeCapa } from '@/lib/supabase/capas'
 import { DOMINIOS_CAPA, HOSTS_CAPA_EXATOS } from '@/lib/capa-hosts'
 
 export type Provedor = 'google_books' | 'open_library' | 'anilist' | 'mangadex'
 
+/** Candidatos da grade: os provedores externos mais a comunidade (capas já usadas por outros colecionadores). */
+export type ProvedorCandidato = Provedor | 'comunidade'
+
 export type CandidatoCapa = {
   url: string
   label: string
-  provedor: Provedor
-  /** id externo da obra no provedor (manga id do MangaDex, id do AniList) — permite pular a resolução por título numa próxima busca. */
+  provedor: ProvedorCandidato
+  /** id externo da obra no provedor (manga id do MangaDex, id do AniList) — permite pular a resolução por título numa próxima busca.
+   *  Na comunidade é o id da capa em `capas_catalogo`. */
   ref?: string | null
+  /** Só `comunidade`: quantas pessoas usam esta capa hoje. */
+  usos?: number
+  /** Só `comunidade`: usada por 2+ pessoas na mesma edição — vira a primeira sugestão. */
+  destaque?: boolean
 }
 
 export type ResultadoProvedor =
@@ -30,7 +36,7 @@ export type MemoriaSerie = {
 const TETO_CANDIDATOS = 12
 const MANGADEX_HEADERS = { 'User-Agent': 'hq-colection/0.1 (github.com/hq-colection)' }
 
-type GoogleBooksImageLinks = {
+export type GoogleBooksImageLinks = {
   thumbnail?: string
   smallThumbnail?: string
   small?: string
@@ -45,13 +51,13 @@ type GoogleBooksItem = {
   }
 }
 
-function melhorImagemGoogleBooks(links?: GoogleBooksImageLinks): string | null {
+export function melhorImagemGoogleBooks(links?: GoogleBooksImageLinks): string | null {
   const url = links?.large || links?.medium || links?.small || links?.thumbnail || links?.smallThumbnail
   return url ? url.replace('http://', 'https://') : null
 }
 
 /** Monta a URL do Google Books, injetando a chave própria quando configurada (GOOGLE_BOOKS_API_KEY) — sem ela, cai na quota anônima compartilhada, que satura fácil. */
-function googleBooksUrl(q: string, maxResults: number): string {
+export function googleBooksUrl(q: string, maxResults: number): string {
   const key = process.env.GOOGLE_BOOKS_API_KEY
   let url = `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=${maxResults}&country=BR`
   if (key) url += `&key=${encodeURIComponent(key)}`
@@ -288,7 +294,9 @@ export async function buscarCapaPorMemoria(
 export async function buscarCandidatos(
   termo: TermoBusca,
   tipo: TipoObra,
-  memoria?: MemoriaSerie | null
+  memoria?: MemoriaSerie | null,
+  /** Capas da comunidade já resolvidas (catálogo); entram na ordem de `ordenarCandidatos`. */
+  comunidade: CandidatoCapa[] = []
 ): Promise<{ candidatos: CandidatoCapa[]; diagnostico: ResultadoProvedor[] }> {
   const buscas: Array<() => Promise<ResultadoProvedor>> =
     tipo === 'manga'
@@ -324,7 +332,47 @@ export async function buscarCandidatos(
     if (candidatos.length >= TETO_CANDIDATOS) break
   }
 
-  return { candidatos, diagnostico }
+  return { candidatos: ordenarCandidatos(comunidade, candidatos), diagnostico }
+}
+
+/** Nível em que a capa da comunidade casou com o item (ver `capas_comunidade_buscar`). */
+export type NivelComunidade = 'isbn' | 'chave' | 'nome'
+
+/** "usada por 1 colecionador" / "usada por 3 colecionadores". */
+export function rotuloDeUsos(usos: number): string {
+  return `usada por ${usos} ${usos === 1 ? 'colecionador' : 'colecionadores'}`
+}
+
+/** Uma capa só vira a primeira sugestão com 2+ pessoas usando; antes disso aparece na grade sem destaque. */
+export const USOS_PARA_DESTAQUE = 2
+const TETO_GRADE = 16
+
+/**
+ * Ordem da grade de candidatos:
+ *  1. comunidade destacada (mesma edição por ISBN ou chave, usada por 2+ pessoas);
+ *  2. provedores externos (como sempre);
+ *  3. comunidade da mesma edição, ainda sem 2 usos;
+ *  4. comunidade que só bate no nome da série — sugestão, nunca aplicada sozinha.
+ * Repetidos (mesma URL) saem. A entrada `comunidade` vem do catálogo já ordenada por especificidade e uso.
+ */
+export function ordenarCandidatos(
+  comunidade: (CandidatoCapa & { nivel?: NivelComunidade })[],
+  externos: CandidatoCapa[]
+): CandidatoCapa[] {
+  const mesmaEdicao = comunidade.filter((c) => c.nivel !== 'nome')
+  const soNome = comunidade.filter((c) => c.nivel === 'nome')
+  const destacadas = mesmaEdicao.filter((c) => (c.usos ?? 0) >= USOS_PARA_DESTAQUE).map((c) => ({ ...c, destaque: true }))
+  const normais = mesmaEdicao.filter((c) => (c.usos ?? 0) < USOS_PARA_DESTAQUE).map((c) => ({ ...c, destaque: false }))
+  const vistas = new Set<string>()
+  const resultado: CandidatoCapa[] = []
+  for (const c of [...destacadas, ...externos, ...normais, ...soNome.map((c) => ({ ...c, destaque: false }))]) {
+    if (vistas.has(c.url)) continue
+    vistas.add(c.url)
+    // `nivel` é só de ordenação; não vai para o cliente.
+    resultado.push({ url: c.url, label: c.label, provedor: c.provedor, ref: c.ref, usos: c.usos, destaque: c.destaque })
+    if (resultado.length >= TETO_GRADE) break
+  }
+  return resultado
 }
 
 const PROVEDOR_LABEL: Record<Provedor, string> = {
@@ -367,10 +415,10 @@ export function urlDeCapaPermitida(valor: string): URL | null {
   return ok ? url : null
 }
 
-const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
+const MIMES_DE_CAPA = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
 /** Baixa com limites: allowlist a cada salto de redirect, timeout, teto de bytes e MIME de imagem. */
-async function baixarImagemSegura(imageUrl: string): Promise<{ buffer: Uint8Array; mime: string } | null> {
+export async function baixarImagemSegura(imageUrl: string): Promise<{ buffer: Uint8Array; mime: string } | null> {
   let atual = urlDeCapaPermitida(imageUrl)
   if (!atual) return null
 
@@ -387,7 +435,7 @@ async function baixarImagemSegura(imageUrl: string): Promise<{ buffer: Uint8Arra
     if (!res.ok || !res.body) return null
 
     const mime = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
-    if (!EXT_POR_MIME[mime]) return null
+    if (!MIMES_DE_CAPA.has(mime)) return null
     const declarado = Number(res.headers.get('content-length') || 0)
     if (declarado > LIMITE_BYTES_CAPA) return null
 
@@ -413,26 +461,4 @@ async function baixarImagemSegura(imageUrl: string): Promise<{ buffer: Uint8Arra
     return { buffer, mime }
   }
   return null
-}
-
-/** Baixa uma imagem externa (host permitido) e persiste no bucket privado 'capas'. Retorna o path salvo (não a URL — bucket é privado). */
-export async function baixarEPersistirCapa(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: SupabaseClient<any>,
-  userId: string,
-  itemId: string,
-  imageUrl: string
-): Promise<string | null> {
-  try {
-    const baixada = await baixarImagemSegura(imageUrl)
-    if (!baixada) return null
-    const path = novoCaminhoDeCapa(userId, itemId, EXT_POR_MIME[baixada.mime])
-    const { error } = await supabase.storage
-      .from('capas')
-      .upload(path, baixada.buffer, { upsert: true, contentType: baixada.mime })
-    if (error) return null
-    return path
-  } catch {
-    return null
-  }
 }

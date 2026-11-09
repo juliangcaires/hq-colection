@@ -7,6 +7,7 @@ import { ProgressBar } from '@/components/ui/progress-bar'
 import { StatTile } from '@/components/ui/stat-tile'
 import { TipoBadge } from '@/components/ui/tipo-badge'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
+import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
 
 function SectionHeader({ titulo, href }: { titulo: string; href?: string }) {
   return (
@@ -43,6 +44,7 @@ export default async function Home() {
     ultimosItens,
     filaDeLeitura,
     seriesComFuros,
+    { count: emprestimosAtrasados },
   ] = await Promise.all([
     supabase.from('itens').select('id', { count: 'exact', head: true }).eq('estado', 'desejo'),
     supabase.from('itens').select('id', { count: 'exact', head: true }).eq('estado', 'comprado'),
@@ -50,6 +52,7 @@ export default async function Home() {
     listarUltimosItens(supabase, 8),
     listarFilaDeLeitura(supabase, 8),
     listarSeriesComFuros(supabase, 5),
+    supabase.from('emprestimos').select('id', { count: 'exact', head: true }).is('devolvido_em', null).lt('devolver_ate', hojeIso(FUSO_DO_APP)),
   ])
 
   const comprados = totalComprados ?? 0
@@ -62,6 +65,15 @@ export default async function Home() {
     <div className="flex flex-col gap-7">
       <ScrollRestore />
       <h1 className="sr-only">Início</h1>
+
+      {(emprestimosAtrasados ?? 0) > 0 && (
+        <Link href="/emprestimos" className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-warning/45 bg-warning/10 px-4 py-2 text-sm text-warning-text">
+          <span>
+            {emprestimosAtrasados} {emprestimosAtrasados === 1 ? 'empréstimo atrasado' : 'empréstimos atrasados'}
+          </span>
+          <span className="shrink-0 font-medium underline underline-offset-2">Ver</span>
+        </Link>
+      )}
 
       <section aria-label="Resumo" className="grid grid-cols-3 gap-2.5 lg:grid-cols-4 lg:gap-4">
         <StatTile value={naEstante} label="na estante" />

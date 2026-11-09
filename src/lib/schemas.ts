@@ -32,6 +32,7 @@ export const serieInputSchema = z.object({
   em_publicacao: z.coerce.boolean().default(true),
   tem_numeracao: z.coerce.boolean().default(false),
   observacoes: z.string().trim().max(2000).optional().nullable(),
+  critica_privada: z.boolean().optional(),
   tagIds: z.array(z.string().uuid()).default([]),
 })
 
@@ -48,6 +49,10 @@ export const itemInputSchema = z.object({
   data_aquisicao: z.string().optional().nullable(),
   nota: notaSchema.optional().nullable(),
   critica: z.string().trim().max(2000).optional().nullable(),
+  /** Data em que foi lido (AAAA-MM-DD); só vale com estado `lido`. */
+  lido_em: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  /** Crítica que nunca aparece em link nem para amigos. */
+  critica_privada: z.boolean().optional(),
   tagIds: z.array(z.string().uuid()).default([]),
 })
 
@@ -113,6 +118,31 @@ export type CriarVolumesInput = z.infer<typeof criarVolumesInputSchema>
 export const candidatoCapaSchema = z.object({
   url: z.string().url().max(1000),
   label: z.string().max(300).default(''),
-  provedor: z.enum(['google_books', 'open_library', 'anilist', 'mangadex']),
+  provedor: z.enum(['google_books', 'open_library', 'anilist', 'mangadex', 'comunidade']),
   ref: z.string().max(64).regex(/^[A-Za-z0-9-]+$/).nullish(),
+  usos: z.number().int().min(0).max(1_000_000).optional(),
+  destaque: z.boolean().optional(),
 })
+
+const referenciaDeTagSchema = z.union([
+  z.object({ tagId: z.string().uuid() }),
+  z.object({ criar: z.string().trim().min(1).max(80) }),
+])
+export type ReferenciaDeTag = z.infer<typeof referenciaDeTagSchema>
+
+/** Confirmação do cadastro por ISBN: o que a pessoa aceitou na prévia (série, editora e autores já resolvidos ou a criar). */
+export const cadastroIsbnSchema = z.object({
+  isbn13: z.string().trim().min(1).max(20),
+  edicaoId: z.string().uuid().nullish(),
+  titulo: z.string().trim().min(1, 'Título obrigatório').max(200),
+  tipo: tipoObraSchema.default('hq'),
+  estado: estadoItemSchema.default('desejo'),
+  numero_volume: z.number().finite().nullable().default(null),
+  serie: z
+    .union([z.object({ id: z.string().uuid() }), z.object({ nova: z.string().trim().min(1).max(200) })])
+    .nullable()
+    .default(null),
+  editora: referenciaDeTagSchema.nullable().default(null),
+  autores: z.array(referenciaDeTagSchema).max(20).default([]),
+})
+export type CadastroIsbnInput = z.input<typeof cadastroIsbnSchema>
