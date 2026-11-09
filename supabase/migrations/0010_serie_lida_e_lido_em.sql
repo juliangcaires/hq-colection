@@ -164,6 +164,94 @@ begin
 end;
 $$;
 
+
+-- ---------------------------------------------------------------------------------------------
+-- lido_em: preenchido pelo próprio banco quando o item vira `lido` (individual, lote, CSV, volumes
+-- em lote) e limpo quando deixa de ser lido. Itens já lidos antes desta migration ficam com null.
+-- Fuso do app (America/Sao_Paulo), igual a FUSO_DO_APP em src/lib/datas.ts.
+-- ---------------------------------------------------------------------------------------------
+create or replace function itens_definir_lido_em()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.estado = 'lido' then
+    if tg_op = 'INSERT' or old.estado is distinct from 'lido' then
+      new.lido_em := coalesce(new.lido_em, (now() at time zone 'America/Sao_Paulo')::date);
+    end if;
+  else
+    new.lido_em := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_itens_lido_em on itens;
+create trigger trg_itens_lido_em before insert or update on itens
+  for each row execute function itens_definir_lido_em();
+
+-- item_salvar passa a gravar `lido_em` (editável no item) — só vale para item lido.
+create or replace function item_salvar(p_id uuid, p_dados jsonb, p_tag_ids uuid[])
+returns uuid
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if p_id is null then
+    insert into itens (user_id, serie_id, titulo, numero_volume, tipo, isbn, estado, prioridade,
+                       preco, loja, data_aquisicao, nota, critica, lido_em)
+    values (
+      auth.uid(),
+      nullif(p_dados->>'serie_id', '')::uuid,
+      p_dados->>'titulo',
+      (p_dados->>'numero_volume')::numeric,
+      (p_dados->>'tipo')::tipo_obra,
+      nullif(p_dados->>'isbn', ''),
+      (p_dados->>'estado')::estado_item,
+      coalesce((p_dados->>'prioridade')::int, 0),
+      (p_dados->>'preco')::numeric,
+      nullif(p_dados->>'loja', ''),
+      nullif(p_dados->>'data_aquisicao', '')::date,
+      (p_dados->>'nota')::numeric,
+      nullif(p_dados->>'critica', ''),
+      nullif(p_dados->>'lido_em', '')::date
+    )
+    returning id into v_id;
+  else
+    update itens set
+      serie_id = nullif(p_dados->>'serie_id', '')::uuid,
+      titulo = p_dados->>'titulo',
+      numero_volume = (p_dados->>'numero_volume')::numeric,
+      tipo = (p_dados->>'tipo')::tipo_obra,
+      isbn = nullif(p_dados->>'isbn', ''),
+      estado = (p_dados->>'estado')::estado_item,
+      prioridade = coalesce((p_dados->>'prioridade')::int, 0),
+      preco = (p_dados->>'preco')::numeric,
+      loja = nullif(p_dados->>'loja', ''),
+      data_aquisicao = nullif(p_dados->>'data_aquisicao', '')::date,
+      nota = (p_dados->>'nota')::numeric,
+      critica = nullif(p_dados->>'critica', ''),
+      lido_em = nullif(p_dados->>'lido_em', '')::date
+    where id = p_id
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'item_nao_encontrado';
+    end if;
+    delete from item_tags where item_id = v_id;
+  end if;
+
+  insert into item_tags (item_id, tag_id)
+  select v_id, t from unnest(coalesce(p_tag_ids, '{}')) as t
+  on conflict do nothing;
+
+  return v_id;
+end;
+$$;
+
 revoke all on function serie_marcar_lida(uuid, numeric, text, text, boolean) from public, anon;
 revoke all on function serie_desfazer_marcacao(uuid, jsonb) from public, anon;
 grant execute on function serie_marcar_lida(uuid, numeric, text, text, boolean) to authenticated;

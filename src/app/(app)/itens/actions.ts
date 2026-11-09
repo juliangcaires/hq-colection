@@ -46,6 +46,7 @@ function dadosDoItem(p: ItemInput) {
     data_aquisicao: p.data_aquisicao || null,
     nota: p.nota ?? null,
     critica: p.critica || null,
+    lido_em: p.estado === 'lido' ? p.lido_em || null : null,
   }
 }
 
@@ -184,6 +185,7 @@ async function marcarLidoEmLoteImpl(itemIds: string[], avaliacao?: AvaliacaoLeit
   const av = avaliacaoSchema.parse(avaliacao ?? {})
   const supabase = await createClient()
 
+  // `lido_em` é preenchido pelo trigger `trg_itens_lido_em` (migration 0010) quando o estado vira `lido`.
   // Estado, nota e crítica na mesma escrita: não existe "lido" sem a avaliação que acabou de ser dada.
   const { data, error } = await supabase
     .from('itens')

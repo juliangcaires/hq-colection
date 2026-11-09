@@ -56,6 +56,8 @@ export type Item = {
   data_aquisicao: string | null
   nota: number | null
   critica: string | null
+  /** Data em que virou lido (AAAA-MM-DD); null em item não lido ou lido antes da coluna existir. */
+  lido_em: string | null
   created_at: string
   updated_at: string
 }

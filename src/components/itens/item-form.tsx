@@ -66,6 +66,7 @@ export function ItemForm({
   const [dataAquisicao, setDataAquisicao] = useState(item?.data_aquisicao ?? '')
   const [nota, setNota] = useState<number | null>(item?.nota ?? null)
   const [critica, setCritica] = useState(item?.critica ?? '')
+  const [lidoEm, setLidoEm] = useState(item?.lido_em ?? '')
   const [tagsPorTipo, setTagsPorTipo] = useState<Record<TipoTag, TagLite[]>>(() =>
     agruparTagsPorTipo(
       (item?.tagsItem ?? []).map((t) => t.id),
@@ -91,7 +92,7 @@ export function ItemForm({
   // o item salvo muda (key), então o baseline acompanha o que foi salvo.
   const idsTags = (m: Record<TipoTag, TagLite[]>) => Object.values(m).flatMap((ts) => ts.map((t) => t.id).sort())
   const valoresAtuais = JSON.stringify([
-    titulo, serieId, numeroVolume, tipo, isbn, estado, prioridade, preco, loja, dataAquisicao, nota, critica,
+    titulo, serieId, numeroVolume, tipo, isbn, estado, prioridade, preco, loja, dataAquisicao, nota, critica, lidoEm,
     idsTags(tagsPorTipo),
   ])
   const [valoresIniciais] = useState(valoresAtuais)
@@ -110,6 +111,7 @@ export function ItemForm({
     setDataAquisicao(item.data_aquisicao ?? '')
     setNota(item.nota ?? null)
     setCritica(item.critica ?? '')
+    setLidoEm(item.lido_em ?? '')
     setTagsPorTipo(agruparTagsPorTipo(item.tagsItem.map((t) => t.id), item.tagsItem))
   }
 
@@ -141,6 +143,7 @@ export function ItemForm({
           data_aquisicao: dataAquisicao || null,
           nota: nota,
           critica: critica || null,
+          lido_em: estado === 'lido' ? lidoEm || null : null,
           tagIds: Object.values(tagsPorTipo).flatMap((tags) => tags.map((t) => t.id)),
         }
         if (item) {
@@ -610,6 +613,15 @@ export function ItemForm({
                   </span>
                 </div>
               </div>
+              <Campo rotulo="Lido em" id="lido-em">
+                <Input
+                  className={campoClasse}
+                  id="lido-em"
+                  type="date"
+                  value={lidoEm}
+                  onChange={(e) => setLidoEm(e.target.value)}
+                />
+              </Campo>
               <Campo rotulo="Crítica" id="critica">
                 <Textarea
                   className="rounded-xl bg-surface-2 px-3.5 py-3 text-[15px] leading-[1.55]"

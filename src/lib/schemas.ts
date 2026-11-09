@@ -48,6 +48,8 @@ export const itemInputSchema = z.object({
   data_aquisicao: z.string().optional().nullable(),
   nota: notaSchema.optional().nullable(),
   critica: z.string().trim().max(2000).optional().nullable(),
+  /** Data em que foi lido (AAAA-MM-DD); só vale com estado `lido`. */
+  lido_em: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   tagIds: z.array(z.string().uuid()).default([]),
 })
 

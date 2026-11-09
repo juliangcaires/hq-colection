@@ -241,7 +241,7 @@ describe('serie_marcar_lida (migration 0010)', () => {
     expect(r.desejos_ignorados).toBe(1)
     expect((await estadoDe(c1)).estado).toBe('lido')
     expect((await estadoDe(c2)).lido_em).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect((await estadoDe(l3)).lido_em).toBeNull()
+    expect((await estadoDe(l3)).estado).toBe('lido')
     expect((await estadoDe(d4)).estado).toBe('desejo')
   })
 
@@ -320,5 +320,33 @@ describe('serie_marcar_lida (migration 0010)', () => {
     } finally {
       await db.query(`select set_config('app.uid','${U}',false)`)
     }
+  })
+})
+
+describe('lido_em (migration 0010)', () => {
+  const dados = (extra: object) => JSON.stringify({ titulo: 'L', tipo: 'hq', prioridade: 0, ...extra })
+  const lidoEm = async (id: string) => (await db.query<{ l: string | null }>(`select lido_em::text l from itens where id = $1`, [id])).rows[0].l
+
+  it('grava a data de hoje ao virar lido, preserva a editada e limpa ao voltar para comprado', async () => {
+    const { rows: [{ id }] } = await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [dados({ estado: 'comprado' })])
+    expect(await lidoEm(id)).toBeNull()
+
+    await db.query(`select item_salvar($1, $2::jsonb, '{}')`, [id, dados({ estado: 'lido' })])
+    expect(await lidoEm(id)).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+    await db.query(`select item_salvar($1, $2::jsonb, '{}')`, [id, dados({ estado: 'lido', lido_em: '2026-01-15' })])
+    expect(await lidoEm(id)).toBe('2026-01-15')
+
+    await db.query(`update itens set estado = 'lido' where id = $1`, [id])
+    expect(await lidoEm(id)).toBe('2026-01-15')
+
+    await db.query(`select item_salvar($1, $2::jsonb, '{}')`, [id, dados({ estado: 'comprado', lido_em: '2026-01-15' })])
+    expect(await lidoEm(id)).toBeNull()
+  })
+
+  it('update em lote (marcarLidoEmLote) preenche lido_em', async () => {
+    const { rows: [{ id }] } = await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [dados({ estado: 'comprado' })])
+    await db.query(`update itens set estado = 'lido' where id = $1 and estado = 'comprado'`, [id])
+    expect(await lidoEm(id)).not.toBeNull()
   })
 })
