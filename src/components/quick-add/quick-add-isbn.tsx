@@ -4,7 +4,9 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { ScanBarcode } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { LeitorIsbn } from '@/components/quick-add/leitor-isbn'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -48,6 +50,7 @@ export function QuickAddIsbn({
   const router = useRouter()
   const [entrada, setEntrada] = useState(isbnInicial)
   const [consulta, setConsulta] = useState<ConsultaIsbn | null>(null)
+  const [escaneando, setEscaneando] = useState(false)
   const [consultando, startConsulta] = useTransition()
   const [salvando, startSalvar] = useTransition()
 
@@ -87,8 +90,23 @@ export function QuickAddIsbn({
             {consultando ? 'Buscando...' : 'Buscar'}
           </Button>
         </div>
+        <Button type="button" variant="outline" className="h-11 gap-2" onClick={() => setEscaneando((v) => !v)}>
+          <ScanBarcode className="size-4" aria-hidden />
+          {escaneando ? 'Fechar câmera' : 'Escanear código de barras'}
+        </Button>
         <p className="text-xs text-muted-foreground">Aceita ISBN de 10 ou 13 dígitos, com ou sem hífen.</p>
       </form>
+
+      {escaneando && (
+        <LeitorIsbn
+          onFechar={() => setEscaneando(false)}
+          onIsbn={(isbn13) => {
+            setEscaneando(false)
+            setEntrada(isbn13)
+            buscar(isbn13)
+          }}
+        />
+      )}
 
       {consulta?.resultado.status === 'nao_encontrado' && (
         <SemResultado
