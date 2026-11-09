@@ -74,3 +74,22 @@ async function atualizarEscopoDosAmigosImpl(escopo: string[]) {
 export async function atualizarEscopoDosAmigos(escopo: string[]) {
   return executar(() => atualizarEscopoDosAmigosImpl(escopo))
 }
+
+const itemIdSchema = z.string().uuid()
+
+/** "Vou dar esse": reserva um desejo de um amigo. O dono da lista nunca vê a marcação. */
+async function marcarPresenteImpl(itemId: string, apelido: string) {
+  await rpcAutenticado('presente_marcar', { p_item: itemIdSchema.parse(itemId) })
+  revalidatePath(`/amigos/${apelidoSchema.parse(apelido)}/desejos`)
+}
+export async function marcarPresente(itemId: string, apelido: string) {
+  return executar(() => marcarPresenteImpl(itemId, apelido))
+}
+
+async function desmarcarPresenteImpl(itemId: string, apelido: string) {
+  await rpcAutenticado('presente_desmarcar', { p_item: itemIdSchema.parse(itemId) })
+  revalidatePath(`/amigos/${apelidoSchema.parse(apelido)}/desejos`)
+}
+export async function desmarcarPresente(itemId: string, apelido: string) {
+  return executar(() => desmarcarPresenteImpl(itemId, apelido))
+}
