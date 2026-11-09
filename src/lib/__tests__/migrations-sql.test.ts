@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -451,5 +451,157 @@ describe('catálogo de edições (migration 0011)', () => {
     } finally {
       await db.query(`select set_config('app.uid','${U}',false)`)
     }
+  })
+})
+
+describe('capas compartilhadas (migration 0012)', () => {
+  const h = (c: string) => c.repeat(64)
+  const comoOutro = async <T,>(fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${OUTRO}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const mkItem = async (titulo = 'Capa') =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo, tipo: 'hq', estado: 'comprado' })])).rows[0].id
+  const registrar = async (hash: string, opts: { isbn?: string | null; chave?: string; serie?: string | null; origem?: string; item?: string | null } = {}) =>
+    (await db.query<{ id: string }>(
+      `select capa_catalogo_registrar($1, $2, $3, $4, $5, $6, $7) id`,
+      [opts.isbn ?? null, opts.chave ?? 'berserk|1|manga|panini', opts.serie === undefined ? 'berserk|manga' : opts.serie, `${hash}.jpg`, hash, opts.origem ?? 'api', opts.item ?? null]
+    )).rows[0].id
+  const buscar = async (isbn: string | null, chave: string | null, serie: string | null) =>
+    (await db.query<{ id: string; nivel: string; usos: number }>(`select id, nivel, usos from capas_comunidade_buscar($1, $2, $3)`, [isbn, chave, serie])).rows
+
+  it('buckets: capas continua privado e capas-publicas é público e limitado a imagens', async () => {
+    await db.query(`reset role`) // o schema storage do stub não é acessível ao papel do app
+    const { rows } = await db.query<{ id: string; public: boolean; file_size_limit: string | null; allowed_mime_types: string[] | null }>(`select id, public, file_size_limit, allowed_mime_types from storage.buckets order by id`)
+    await db.query(`set role authenticated`)
+    expect(rows.find((r) => r.id === 'capas')?.public).toBe(false)
+    const pub = rows.find((r) => r.id === 'capas-publicas')!
+    expect(pub.public).toBe(true)
+    expect(Number(pub.file_size_limit)).toBe(5242880)
+    expect(pub.allowed_mime_types).toEqual(['image/jpeg', 'image/png', 'image/webp'])
+  })
+
+  it('perfis: cada um enxerga só o próprio e contribuir_capas nasce desligado', async () => {
+    await db.query(`insert into perfis(user_id) values ($1)`, [U])
+    expect((await db.query<{ c: boolean }>(`select contribuir_capas c from perfis where user_id = $1`, [U])).rows[0].c).toBe(false)
+    await comoOutro(async () => {
+      expect((await db.query(`select 1 from perfis`)).rows).toHaveLength(0)
+      await expect(db.query(`insert into perfis(user_id) values ($1)`, [U])).rejects.toThrow()
+    })
+  })
+
+  it('o cliente não lê nem escreve direto no catálogo de capas', async () => {
+    await registrar(h('a'))
+    expect((await db.query(`select 1 from capas_catalogo`)).rows).toHaveLength(0)
+    await expect(db.query(`insert into capas_catalogo(chave_normalizada,caminho,hash_sha256,origem) values ('x','${h('b')}.jpg','${h('b')}','api')`)).rejects.toThrow()
+    expect((await db.query(`select 1 from capas_denuncias`)).rows).toHaveLength(0)
+  })
+
+  it('registrar aplica no item, deduplica pelo hash e conta pessoas diferentes em usos', async () => {
+    const item = await mkItem()
+    const id1 = await registrar(h('c'), { item })
+    const { rows: [it] } = await db.query<{ capa_url: string; capa_catalogo_id: string; capa_origem: string }>(`select capa_url, capa_catalogo_id, capa_origem from itens where id = $1`, [item])
+    expect(it).toEqual({ capa_url: `pub/${h('c')}.jpg`, capa_catalogo_id: id1, capa_origem: 'api' })
+
+    const outroItemMesmoUsuario = await mkItem('Outro')
+    expect(await registrar(h('c'), { item: outroItemMesmoUsuario })).toBe(id1) // mesma imagem, mesma chave: não duplica
+    expect((await buscar(null, 'berserk|1|manga|panini', null))[0].usos).toBe(1) // dois itens, uma pessoa
+
+    await comoOutro(async () => {
+      const itemOutro = (await db.query<{ id: string }>(`select item_salvar(null, '{"titulo":"x","tipo":"hq","estado":"comprado"}', '{}') id`)).rows[0].id
+      expect(await registrar(h('c'), { item: itemOutro })).toBe(id1)
+    })
+    const [c] = await buscar(null, 'berserk|1|manga|panini', null)
+    expect(c).toMatchObject({ id: id1, nivel: 'chave', usos: 2 })
+  })
+
+  it('usos acompanha o uso real: apagar o item não apaga a capa do catálogo', async () => {
+    const item = await mkItem()
+    const id = await registrar(h('d'), { chave: 'usos|1|hq|', item })
+    expect((await buscar(null, 'usos|1|hq|', null))[0].usos).toBe(1)
+    await db.query(`delete from itens where id = $1`, [item])
+    const [c] = await buscar(null, 'usos|1|hq|', null)
+    expect(c).toMatchObject({ id, usos: 0 })
+  })
+
+  it('foto só entra com opt-in; capa de API não depende dele', async () => {
+    await expect(registrar(h('e'), { origem: 'foto', chave: 'foto|1|hq|' })).rejects.toThrow('contribuicao_nao_autorizada')
+    await comoOutro(async () => {
+      await db.query(`insert into perfis(user_id, contribuir_capas) values ($1, true)`, [OUTRO])
+      await expect(registrar(h('e'), { origem: 'foto', chave: 'foto|1|hq|' })).resolves.toBeTruthy()
+    })
+    await db.query(`update perfis set contribuir_capas = true where user_id = $1`, [U])
+    await expect(registrar(h('f'), { origem: 'foto', chave: 'foto|2|hq|' })).resolves.toBeTruthy()
+    await db.query(`update perfis set contribuir_capas = false where user_id = $1`, [U])
+    await expect(registrar(h('9'), { origem: 'api', chave: 'foto|3|hq|' })).resolves.toBeTruthy()
+  })
+
+  it('busca em ordem: isbn, depois chave, depois só o nome', async () => {
+    await registrar(h('1'), { isbn: '9788545702870', chave: 'ordem|1|manga|jbc', serie: 'ordem|manga' })
+    await registrar(h('2'), { chave: 'ordem|1|manga|jbc', serie: 'ordem|manga' })
+    await registrar(h('3'), { chave: 'ordem|2|manga|jbc', serie: 'ordem|manga' })
+    const r = await buscar('9788545702870', 'ordem|1|manga|jbc', 'ordem|manga')
+    expect(r.map((x) => x.nivel)).toEqual(['isbn', 'chave', 'nome'])
+    expect((await buscar(null, null, null))).toHaveLength(0)
+    expect((await buscar('9791032305843', 'inexistente', 'inexistente'))).toHaveLength(0)
+  })
+
+  it('3 denúncias de pessoas diferentes escondem a capa; repetir a própria denúncia não conta', async () => {
+    const id = await registrar(h('4'), { chave: 'denuncia|1|hq|' })
+    expect((await db.query<{ r: boolean }>(`select capa_denunciar($1) r`, [id])).rows[0].r).toBe(false)
+    expect((await db.query<{ r: boolean }>(`select capa_denunciar($1) r`, [id])).rows[0].r).toBe(false)
+    await comoOutro(async () => {
+      expect((await db.query<{ r: boolean }>(`select capa_denunciar($1) r`, [id])).rows[0].r).toBe(false)
+    })
+    expect((await buscar(null, 'denuncia|1|hq|', null))).toHaveLength(1)
+
+    const terceiro = '77777777-7777-7777-7777-777777777777'
+    await db.query(`reset role`)
+    await db.query(`insert into auth.users values ('${terceiro}')`)
+    await db.query(`set role authenticated`)
+    await db.query(`select set_config('app.uid','${terceiro}',false)`)
+    expect((await db.query<{ r: boolean }>(`select capa_denunciar($1) r`, [id])).rows[0].r).toBe(true)
+    await db.query(`select set_config('app.uid','${U}',false)`)
+    expect((await buscar(null, 'denuncia|1|hq|', null))).toHaveLength(0)
+    // aplicar uma capa oculta é recusado
+    await expect(db.query(`select capa_catalogo_aplicar($1, $2)`, [await mkItem('x'), id])).rejects.toThrow('capa_indisponivel')
+  })
+
+  it('aplicar capa da comunidade: só em item do próprio usuário', async () => {
+    const id = await registrar(h('5'), { chave: 'aplicar|1|hq|' })
+    const item = await mkItem('Meu')
+    const { rows: [{ caminho }] } = await db.query<{ caminho: string }>(`select capa_catalogo_aplicar($1, $2) caminho`, [item, id])
+    expect(caminho).toBe(`${h('5')}.jpg`)
+    expect((await db.query(`select 1 from itens where id = $1 and capa_url = 'pub/${h('5')}.jpg' and capa_catalogo_id = $2`, [item, id])).rows).toHaveLength(1)
+    await comoOutro(async () => {
+      await expect(db.query(`select capa_catalogo_aplicar($1, $2)`, [item, id])).rejects.toThrow('item_nao_encontrado')
+      await expect(registrar(h('6'), { item })).rejects.toThrow('item_nao_encontrado')
+    })
+  })
+
+  it('valida entradas: origem, hash/caminho, ISBN', async () => {
+    await expect(registrar(h('7'), { origem: 'hacker' })).rejects.toThrow('capa_invalida')
+    await expect(db.query(`select capa_catalogo_registrar(null, 'k', null, 'nao-e-hash.jpg', 'x', 'api', null)`)).rejects.toThrow()
+    await expect(registrar(h('8'), { isbn: '9788545702871' })).rejects.toThrow('isbn_invalido')
+  })
+
+  it('memória global da série: confirma, perde confirmações e só troca em zero', async () => {
+    const reg = (prov: string, ref: string | null) => db.query(`select series_busca_global_registrar('berserk|manga', 'Berserk', $1, $2)`, [prov, ref])
+    const estado = async () => (await db.query<{ provedor: string; ref: string | null; confirmacoes: number }>(`select provedor, ref, confirmacoes from series_busca_global where serie_chave = 'berserk|manga'`)).rows[0]
+    await reg('mangadex', 'abc-123')
+    await reg('mangadex', 'abc-123')
+    expect(await estado()).toEqual({ provedor: 'mangadex', ref: 'abc-123', confirmacoes: 2 })
+    await reg('anilist', '99')
+    expect(await estado()).toEqual({ provedor: 'mangadex', ref: 'abc-123', confirmacoes: 1 })
+    await reg('anilist', '99')
+    expect(await estado()).toEqual({ provedor: 'anilist', ref: '99', confirmacoes: 1 })
+    await expect(reg('mangadex', 'ref inválida!')).rejects.toThrow('busca_invalida')
+    await expect(reg('outro', null)).rejects.toThrow('busca_invalida')
+    await expect(db.query(`insert into series_busca_global(serie_chave, provedor) values ('x','mangadex')`)).rejects.toThrow()
+    expect((await db.query(`select 1 from series_busca_global`)).rows.length).toBeGreaterThan(0)
   })
 })
