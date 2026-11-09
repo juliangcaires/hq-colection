@@ -30,7 +30,7 @@ export type MemoriaSerie = {
 const TETO_CANDIDATOS = 12
 const MANGADEX_HEADERS = { 'User-Agent': 'hq-colection/0.1 (github.com/hq-colection)' }
 
-type GoogleBooksImageLinks = {
+export type GoogleBooksImageLinks = {
   thumbnail?: string
   smallThumbnail?: string
   small?: string
@@ -45,13 +45,13 @@ type GoogleBooksItem = {
   }
 }
 
-function melhorImagemGoogleBooks(links?: GoogleBooksImageLinks): string | null {
+export function melhorImagemGoogleBooks(links?: GoogleBooksImageLinks): string | null {
   const url = links?.large || links?.medium || links?.small || links?.thumbnail || links?.smallThumbnail
   return url ? url.replace('http://', 'https://') : null
 }
 
 /** Monta a URL do Google Books, injetando a chave própria quando configurada (GOOGLE_BOOKS_API_KEY) — sem ela, cai na quota anônima compartilhada, que satura fácil. */
-function googleBooksUrl(q: string, maxResults: number): string {
+export function googleBooksUrl(q: string, maxResults: number): string {
   const key = process.env.GOOGLE_BOOKS_API_KEY
   let url = `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=${maxResults}&country=BR`
   if (key) url += `&key=${encodeURIComponent(key)}`
