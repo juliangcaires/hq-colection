@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -215,5 +215,110 @@ describe('nota e crítica (migration 0008)', () => {
     const { rows } = await db.query(`update itens set estado = 'lido', nota = 4, critica = 'ok' where id = any($1::uuid[]) and estado = 'comprado' returning id`, [[comprado, desejo]])
     expect(rows).toHaveLength(1)
     expect((await db.query<{ estado: string }>(`select estado from itens where id = $1`, [desejo])).rows[0].estado).toBe('desejo')
+  })
+})
+
+describe('serie_marcar_lida (migration 0010)', () => {
+  const dados = (extra: object) => JSON.stringify({ titulo: 'V', tipo: 'hq', prioridade: 0, ...extra })
+  const mkSerie = async (nome: string) =>
+    (await db.query<{ s: string }>(`select serie_salvar(null, $1::jsonb, '{}') s`, [JSON.stringify({ nome, tipo: 'hq', tem_numeracao: true })])).rows[0].s
+  const mkItem = async (serie_id: string, n: number, estado: string, nota: number | null = null, critica: string | null = null) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') as id`, [dados({ serie_id, numero_volume: n, estado, nota, critica })])).rows[0].id
+  const estadoDe = async (id: string) =>
+    (await db.query<{ estado: string; nota: string | null; critica: string | null; lido_em: string | null }>(`select estado, nota, critica, lido_em::text from itens where id = $1`, [id])).rows[0]
+  const marcar = async (serie: string, nota: number | null, critica: string | null, modo: string, marcar = true) =>
+    (await db.query<{ r: { marcados: number; avaliados: number; criticas: number; desejos_ignorados: number; snapshot: unknown } }>(
+      `select serie_marcar_lida($1, $2, $3, $4, $5) r`, [serie, nota, critica, modo, marcar])).rows[0].r
+
+  it('só comprado vira lido; desejo fica de fora e é contado', async () => {
+    const s = await mkSerie('Lida 1')
+    const c1 = await mkItem(s, 1, 'comprado')
+    const c2 = await mkItem(s, 2, 'comprado')
+    const l3 = await mkItem(s, 3, 'lido')
+    const d4 = await mkItem(s, 4, 'desejo')
+    const r = await marcar(s, null, null, 'serie')
+    expect(r.marcados).toBe(2)
+    expect(r.desejos_ignorados).toBe(1)
+    expect((await estadoDe(c1)).estado).toBe('lido')
+    expect((await estadoDe(c2)).lido_em).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect((await estadoDe(l3)).lido_em).toBeNull()
+    expect((await estadoDe(d4)).estado).toBe('desejo')
+  })
+
+  it("modo 'serie': nota só na série, volumes sem nota nova; crítica só nos volumes sem crítica", async () => {
+    const s = await mkSerie('Lida 2')
+    const a = await mkItem(s, 1, 'comprado')
+    const b = await mkItem(s, 2, 'lido', 2, 'minha crítica')
+    const r = await marcar(s, 4.5, 'da série', 'serie')
+    expect(r.avaliados).toBe(0)
+    expect(r.criticas).toBe(1)
+    expect(Number((await estadoDe(b)).nota)).toBe(2)
+    expect((await estadoDe(b)).critica).toBe('minha crítica')
+    expect((await estadoDe(a)).nota).toBeNull()
+    expect((await estadoDe(a)).critica).toBe('da série')
+    const { rows: [ser] } = await db.query<{ nota: string; critica: string }>(`select nota, critica from series where id = $1`, [s])
+    expect(ser).toEqual({ nota: '4.5', critica: 'da série' })
+  })
+
+  it("modo 'serie_e_sem_nota' não toca volume já avaliado", async () => {
+    const s = await mkSerie('Lida 3')
+    const sem = await mkItem(s, 1, 'comprado')
+    const com = await mkItem(s, 2, 'lido', 1.5)
+    const r = await marcar(s, 5, null, 'serie_e_sem_nota')
+    expect(r.avaliados).toBe(1)
+    expect(Number((await estadoDe(sem)).nota)).toBe(5)
+    expect(Number((await estadoDe(com)).nota)).toBe(1.5)
+  })
+
+  it("modo 'serie_e_todos' substitui as notas, mas nunca a crítica do volume", async () => {
+    const s = await mkSerie('Lida 4')
+    const a = await mkItem(s, 1, 'lido', 1, 'crítica antiga')
+    const b = await mkItem(s, 2, 'comprado')
+    const r = await marcar(s, 3.5, 'nova', 'serie_e_todos')
+    expect(r.avaliados).toBe(2)
+    expect(Number((await estadoDe(a)).nota)).toBe(3.5)
+    expect((await estadoDe(a)).critica).toBe('crítica antiga')
+    expect((await estadoDe(b)).critica).toBe('nova')
+  })
+
+  it('desfazer restaura estado, nota, crítica, lido_em e a avaliação da série', async () => {
+    const s = await mkSerie('Lida 5')
+    await db.query(`update series set nota = 2, critica = 'antes' where id = $1`, [s])
+    const a = await mkItem(s, 1, 'comprado')
+    const b = await mkItem(s, 2, 'lido', 4, null)
+    const antesB = await estadoDe(b)
+    const r = await marcar(s, 5, 'depois', 'serie_e_todos')
+    expect((await estadoDe(a)).estado).toBe('lido')
+    const { rows: [{ n }] } = await db.query<{ n: number }>(`select serie_desfazer_marcacao($1, $2::jsonb) n`, [s, JSON.stringify(r.snapshot)])
+    expect(n).toBe(2)
+    expect(await estadoDe(a)).toEqual({ estado: 'comprado', nota: null, critica: null, lido_em: null })
+    expect(await estadoDe(b)).toEqual(antesB)
+    const { rows: [ser] } = await db.query<{ nota: string; critica: string }>(`select nota, critica from series where id = $1`, [s])
+    expect(ser).toEqual({ nota: '2.0', critica: 'antes' })
+  })
+
+  it('sem nada a marcar, recusa; só avaliar (p_marcar_lidos=false) não mexe em comprado', async () => {
+    const s = await mkSerie('Lida 6')
+    const c = await mkItem(s, 1, 'comprado')
+    const l = await mkItem(s, 2, 'lido')
+    await expect(marcar(await mkSerie('Vazia'), null, null, 'serie')).rejects.toThrow('nada_a_marcar')
+    await marcar(s, 3, null, 'serie_e_sem_nota', false)
+    expect((await estadoDe(c)).estado).toBe('comprado')
+    expect((await estadoDe(c)).nota).toBeNull()
+    expect(Number((await estadoDe(l)).nota)).toBe(3)
+  })
+
+  it('modo inválido e série alheia são recusados; falha desfaz tudo', async () => {
+    const s = await mkSerie('Lida 7')
+    const c = await mkItem(s, 1, 'comprado')
+    await expect(marcar(s, null, null, 'xyz')).rejects.toThrow('modo_invalido')
+    await expect(marcar(s, 4.3, null, 'serie')).rejects.toThrow()
+    expect((await estadoDe(c)).estado).toBe('comprado')
+    await db.query(`select set_config('app.uid','${OUTRO}',false)`)
+    try {
+      await expect(marcar(s, null, null, 'serie')).rejects.toThrow('serie_nao_encontrada')
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
   })
 })
