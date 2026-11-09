@@ -7,6 +7,7 @@ import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
 import {
   adquirirLoteSchema,
+  estadoItemSchema,
   notaSchema,
   candidatoCapaSchema,
   criarVolumesInputSchema,
@@ -264,6 +265,113 @@ export async function avaliarSerie(input: {
   critica?: string | null
 }) {
   return executar(() => avaliarSerieImpl(input))
+}
+
+export type ModoMarcacaoSerie = 'serie' | 'serie_e_sem_nota' | 'serie_e_todos'
+
+/** Estado anterior dos itens e da série afetados, devolvido por `serie_marcar_lida` para o "Desfazer". */
+export type SnapshotMarcacaoSerie = {
+  serie: { id: string; nota: number | null; critica: string | null }
+  itens: { id: string; estado: 'desejo' | 'comprado' | 'lido'; nota: number | null; critica: string | null; lido_em: string | null }[]
+}
+
+export type ResumoMarcacaoSerie = {
+  marcados: number
+  avaliados: number
+  criticas: number
+  desejosIgnorados: number
+  snapshot: SnapshotMarcacaoSerie
+}
+
+const marcarSerieSchema = z.object({
+  serieId: z.string().uuid(),
+  modo: z.enum(['serie', 'serie_e_sem_nota', 'serie_e_todos']).default('serie_e_sem_nota'),
+  nota: notaSchema.nullish(),
+  critica: z.string().trim().max(2000).nullish(),
+})
+
+const snapshotSchema = z.object({
+  serie: z.object({
+    id: z.string().uuid(),
+    nota: z.number().min(0.5).max(5).nullable(),
+    critica: z.string().max(2000).nullable(),
+  }),
+  itens: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        estado: estadoItemSchema,
+        nota: z.number().min(0.5).max(5).nullable(),
+        critica: z.string().max(2000).nullable(),
+        lido_em: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+      }),
+    )
+    .max(2000),
+})
+
+function revalidarSerie(serieId: string, itemIds: string[] = []) {
+  revalidateListagens()
+  revalidatePath(`/serie/${serieId}`)
+  revalidatePath('/series')
+  revalidatePath('/ranking')
+  for (const id of itemIds) revalidatePath(`/item/${id}`)
+}
+
+/**
+ * Marca como lidos os volumes `comprado` da série e aplica nota/crítica (função SQL `serie_marcar_lida`,
+ * transacional). Nota e crítica são opcionais ("Pular" só marca). A crítica nunca sobrescreve a de um volume.
+ */
+async function marcarSerieComoLidaImpl(input: z.input<typeof marcarSerieSchema>): Promise<ResumoMarcacaoSerie> {
+  const { serieId, modo, nota, critica } = marcarSerieSchema.parse(input)
+  const supabase = await createClient()
+
+  const { data, error } = await supabase.rpc('serie_marcar_lida', {
+    p_serie: serieId,
+    p_nota: nota ?? null,
+    p_critica: critica || null,
+    p_modo: modo,
+    p_marcar_lidos: true,
+  })
+  if (error) lancarErroRpc(error)
+
+  const r = data as {
+    marcados: number
+    avaliados: number
+    criticas: number
+    desejos_ignorados: number
+    snapshot: SnapshotMarcacaoSerie
+  }
+  revalidarSerie(serieId, r.snapshot.itens.map((i) => i.id))
+  return {
+    marcados: r.marcados,
+    avaliados: r.avaliados,
+    criticas: r.criticas,
+    desejosIgnorados: r.desejos_ignorados,
+    snapshot: r.snapshot,
+  }
+}
+
+export async function marcarSerieComoLida(input: z.input<typeof marcarSerieSchema>) {
+  return executar(() => marcarSerieComoLidaImpl(input))
+}
+
+/** Desfaz `marcarSerieComoLida`: restaura estado, nota, crítica e `lido_em` dos itens e a avaliação da série. */
+async function desfazerMarcacaoSerieImpl(snapshotBruto: SnapshotMarcacaoSerie) {
+  const snapshot = snapshotSchema.parse(snapshotBruto)
+  const supabase = await createClient()
+
+  const { data, error } = await supabase.rpc('serie_desfazer_marcacao', {
+    p_serie: snapshot.serie.id,
+    p_snapshot: snapshot,
+  })
+  if (error) lancarErroRpc(error)
+
+  revalidarSerie(snapshot.serie.id, snapshot.itens.map((i) => i.id))
+  return data as number
+}
+
+export async function desfazerMarcacaoSerie(snapshot: SnapshotMarcacaoSerie) {
+  return executar(() => desfazerMarcacaoSerieImpl(snapshot))
 }
 
 export type ResumoCriacaoVolumes = {
