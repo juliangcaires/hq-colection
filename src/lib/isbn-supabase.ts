@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { isbn13ParaIsbn10 } from '@/lib/isbn'
+import { isbn13ParaIsbn10, normalizarIsbn } from '@/lib/isbn'
 import { chaveDaEdicao, type CatalogoEdicoes, type EdicaoDados } from '@/lib/isbn-busca'
 import type { EstadoItem } from '@/lib/types'
 
@@ -77,3 +77,75 @@ export async function itensComIsbn(
   return (data ?? []) as ItemExistente[]
 }
 
+
+type DadosDoItemParaCatalogo = {
+  isbn: string | null | undefined
+  titulo: string
+  serieId: string | null | undefined
+  numeroVolume: number | null | undefined
+  tipo: 'hq' | 'manga'
+  tagIds: string[]
+}
+
+/**
+ * Item salvo à mão com um ISBN válido alimenta o catálogo (origem `usuario`) e fica ligado à edição.
+ * Só vão dados bibliográficos (título, série, número, tipo, editora, autores): nunca preço, loja, datas,
+ * nota ou crítica. `edicao_registrar` não sobrescreve edição que veio de API. Melhor esforço: não lança —
+ * o item já foi salvo e o catálogo é acessório.
+ */
+export async function alimentarCatalogoComItem(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any>,
+  itemId: string,
+  dados: DadosDoItemParaCatalogo
+): Promise<void> {
+  try {
+    const isbn13 = dados.isbn ? normalizarIsbn(dados.isbn) : null
+    if (!isbn13) {
+      // ISBN removido ou inválido: o item deixa de apontar para uma edição que não é mais a dele.
+      await supabase.from('itens').update({ edicao_id: null }).eq('id', itemId).not('edicao_id', 'is', null)
+      return
+    }
+
+    let serieNome: string | null = null
+    const tagsDaSerie: { nome: string; tipo: string }[] = []
+    if (dados.serieId) {
+      const { data } = await supabase
+        .from('series')
+        .select('nome, serie_tags(tags(nome, tipo))')
+        .eq('id', dados.serieId)
+        .maybeSingle<{ nome: string; serie_tags: { tags: { nome: string; tipo: string } | null }[] | null }>()
+      serieNome = data?.nome ?? null
+      for (const st of data?.serie_tags ?? []) if (st.tags) tagsDaSerie.push(st.tags)
+    }
+    const tagsDoItem: { nome: string; tipo: string }[] = []
+    if (dados.tagIds.length > 0) {
+      const { data } = await supabase.from('tags').select('nome, tipo').in('id', dados.tagIds)
+      tagsDoItem.push(...((data ?? []) as { nome: string; tipo: string }[]))
+    }
+    const editora = [...tagsDoItem, ...tagsDaSerie].find((t) => t.tipo === 'editora')?.nome ?? null
+    const autores = Array.from(new Set(tagsDoItem.filter((t) => t.tipo === 'autor').map((t) => t.nome)))
+
+    const edicao: EdicaoDados = {
+      isbn13,
+      titulo: dados.titulo,
+      serie_nome: serieNome,
+      numero_volume: dados.numeroVolume ?? null,
+      tipo: dados.tipo,
+      editora,
+      autores,
+      ano: null,
+      paginas: null,
+      sinopse: null,
+      capa_url_externa: null,
+      origem: 'usuario',
+    }
+    const { data: edicaoId, error } = await supabase.rpc('edicao_registrar', {
+      p_dados: { ...edicao, chave_normalizada: chaveDaEdicao(edicao) },
+    })
+    if (error || !edicaoId) return
+    await supabase.from('itens').update({ edicao_id: edicaoId }).eq('id', itemId)
+  } catch (e) {
+    console.warn('[catalogo] item não alimentou o catálogo:', e instanceof Error ? e.message : 'erro')
+  }
+}

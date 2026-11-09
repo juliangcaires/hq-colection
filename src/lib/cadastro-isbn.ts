@@ -3,6 +3,7 @@ import { baixarEPersistirCapa, buscarCapaPorIsbn } from '@/lib/capa-busca'
 import { normalizarIsbn } from '@/lib/isbn'
 import { normalizarTexto } from '@/lib/texto'
 import { ErroDeNegocio } from '@/lib/resultado'
+import { alimentarCatalogoComItem } from '@/lib/isbn-supabase'
 import { lancarErroRpc } from '@/lib/rpc'
 import { cadastroIsbnSchema, type CadastroIsbnInput, type ReferenciaDeTag } from '@/lib/schemas'
 import type { TipoTag } from '@/lib/types'
@@ -104,6 +105,18 @@ export async function cadastrarEdicao(
 
   if (serieCriada && serieId && input.serie && 'nova' in input.serie) {
     seriesNovas?.set(normalizarTexto(input.serie.nova), serieId)
+  }
+
+  // Sem edição conhecida (ISBN que nenhuma base achou): o que a pessoa digitou alimenta o catálogo.
+  if (!input.edicaoId) {
+    await alimentarCatalogoComItem(supabase, itemId, {
+      isbn: isbn13,
+      titulo: input.titulo,
+      serieId,
+      numeroVolume: input.numero_volume,
+      tipo: input.tipo,
+      tagIds: Array.from(new Set(tagIds)),
+    })
   }
 
   const capa = await aplicarCapaDaEdicao(supabase, userId, itemId, isbn13, input.edicaoId ?? null)

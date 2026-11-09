@@ -25,6 +25,7 @@ const LIMITE_CAPA_BYTES = 5 * 1024 * 1024
 const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
 import { lancarErroRpc } from '@/lib/rpc'
+import { alimentarCatalogoComItem } from '@/lib/isbn-supabase'
 
 function revalidateListagens(itemId?: string) {
   revalidatePath('/colecao')
@@ -51,6 +52,17 @@ function dadosDoItem(p: ItemInput) {
   }
 }
 
+function catalogoDoItem(p: ItemInput) {
+  return {
+    isbn: p.isbn,
+    titulo: p.titulo,
+    serieId: p.serie_id,
+    numeroVolume: p.numero_volume,
+    tipo: p.tipo,
+    tagIds: p.tagIds,
+  }
+}
+
 async function createItemImpl(input: ItemInput) {
   const parsed = itemInputSchema.parse(input)
   const supabase = await createClient()
@@ -66,6 +78,9 @@ async function createItemImpl(input: ItemInput) {
     p_tag_ids: parsed.tagIds,
   })
   if (error) lancarErroRpc(error)
+
+  // Catálogo é acessório: nunca derruba o salvamento (a função não lança).
+  await alimentarCatalogoComItem(supabase, data as string, catalogoDoItem(parsed))
 
   revalidateListagens()
   return data as string
@@ -86,6 +101,8 @@ async function updateItemImpl(id: string, input: ItemInput) {
     p_tag_ids: parsed.tagIds,
   })
   if (error) lancarErroRpc(error)
+
+  await alimentarCatalogoComItem(supabase, itemId, catalogoDoItem(parsed))
 
   revalidateListagens(itemId)
 }
