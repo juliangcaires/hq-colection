@@ -104,7 +104,7 @@ export function AvaliarSerie({
             Usar a média dos volumes
           </Button>
         )}
-        <Button className="h-11" onClick={() => setAberto(true)} disabled={isPending || !alterado || nota === null}>
+        <Button className="h-11" onClick={() => setAberto(true)} disabled={isPending || !alterado}>
           Salvar avaliação
         </Button>
       </div>
@@ -114,11 +114,13 @@ export function AvaliarSerie({
           <DialogHeader>
             <DialogTitle>Como aplicar esta avaliação?</DialogTitle>
             <DialogDescription>
-              Nota {nota === null ? '' : formatarNota(nota)}
-              {critica.trim() ? ' e crítica' : ''} da série.
+              {nota === null
+                ? 'Só a crítica da série (a nota continua valendo a média dos volumes).'
+                : `Nota ${formatarNota(nota)}${critica.trim() ? ' e crítica' : ''} da série.`}
             </DialogDescription>
           </DialogHeader>
           {critica.trim() && lidos > 0 && <AvisoCritica semCritica={lidosSemCritica} comCritica={lidosComCritica} />}
+          {nota !== null && (
           <div role="radiogroup" aria-label="Onde aplicar" className="flex flex-col gap-2">
             <OpcaoRadio
               marcada={modo === 'serie'}
@@ -150,11 +152,12 @@ export function AvaliarSerie({
               }
             />
           </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setAberto(false)} disabled={isPending}>
               Cancelar
             </Button>
-            <Button onClick={() => enviar(modo)} disabled={isPending}>
+            <Button onClick={() => enviar(nota === null ? 'serie' : modo)} disabled={isPending}>
               {isPending ? 'Salvando...' : 'Confirmar'}
             </Button>
           </DialogFooter>
