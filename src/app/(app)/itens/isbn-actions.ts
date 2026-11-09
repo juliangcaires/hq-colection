@@ -1,5 +1,6 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { executar } from '@/lib/executar'
@@ -8,6 +9,8 @@ import { normalizarIsbn } from '@/lib/isbn'
 import { buscarEdicaoPorIsbn, type ResultadoBuscaIsbn } from '@/lib/isbn-busca'
 import { casarAutores, casarEditora, casarSerie, LIMIAR_SERIE_AUTOMATICA, type AutorSugerido, type EditoraSugerida, type SerieSugerida } from '@/lib/casamento'
 import { lerTodasAsLinhas } from '@/lib/paginar'
+import { cadastrarEdicao } from '@/lib/cadastro-isbn'
+import type { CadastroIsbnInput } from '@/lib/schemas'
 import { catalogoSupabase, itensComIsbn, type ItemExistente } from '@/lib/isbn-supabase'
 
 /** Chamadas externas por usuário por hora (a resposta do catálogo interno não conta). */
@@ -83,4 +86,26 @@ async function consultarIsbnImpl(entrada: string): Promise<ConsultaIsbn> {
 
 export async function consultarIsbn(entrada: string) {
   return executar(() => consultarIsbnImpl(entrada))
+}
+
+/** Confirmação da prévia: cria o item (e a série/tags aceitas) a partir da edição. */
+async function cadastrarPorIsbnImpl(entrada: CadastroIsbnInput) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new ErroDeNegocio('Não autenticado')
+
+  const r = await cadastrarEdicao(supabase, user.id, entrada)
+
+  revalidatePath('/colecao')
+  revalidatePath('/desejos')
+  revalidatePath('/series')
+  revalidatePath('/')
+  if (r.serieId) revalidatePath(`/serie/${r.serieId}`)
+  return r
+}
+
+export async function cadastrarPorIsbn(entrada: CadastroIsbnInput) {
+  return executar(() => cadastrarPorIsbnImpl(entrada))
 }

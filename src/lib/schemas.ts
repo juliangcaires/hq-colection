@@ -118,3 +118,26 @@ export const candidatoCapaSchema = z.object({
   provedor: z.enum(['google_books', 'open_library', 'anilist', 'mangadex']),
   ref: z.string().max(64).regex(/^[A-Za-z0-9-]+$/).nullish(),
 })
+
+const referenciaDeTagSchema = z.union([
+  z.object({ tagId: z.string().uuid() }),
+  z.object({ criar: z.string().trim().min(1).max(80) }),
+])
+export type ReferenciaDeTag = z.infer<typeof referenciaDeTagSchema>
+
+/** Confirmação do cadastro por ISBN: o que a pessoa aceitou na prévia (série, editora e autores já resolvidos ou a criar). */
+export const cadastroIsbnSchema = z.object({
+  isbn13: z.string().trim().min(1).max(20),
+  edicaoId: z.string().uuid().nullish(),
+  titulo: z.string().trim().min(1, 'Título obrigatório').max(200),
+  tipo: tipoObraSchema.default('hq'),
+  estado: estadoItemSchema.default('desejo'),
+  numero_volume: z.number().finite().nullable().default(null),
+  serie: z
+    .union([z.object({ id: z.string().uuid() }), z.object({ nova: z.string().trim().min(1).max(200) })])
+    .nullable()
+    .default(null),
+  editora: referenciaDeTagSchema.nullable().default(null),
+  autores: z.array(referenciaDeTagSchema).max(20).default([]),
+})
+export type CadastroIsbnInput = z.input<typeof cadastroIsbnSchema>
