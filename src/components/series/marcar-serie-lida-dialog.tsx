@@ -153,6 +153,8 @@ export function MarcarSerieLidaDialog({
             </div>
           </div>
 
+          {textoCritica && <AvisoCritica semCritica={resumo.semCritica} comCritica={resumo.comCritica} />}
+
           {nota !== null && (
             <div role="radiogroup" aria-label="Onde aplicar a nota" className="flex flex-col gap-2">
               <p className="text-sm font-medium text-foreground">
@@ -191,5 +193,15 @@ export function MarcarSerieLidaDialog({
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+/** Diz para quantos volumes a crítica da série vai — a crítica que o volume já tem nunca é sobrescrita. */
+export function AvisoCritica({ semCritica, comCritica }: { semCritica: number; comCritica: number }) {
+  return (
+    <p className="rounded-lg border border-border bg-surface-2 p-3 text-xs text-muted-foreground">
+      A crítica vai para <strong className="text-foreground">{plural(semCritica, 'volume sem crítica', 'volumes sem crítica')}</strong>
+      ; {comCritica} {comCritica === 1 ? 'mantém a própria' : 'mantêm a própria'}.
+    </p>
   )
 }

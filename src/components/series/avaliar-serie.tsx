@@ -8,6 +8,7 @@ import { Estrelas } from '@/components/ui/estrelas'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { OpcaoRadio } from '@/components/series/opcao-radio'
+import { AvisoCritica } from '@/components/series/marcar-serie-lida-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { avaliarSerie, type ModoAvaliacaoSerie } from '@/app/(app)/itens/actions'
 import { desembrulhar } from '@/lib/resultado'
@@ -25,6 +26,8 @@ export function AvaliarSerie({
   media,
   avaliados,
   lidos,
+  lidosSemCritica,
+  lidosComCritica,
 }: {
   serieId: string
   /** Nota própria da série; null quando vale a média. */
@@ -34,6 +37,10 @@ export function AvaliarSerie({
   media: number | null
   avaliados: number
   lidos: number
+  /** Volumes lidos sem crítica própria (recebem a da série). */
+  lidosSemCritica: number
+  /** Volumes lidos que já têm crítica (mantêm a própria). */
+  lidosComCritica: number
 }) {
   const router = useRouter()
   const [nota, setNota] = useState<number | null>(notaAtual)
@@ -111,6 +118,7 @@ export function AvaliarSerie({
               {critica.trim() ? ' e crítica' : ''} da série.
             </DialogDescription>
           </DialogHeader>
+          {critica.trim() && lidos > 0 && <AvisoCritica semCritica={lidosSemCritica} comCritica={lidosComCritica} />}
           <div role="radiogroup" aria-label="Onde aplicar" className="flex flex-col gap-2">
             <OpcaoRadio
               marcada={modo === 'serie'}

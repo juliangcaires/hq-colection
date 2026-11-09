@@ -134,6 +134,8 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         media={mediaVolumes}
         avaliados={notasAvaliadas.length}
         lidos={lidos}
+        lidosSemCritica={itens.filter((i) => i.estado === 'lido' && !i.critica).length}
+        lidosComCritica={itens.filter((i) => i.estado === 'lido' && i.critica).length}
       />
 
       <SerieForm serie={{ ...serie, tagIds }} allTags={allTags ?? []} />
