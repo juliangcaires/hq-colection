@@ -25,6 +25,7 @@ type RawItemRow = {
   nota: number | null
   critica: string | null
   lido_em: string | null
+  critica_privada: boolean
   created_at: string
   updated_at: string
   serie: {

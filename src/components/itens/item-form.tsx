@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Check, ChevronDown, Layers, MoreHorizontal, Star, ArrowLeft, Minus, Plus } from 'lucide-react'
 import { Estrelas } from '@/components/ui/estrelas'
 import { formatarNota } from '@/lib/nota'
@@ -68,6 +69,7 @@ export function ItemForm({
   const [nota, setNota] = useState<number | null>(item?.nota ?? null)
   const [critica, setCritica] = useState(item?.critica ?? '')
   const [lidoEm, setLidoEm] = useState(item?.lido_em ?? '')
+  const [criticaPrivada, setCriticaPrivada] = useState(item?.critica_privada ?? false)
   const [tagsPorTipo, setTagsPorTipo] = useState<Record<TipoTag, TagLite[]>>(() =>
     agruparTagsPorTipo(
       (item?.tagsItem ?? []).map((t) => t.id),
@@ -93,7 +95,7 @@ export function ItemForm({
   // o item salvo muda (key), então o baseline acompanha o que foi salvo.
   const idsTags = (m: Record<TipoTag, TagLite[]>) => Object.values(m).flatMap((ts) => ts.map((t) => t.id).sort())
   const valoresAtuais = JSON.stringify([
-    titulo, serieId, numeroVolume, tipo, isbn, estado, prioridade, preco, loja, dataAquisicao, nota, critica, lidoEm,
+    titulo, serieId, numeroVolume, tipo, isbn, estado, prioridade, preco, loja, dataAquisicao, nota, critica, lidoEm, criticaPrivada,
     idsTags(tagsPorTipo),
   ])
   const [valoresIniciais] = useState(valoresAtuais)
@@ -113,6 +115,7 @@ export function ItemForm({
     setNota(item.nota ?? null)
     setCritica(item.critica ?? '')
     setLidoEm(item.lido_em ?? '')
+    setCriticaPrivada(item.critica_privada ?? false)
     setTagsPorTipo(agruparTagsPorTipo(item.tagsItem.map((t) => t.id), item.tagsItem))
   }
 
@@ -145,6 +148,7 @@ export function ItemForm({
           nota: nota,
           critica: critica || null,
           lido_em: estado === 'lido' ? lidoEm || null : null,
+          critica_privada: criticaPrivada,
           tagIds: Object.values(tagsPorTipo).flatMap((tags) => tags.map((t) => t.id)),
         }
         if (item) {
@@ -618,6 +622,10 @@ export function ItemForm({
                   placeholder="O que você achou da leitura?"
                 />
               </Campo>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox checked={criticaPrivada} onCheckedChange={(v) => setCriticaPrivada(v === true)} />
+                Crítica privada (não aparece em link nem para amigos)
+              </label>
             </section>
           )}
 

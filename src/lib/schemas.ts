@@ -32,6 +32,7 @@ export const serieInputSchema = z.object({
   em_publicacao: z.coerce.boolean().default(true),
   tem_numeracao: z.coerce.boolean().default(false),
   observacoes: z.string().trim().max(2000).optional().nullable(),
+  critica_privada: z.boolean().optional(),
   tagIds: z.array(z.string().uuid()).default([]),
 })
 
@@ -50,6 +51,8 @@ export const itemInputSchema = z.object({
   critica: z.string().trim().max(2000).optional().nullable(),
   /** Data em que foi lido (AAAA-MM-DD); só vale com estado `lido`. */
   lido_em: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  /** Crítica que nunca aparece em link nem para amigos. */
+  critica_privada: z.boolean().optional(),
   tagIds: z.array(z.string().uuid()).default([]),
 })
 

@@ -56,6 +56,7 @@ function dadosDoItem(p: ItemInput) {
     nota: p.nota ?? null,
     critica: p.critica || null,
     lido_em: p.estado === 'lido' ? p.lido_em || null : null,
+    critica_privada: p.critica_privada,
   }
 }
 

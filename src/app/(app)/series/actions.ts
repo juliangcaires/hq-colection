@@ -26,6 +26,7 @@ function dadosDaSerie(p: SerieInput) {
     em_publicacao: p.em_publicacao,
     tem_numeracao: p.tem_numeracao,
     observacoes: p.observacoes || null,
+    critica_privada: p.critica_privada,
   }
 }
 

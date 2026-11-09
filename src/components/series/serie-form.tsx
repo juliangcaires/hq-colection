@@ -32,6 +32,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
   // undefined e o Checkbox viraria não-controlado.
   const [temNumeracao, setTemNumeracao] = useState(Boolean(serie.tem_numeracao))
   const [observacoes, setObservacoes] = useState(serie.observacoes ?? '')
+  const [criticaPrivada, setCriticaPrivada] = useState(Boolean(serie.critica_privada))
   const [tagsPorTipo, setTagsPorTipo] = useState<Record<TipoTag, TagLite[]>>(() =>
     agruparTagsPorTipo(serie.tagIds, allTags)
   )
@@ -49,6 +50,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
           em_publicacao: emPublicacao,
           tem_numeracao: temNumeracao,
           observacoes: observacoes || null,
+          critica_privada: criticaPrivada,
           tagIds,
         }))
         toast.success('Série atualizada')
@@ -137,6 +139,16 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="obs">Observações</Label>
         <Textarea id="obs" value={observacoes} onChange={(e) => setObservacoes(e.target.value)} rows={2} />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <Label className="cursor-pointer gap-2 text-sm font-normal">
+          <Checkbox checked={criticaPrivada} onCheckedChange={(v) => setCriticaPrivada(v === true)} />
+          Crítica da série privada
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          Não aparece em link nem para amigos. Observações nunca são compartilhadas.
+        </p>
       </div>
 
       <div className="flex flex-col gap-3 border-t border-border pt-3">
