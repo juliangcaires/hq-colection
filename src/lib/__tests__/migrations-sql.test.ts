@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -770,5 +770,250 @@ describe('compartilhamento por link (migration 0013)', () => {
     for (const nome of ['link_resumo', 'link_itens', 'link_series', 'link_capa']) {
       expect(sql).toMatch(new RegExp(`grant execute on function ${nome}\\([^)]*\\) to anon, authenticated;`))
     }
+  })
+})
+
+describe('amigos, presentes e empréstimos (migration 0014)', () => {
+  const CAIO = '88888888-8888-8888-8888-888888888888'
+  let preparado = false
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  /** O papel do app não apaga amizades (só as funções); a limpeza entre testes é como administrador. */
+  async function limparAmizades() {
+    await db.query(`reset role`)
+    await db.query(`delete from amizades`)
+    await db.query(`set role authenticated`)
+  }
+  async function preparar() {
+    if (preparado) return
+    preparado = true
+    await db.query(`reset role`)
+    await db.query(`insert into auth.users values ('${CAIO}') on conflict do nothing`)
+    await db.query(`delete from perfis`)
+    await db.query(`set role authenticated`)
+    await db.query(`insert into perfis(user_id, apelido, nome_exibicao) values ($1, 'ana', 'Ana')`, [U])
+    await como(OUTRO, () => db.query(`insert into perfis(user_id, apelido) values ($1, 'beto')`, [OUTRO]))
+    await como(CAIO, () => db.query(`insert into perfis(user_id, apelido) values ($1, 'caio')`, [CAIO]))
+  }
+  const mkItem = async (extra: object) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'Item', tipo: 'hq', ...extra })])).rows[0].id
+  const itensDe = async (apelido: string, secao: string) =>
+    (await db.query<Record<string, unknown>>(`select * from amigo_itens($1, $2)`, [apelido, secao])).rows
+  const solicitar = async (apelido: string) => (await db.query<{ id: string }>(`select amizade_solicitar($1) id`, [apelido])).rows[0].id
+  /** Ana e Beto viram amigos (pedido de Beto, aceite de Ana). */
+  async function amigosAnaBeto() {
+    await limparAmizades()
+    const id = await como(OUTRO, () => solicitar('ana'))
+    await db.query(`select amizade_responder($1, true)`, [id])
+    return id
+  }
+
+  it('o pedido só vale com aceite: pendente não dá acesso; aceitar libera; recusar apaga', async () => {
+    await preparar()
+    await mkItem({ estado: 'comprado', titulo: 'Da Ana' })
+    await limparAmizades()
+    const id = await como(OUTRO, () => solicitar('ana'))
+    // pedido pendente: nem quem pediu nem a Ana liberam nada
+    await como(OUTRO, async () => expect(await itensDe('ana', 'colecao')).toHaveLength(0))
+    expect((await db.query<{ direcao: string }>(`select direcao from amigos_listar()`)).rows[0].direcao).toBe('recebida')
+    await como(OUTRO, async () => expect((await db.query<{ direcao: string }>(`select direcao from amigos_listar()`)).rows[0].direcao).toBe('enviada'))
+    // quem pediu não pode aceitar o próprio pedido
+    await como(OUTRO, () => expect(db.query(`select amizade_responder($1, true)`, [id])).rejects.toThrow('amizade_nao_encontrada'))
+    await db.query(`select amizade_responder($1, true)`, [id])
+    await como(OUTRO, async () => expect((await itensDe('ana', 'colecao')).map((r) => r.titulo)).toContain('Da Ana'))
+    // recusar apaga
+    await db.query(`select amizade_desfazer($1)`, [id])
+    const id2 = await como(OUTRO, () => solicitar('ana'))
+    await db.query(`select amizade_responder($1, false)`, [id2])
+    expect((await db.query(`select * from amigos_listar()`)).rows).toHaveLength(0)
+  })
+
+  it('terceiro e visitante sem amizade nunca leem; apelido inexistente e o próprio apelido são recusados', async () => {
+    await preparar()
+    await amigosAnaBeto()
+    await como(CAIO, async () => {
+      expect(await itensDe('ana', 'colecao')).toHaveLength(0)
+      expect((await db.query<{ r: unknown }>(`select amigo_resumo('ana') r`)).rows[0].r).toBeNull()
+      expect((await db.query(`select * from amigo_series('ana')`)).rows).toHaveLength(0)
+      expect((await db.query<{ c: unknown }>(`select amigo_capa('ana', 'x.jpg') c`)).rows[0].c).toBeNull()
+      await expect(solicitar('ninguem')).rejects.toThrow('apelido_nao_encontrado')
+      await expect(solicitar('caio')).rejects.toThrow('amizade_propria')
+    })
+    await expect(solicitar('beto')).rejects.toThrow() // já amigos (e jamais duplica o par)
+  })
+
+  it('desfazer a amizade corta o acesso na hora (qualquer lado)', async () => {
+    await preparar()
+    const id = await amigosAnaBeto()
+    await como(OUTRO, async () => expect(await itensDe('ana', 'colecao')).not.toHaveLength(0))
+    await como(OUTRO, () => db.query(`select amizade_desfazer($1)`, [id]))
+    await como(OUTRO, async () => expect(await itensDe('ana', 'colecao')).toHaveLength(0))
+    await como(CAIO, () => expect(db.query(`select amizade_desfazer($1)`, [id])).rejects.toThrow('amizade_nao_encontrada'))
+  })
+
+  it('pedido cruzado vira amizade; sem apelido ninguém pede nem aceita', async () => {
+    await preparar()
+    await limparAmizades()
+    await como(OUTRO, () => solicitar('ana'))
+    await solicitar('beto') // a Ana pede de volta: aceita o pedido do Beto
+    expect((await db.query<{ status: string }>(`select status from amigos_listar()`)).rows).toEqual([{ status: 'aceita' }])
+    await limparAmizades()
+    const SEM = '99999999-0000-0000-0000-000000000001'
+    await db.query(`reset role`)
+    await db.query(`insert into auth.users values ('${SEM}') on conflict do nothing`)
+    await db.query(`set role authenticated`)
+    await como(SEM, () => expect(solicitar('ana')).rejects.toThrow('perfil_sem_apelido'))
+    await como(SEM, () => expect(db.query(`select convite_gerar()`)).rejects.toThrow('perfil_sem_apelido'))
+  })
+
+  it('convite por link: único, vale uma vez, não vale para o próprio autor e fecha o aceite dos dois lados', async () => {
+    await preparar()
+    await limparAmizades()
+    const { rows: [{ c }] } = await db.query<{ c: string }>(`select convite_gerar() c`)
+    expect(c).toMatch(/^[0-9a-f]{64}$/)
+    await expect(db.query(`select convite_aceitar($1)`, [c])).rejects.toThrow('amizade_propria')
+    expect(await como(OUTRO, async () => (await db.query<{ i: { apelido: string } | null }>(`select convite_inspecionar($1) i`, [c])).rows[0].i)).toEqual(expect.objectContaining({ apelido: 'ana' }))
+    expect((await db.query<{ i: unknown }>(`select convite_inspecionar($1) i`, [c])).rows[0].i).toBeNull() // o autor não "inspeciona" o próprio
+    expect(await como(OUTRO, async () => (await db.query<{ a: string }>(`select convite_aceitar($1) a`, [c])).rows[0].a)).toBe('ana')
+    await como(OUTRO, async () => expect((await db.query<{ direcao: string }>(`select direcao from amigos_listar()`)).rows[0].direcao).toBe('amigo'))
+    await como(CAIO, () => expect(db.query(`select convite_aceitar($1)`, [c])).rejects.toThrow('convite_invalido')) // já usado
+    await como(CAIO, () => expect(db.query(`select convite_aceitar($1)`, ['0'.repeat(64)])).rejects.toThrow('convite_invalido'))
+    // gerar outro invalida os não usados anteriores
+    const { rows: [{ c: a }] } = await db.query<{ c: string }>(`select convite_gerar() c`)
+    const { rows: [{ c: b }] } = await db.query<{ c: string }>(`select convite_gerar() c`)
+    await como(CAIO, () => expect(db.query(`select convite_aceitar($1)`, [a])).rejects.toThrow('convite_invalido'))
+    await como(CAIO, async () => expect((await db.query<{ a: string }>(`select convite_aceitar($1) a`, [b])).rows[0].a).toBe('ana'))
+  })
+
+  it('amigos veem o escopo de AMIGOS (separado do link) e nunca preço/loja/crítica privada', async () => {
+    await preparar()
+    await amigosAnaBeto()
+    await db.query(`select amigos_escopo_atualizar('{colecao}')`)
+    await mkItem({ estado: 'lido', nota: 5, critica: 'secreta', critica_privada: true, preco: 77, loja: 'LojaX', titulo: 'Escopo amigo' })
+    await mkItem({ estado: 'desejo', titulo: 'Desejo amigo' })
+    await como(OUTRO, async () => {
+      const col = await itensDe('ana', 'colecao')
+      const l = col.find((r) => r.titulo === 'Escopo amigo')!
+      expect(l).toMatchObject({ estado: 'comprado', nota: null, critica: null })
+      expect(JSON.stringify(col)).not.toMatch(/LojaX|secreta|"preco"|"loja"/)
+      expect(await itensDe('ana', 'desejos')).toHaveLength(0)
+      expect(await itensDe('ana', 'ranking')).toHaveLength(0)
+    })
+    await db.query(`select amigos_escopo_atualizar('{colecao,lidos,notas_criticas,ranking,desejos,series}')`)
+    await como(OUTRO, async () => {
+      expect((await itensDe('ana', 'desejos')).map((r) => r.titulo)).toContain('Desejo amigo')
+      const col = await itensDe('ana', 'colecao')
+      expect(col.find((r) => r.titulo === 'Escopo amigo')).toMatchObject({ estado: 'lido' })
+      expect(JSON.stringify(col)).not.toMatch(/LojaX|secreta/) // crítica privada nunca, mesmo com notas_criticas
+    })
+    await expect(db.query(`select amigos_escopo_atualizar('{}')`)).rejects.toThrow('escopo_invalido')
+  })
+
+  it('presentes: o amigo reserva, o dono não vê, outros amigos veem "reservado" e a compra limpa', async () => {
+    await preparar()
+    await amigosAnaBeto()
+    const id = await como(CAIO, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id)
+    await db.query(`select amizade_responder($1, true)`, [id])
+    await db.query(`select amigos_escopo_atualizar('{colecao,desejos}')`)
+    const desejo = await mkItem({ estado: 'desejo', titulo: 'Quero muito' })
+
+    await como(OUTRO, () => db.query(`select presente_marcar($1)`, [desejo]))
+    await como(OUTRO, () => db.query(`select presente_marcar($1)`, [desejo])) // idempotente para quem reservou
+    await como(OUTRO, async () => {
+      const [r] = await itensDe('ana', 'desejos')
+      expect(r).toMatchObject({ reservado: true, reservado_por_mim: true })
+    })
+    await como(CAIO, async () => {
+      const [r] = await itensDe('ana', 'desejos')
+      expect(r).toMatchObject({ reservado: true, reservado_por_mim: false })
+      await expect(db.query(`select presente_marcar($1)`, [desejo])).rejects.toThrow('presente_ja_reservado')
+      await db.query(`select presente_desmarcar($1)`, [desejo]) // não apaga a reserva do outro
+    })
+    // o dono NUNCA vê: nem tabela, nem no item, nem na lista dele
+    expect((await db.query(`select * from presentes`)).rows).toHaveLength(0)
+    const proprio = (await db.query<Record<string, unknown>>(`select * from itens where id = $1`, [desejo])).rows[0]
+    expect(Object.keys(proprio).some((k) => /presente|reserv/.test(k))).toBe(false)
+    await expect(db.query(`select presente_marcar($1)`, [desejo])).rejects.toThrow('item_nao_encontrado') // dono não reserva o próprio
+    // quem reservou desfaz
+    await como(OUTRO, () => db.query(`select presente_desmarcar($1)`, [desejo]))
+    await como(CAIO, async () => expect((await itensDe('ana', 'desejos'))[0]).toMatchObject({ reservado: false }))
+    // a compra pelo dono apaga a reserva sem aviso
+    await como(OUTRO, () => db.query(`select presente_marcar($1)`, [desejo]))
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [desejo])
+    await db.query(`update itens set estado = 'desejo' where id = $1`, [desejo])
+    await como(CAIO, async () => expect((await itensDe('ana', 'desejos'))[0]).toMatchObject({ reservado: false }))
+  })
+
+  it('presentes: sem amizade, sem escopo "desejos" ou fora de desejo não reserva; desfazer a amizade apaga a reserva', async () => {
+    await preparar()
+    const id = await amigosAnaBeto()
+    await db.query(`select amigos_escopo_atualizar('{colecao}')`)
+    const desejo = await mkItem({ estado: 'desejo', titulo: 'Sem escopo' })
+    const comprado = await mkItem({ estado: 'comprado', titulo: 'Já tenho' })
+    await como(OUTRO, async () => {
+      await expect(db.query(`select presente_marcar($1)`, [desejo])).rejects.toThrow('item_nao_encontrado') // escopo sem desejos
+      await expect(db.query(`select presente_marcar($1)`, [comprado])).rejects.toThrow('item_nao_encontrado')
+    })
+    await como(CAIO, () => expect(db.query(`select presente_marcar($1)`, [desejo])).rejects.toThrow('item_nao_encontrado')) // não é amigo
+    await db.query(`select amigos_escopo_atualizar('{colecao,desejos}')`)
+    await como(OUTRO, () => db.query(`select presente_marcar($1)`, [desejo]))
+    await db.query(`select amizade_desfazer($1)`, [id])
+    await db.query(`reset role`)
+    expect((await db.query(`select 1 from presentes`)).rows).toHaveLength(0)
+    await db.query(`set role authenticated`)
+  })
+
+  it('link público nunca mostra reserva', async () => {
+    await preparar()
+    const token = (await db.query<{ t: string }>(`select compartilhamento_gerar('{desejos}') t`)).rows[0].t
+    const linhas = (await db.query<Record<string, unknown>>(`select * from link_itens($1, 'desejos')`, [token])).rows
+    expect(linhas.length).toBeGreaterThan(0)
+    expect(linhas.every((l) => l.reservado === false && l.reservado_por_mim === false)).toBe(true)
+  })
+
+  it('empréstimos: só de itens possuídos, um em aberto por item, devolução e isolamento por usuário', async () => {
+    await preparar()
+    const gibi = await mkItem({ estado: 'comprado', titulo: 'Emprestável' })
+    const desejo = await mkItem({ estado: 'desejo', titulo: 'Não tenho' })
+    await expect(db.query(`select emprestimo_registrar($1, 'Fulano', null, null, null)`, [desejo])).rejects.toThrow('item_nao_possuido')
+    await expect(db.query(`select emprestimo_registrar($1, '  ', null, null, null)`, [gibi])).rejects.toThrow()
+    const { rows: [{ id }] } = await db.query<{ id: string }>(`select emprestimo_registrar($1, ' Fulano ', '2026-10-01', '2026-10-15', 'volta logo') id`, [gibi])
+    const abertos = (await db.query<{ para_quem: string; devolvido_em: string | null }>(`select para_quem, devolvido_em from emprestimos where devolvido_em is null`)).rows
+    expect(abertos).toEqual([{ para_quem: 'Fulano', devolvido_em: null }])
+    await expect(db.query(`select emprestimo_registrar($1, 'Outro', null, null, null)`, [gibi])).rejects.toThrow('emprestimo_em_aberto')
+    await expect(db.query(`select emprestimo_registrar($1, 'X', '2026-10-10', '2026-10-01', null)`, [await mkItem({ estado: 'lido' })])).rejects.toThrow() // devolver antes de emprestar
+    // outro usuário não enxerga nem mexe
+    await como(OUTRO, async () => {
+      expect((await db.query(`select * from emprestimos`)).rows).toHaveLength(0)
+      await expect(db.query(`select emprestimo_devolver($1)`, [id])).rejects.toThrow('emprestimo_nao_encontrado')
+      await expect(db.query(`select emprestimo_registrar($1, 'Y', null, null, null)`, [gibi])).rejects.toThrow('item_nao_encontrado')
+    })
+    await db.query(`select emprestimo_devolver($1, '2026-10-12')`, [id])
+    expect((await db.query<{ d: string }>(`select devolvido_em::text d from emprestimos where id = $1`, [id])).rows[0].d).toBe('2026-10-12')
+    await expect(db.query(`select emprestimo_devolver($1)`, [id])).rejects.toThrow('emprestimo_nao_encontrado') // já devolvido
+    // depois de devolvido pode emprestar de novo
+    await expect(db.query(`select emprestimo_registrar($1, 'Beltrano', null, null, null)`, [gibi])).resolves.toBeDefined()
+  })
+
+  it('emprestimos não aparecem em nenhuma função de compartilhamento', async () => {
+    const token = (await db.query<{ t: string }>(`select compartilhamento_gerar('{colecao,series,lidos,notas_criticas,ranking,desejos}') t`)).rows[0].t
+    const tudo = JSON.stringify((await db.query(`select * from link_itens($1, 'colecao', null, 200, 0)`, [token])).rows)
+    expect(tudo).not.toMatch(/Fulano|Beltrano|emprestad/i)
+  })
+
+  it('migration: funções de amigos exigem login e a camada interna fica fechada', () => {
+    const sql = readFileSync(path.join(PASTA, '0014_amigos_presentes_emprestimos.sql'), 'utf8')
+    for (const f of ['amigo_resumo', 'amigo_itens', 'amigo_series', 'amigo_capa', 'amizade_solicitar', 'presente_marcar', 'convite_aceitar']) {
+      expect(sql).toMatch(new RegExp(`revoke all on function ${f}\\([^)]*\\) from public, anon;`))
+      expect(sql).not.toMatch(new RegExp(`grant execute on function ${f}\\([^)]*\\) to[^;]*anon`))
+    }
+    expect(sql).toMatch(/revoke all on presentes from public, anon, authenticated;/)
+    expect(sql).toMatch(/revoke all on all functions in schema privado from public, anon, authenticated;/)
   })
 })

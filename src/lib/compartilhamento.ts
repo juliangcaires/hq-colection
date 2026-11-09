@@ -19,11 +19,14 @@ export const escopoSchema = z
   .transform((e) => Array.from(new Set(e)))
 
 /** Apelido: minúsculas, números e "_", de 3 a 30 caracteres. Maiúsculas viram minúsculas. */
+export const APELIDOS_RESERVADOS = ['convite', 'comparar', 'capa']
+
 export const apelidoSchema = z
   .string()
   .trim()
   .toLowerCase()
   .regex(/^[a-z0-9_]{3,30}$/, 'Use de 3 a 30 letras minúsculas, números ou "_"')
+  .refine((a) => !APELIDOS_RESERVADOS.includes(a), 'Esse apelido é reservado. Escolha outro.')
 
 export const nomeExibicaoSchema = z.string().trim().max(80, 'No máximo 80 caracteres')
 

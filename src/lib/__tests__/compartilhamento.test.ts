@@ -17,6 +17,7 @@ describe('escopoSchema', () => {
 describe('apelidoSchema', () => {
   it('normaliza para minúsculas e valida o formato', () => {
     expect(apelidoSchema.parse('  Julian_HQ ')).toBe('julian_hq')
+    expect(() => apelidoSchema.parse('Convite')).toThrow()
     for (const ruim of ['ab', 'com espaço', 'acentuação', 'x'.repeat(31), 'a-b-c', '']) expect(() => apelidoSchema.parse(ruim)).toThrow()
   })
 })
