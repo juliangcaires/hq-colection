@@ -18,6 +18,7 @@ type RawItemRow = {
   prioridade: number
   capa_url: string | null
   capa_origem: 'api' | 'foto' | 'nenhuma'
+  capa_catalogo_id: string | null
   preco: number | null
   loja: string | null
   data_aquisicao: string | null

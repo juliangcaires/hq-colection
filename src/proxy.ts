@@ -1,36 +1,14 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-import { FONTES_IMG_CAPA } from '@/lib/capa-hosts'
+import { politicaDeSeguranca } from '@/lib/csp'
 import { OPCOES_COOKIE } from '@/lib/supabase/cookies'
 
 const PUBLIC_PATHS = ['/login', '/criar-conta']
 
-/**
- * CSP com nonce por requisição (guia de CSP do Next): scripts só rodam com o nonce, então um HTML
- * injetado não executa. Estilos mantêm `'unsafe-inline'` (Tailwind/base-ui usam `style=`).
- * O app só conversa com o próprio servidor (o navegador nunca chama o Supabase), daí `connect-src 'self'`.
- */
-function politicaDeSeguranca(nonce: string): string {
-  const dev = process.env.NODE_ENV === 'development'
-  return [
-    "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}`,
-    "style-src 'self' 'unsafe-inline'",
-    // Hosts de capa: a grade de candidatos da busca automática carrega as imagens direto da fonte.
-    `img-src 'self' blob: data: ${FONTES_IMG_CAPA.join(' ')}`,
-    "font-src 'self'",
-    "connect-src 'self'",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-  ].join('; ')
-}
-
 export async function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
-  const csp = politicaDeSeguranca(nonce)
+  const csp = politicaDeSeguranca(nonce, { dev: process.env.NODE_ENV === 'development', supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL })
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-nonce', nonce)
   requestHeaders.set('Content-Security-Policy', csp)

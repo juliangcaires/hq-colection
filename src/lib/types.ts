@@ -51,6 +51,8 @@ export type Item = {
   prioridade: number
   capa_url: string | null
   capa_origem: OrigemCapa
+  /** Quando a capa vem do catálogo público (`capa_url` começa com `pub/`). */
+  capa_catalogo_id: string | null
   preco: number | null
   loja: string | null
   data_aquisicao: string | null
