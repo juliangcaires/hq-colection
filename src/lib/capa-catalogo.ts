@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { baixarImagemSegura } from '@/lib/capa-busca'
+import { baixarImagemSegura, type CandidatoCapa, type MemoriaSerie, type NivelComunidade, type Provedor } from '@/lib/capa-busca'
+import { urlPublicaDeCapa } from '@/lib/supabase/capas'
 import { detectarTipoDeImagem, EXT_POR_MIME_IMAGEM, removerMetadados, sha256Hex } from '@/lib/imagem'
 import { normalizarIsbn } from '@/lib/isbn'
 import { chaveEdicao, normalizarParaChave } from '@/lib/texto'
@@ -136,4 +137,75 @@ export async function aplicarFotoDoUsuario(supabase: Cliente, itemId: string, by
     console.warn('[capa-catalogo] foto não publicada:', e instanceof Error ? e.message : 'erro')
     return null
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Busca na comunidade
+// ---------------------------------------------------------------------------------------------
+
+export type CapaDaComunidade = {
+  id: string
+  caminho: string
+  origem: 'api' | 'foto'
+  nivel: NivelComunidade
+  usos: number
+}
+
+/** Capas do catálogo para o item: por ISBN, depois por chave, depois só pelo nome da série. */
+export async function buscarCapasDaComunidade(supabase: Cliente, chaves: ChavesDoItem | null): Promise<CapaDaComunidade[]> {
+  if (!chaves) return []
+  try {
+    const { data, error } = await supabase.rpc('capas_comunidade_buscar', {
+      p_isbn13: chaves.isbn13,
+      p_chave: chaves.chave,
+      p_serie_chave: chaves.serieChave,
+    })
+    if (error) throw new Error(error.message)
+    return (data ?? []) as CapaDaComunidade[]
+  } catch (e) {
+    // O catálogo é acessório: sem ele a busca segue só com os provedores.
+    console.warn('[capa-catalogo] busca na comunidade falhou:', e instanceof Error ? e.message : 'erro')
+    return []
+  }
+}
+
+/** Forma da grade: URL pública da capa, id do catálogo em `ref` e a contagem de usos. */
+export function candidatosDaComunidade(capas: CapaDaComunidade[]): (CandidatoCapa & { nivel: NivelComunidade })[] {
+  return capas.map((c) => ({
+    url: urlPublicaDeCapa(`${PREFIXO_CAPA_PUBLICA}${c.caminho}`),
+    label: c.origem === 'foto' ? 'Foto de outro colecionador' : 'Capa da comunidade',
+    provedor: 'comunidade' as const,
+    ref: c.id,
+    usos: c.usos,
+    nivel: c.nivel,
+  }))
+}
+
+/** Memória de busca da série compartilhada entre usuários (por série + tipo normalizados). */
+export async function memoriaGlobalDaSerie(supabase: Cliente, serieChave: string | null): Promise<MemoriaSerie | null> {
+  if (!serieChave) return null
+  const { data } = await supabase
+    .from('series_busca_global')
+    .select('termo, provedor, ref')
+    .eq('serie_chave', serieChave)
+    .maybeSingle<{ termo: string | null; provedor: Provedor; ref: string | null }>()
+  return data ? { termo: data.termo, provedor: data.provedor, ref: data.ref } : null
+}
+
+/** Conta uma confirmação da resolução que funcionou nesta série (ver `series_busca_global_registrar`). Não lança. */
+export async function registrarMemoriaGlobal(
+  supabase: Cliente,
+  serieChave: string | null,
+  termo: string,
+  provedor: string,
+  ref: string | null
+): Promise<void> {
+  if (!serieChave || provedor === 'comunidade') return
+  const { error } = await supabase.rpc('series_busca_global_registrar', {
+    p_serie_chave: serieChave,
+    p_termo: termo,
+    p_provedor: provedor,
+    p_ref: ref,
+  })
+  if (error) console.warn('[capa-catalogo] memória global não registrada:', error.message)
 }

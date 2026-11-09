@@ -4,12 +4,20 @@ import { DOMINIOS_CAPA, HOSTS_CAPA_EXATOS } from '@/lib/capa-hosts'
 
 export type Provedor = 'google_books' | 'open_library' | 'anilist' | 'mangadex'
 
+/** Candidatos da grade: os provedores externos mais a comunidade (capas já usadas por outros colecionadores). */
+export type ProvedorCandidato = Provedor | 'comunidade'
+
 export type CandidatoCapa = {
   url: string
   label: string
-  provedor: Provedor
-  /** id externo da obra no provedor (manga id do MangaDex, id do AniList) — permite pular a resolução por título numa próxima busca. */
+  provedor: ProvedorCandidato
+  /** id externo da obra no provedor (manga id do MangaDex, id do AniList) — permite pular a resolução por título numa próxima busca.
+   *  Na comunidade é o id da capa em `capas_catalogo`. */
   ref?: string | null
+  /** Só `comunidade`: quantas pessoas usam esta capa hoje. */
+  usos?: number
+  /** Só `comunidade`: usada por 2+ pessoas na mesma edição — vira a primeira sugestão. */
+  destaque?: boolean
 }
 
 export type ResultadoProvedor =
@@ -286,7 +294,9 @@ export async function buscarCapaPorMemoria(
 export async function buscarCandidatos(
   termo: TermoBusca,
   tipo: TipoObra,
-  memoria?: MemoriaSerie | null
+  memoria?: MemoriaSerie | null,
+  /** Capas da comunidade já resolvidas (catálogo); entram na ordem de `ordenarCandidatos`. */
+  comunidade: CandidatoCapa[] = []
 ): Promise<{ candidatos: CandidatoCapa[]; diagnostico: ResultadoProvedor[] }> {
   const buscas: Array<() => Promise<ResultadoProvedor>> =
     tipo === 'manga'
@@ -322,7 +332,42 @@ export async function buscarCandidatos(
     if (candidatos.length >= TETO_CANDIDATOS) break
   }
 
-  return { candidatos, diagnostico }
+  return { candidatos: ordenarCandidatos(comunidade, candidatos), diagnostico }
+}
+
+/** Nível em que a capa da comunidade casou com o item (ver `capas_comunidade_buscar`). */
+export type NivelComunidade = 'isbn' | 'chave' | 'nome'
+
+/** Uma capa só vira a primeira sugestão com 2+ pessoas usando; antes disso aparece na grade sem destaque. */
+export const USOS_PARA_DESTAQUE = 2
+const TETO_GRADE = 16
+
+/**
+ * Ordem da grade de candidatos:
+ *  1. comunidade destacada (mesma edição por ISBN ou chave, usada por 2+ pessoas);
+ *  2. provedores externos (como sempre);
+ *  3. comunidade da mesma edição, ainda sem 2 usos;
+ *  4. comunidade que só bate no nome da série — sugestão, nunca aplicada sozinha.
+ * Repetidos (mesma URL) saem. A entrada `comunidade` vem do catálogo já ordenada por especificidade e uso.
+ */
+export function ordenarCandidatos(
+  comunidade: (CandidatoCapa & { nivel?: NivelComunidade })[],
+  externos: CandidatoCapa[]
+): CandidatoCapa[] {
+  const mesmaEdicao = comunidade.filter((c) => c.nivel !== 'nome')
+  const soNome = comunidade.filter((c) => c.nivel === 'nome')
+  const destacadas = mesmaEdicao.filter((c) => (c.usos ?? 0) >= USOS_PARA_DESTAQUE).map((c) => ({ ...c, destaque: true }))
+  const normais = mesmaEdicao.filter((c) => (c.usos ?? 0) < USOS_PARA_DESTAQUE).map((c) => ({ ...c, destaque: false }))
+  const vistas = new Set<string>()
+  const resultado: CandidatoCapa[] = []
+  for (const c of [...destacadas, ...externos, ...normais, ...soNome.map((c) => ({ ...c, destaque: false }))]) {
+    if (vistas.has(c.url)) continue
+    vistas.add(c.url)
+    // `nivel` é só de ordenação; não vai para o cliente.
+    resultado.push({ url: c.url, label: c.label, provedor: c.provedor, ref: c.ref, usos: c.usos, destaque: c.destaque })
+    if (resultado.length >= TETO_GRADE) break
+  }
+  return resultado
 }
 
 const PROVEDOR_LABEL: Record<Provedor, string> = {

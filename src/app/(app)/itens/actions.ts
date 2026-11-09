@@ -18,7 +18,13 @@ import {
 } from '@/lib/schemas'
 import type { TipoObra } from '@/lib/types'
 import { type CandidatoCapa } from '@/lib/capa-busca'
-import { aplicarCapaDeApi, aplicarFotoDoUsuario, usuarioContribuiCapas } from '@/lib/capa-catalogo'
+import {
+  aplicarCapaDeApi,
+  aplicarFotoDoUsuario,
+  chavesDoItem,
+  registrarMemoriaGlobal,
+  usuarioContribuiCapas,
+} from '@/lib/capa-catalogo'
 import { normalizarTermoBusca } from '@/lib/capa-termo'
 import { novoCaminhoDeCapa, removerCapaAntiga } from '@/lib/supabase/capas'
 
@@ -522,6 +528,20 @@ async function aplicarCapaEscolhidaImpl(itemId: string, candidatoBruto: Candidat
   if (!existente) throw new ErroDeNegocio('Item não encontrado')
 
   const { data: anterior } = await supabase.from('itens').select('capa_url').eq('id', id).maybeSingle()
+
+  // Capa que outro colecionador já publicou: só aponta o item para ela (a função confere dono e se não foi ocultada).
+  if (candidato.provedor === 'comunidade') {
+    if (!candidato.ref) throw new ErroDeNegocio('Capa da comunidade inválida')
+    const { data: caminho, error: erroAplicar } = await supabase.rpc('capa_catalogo_aplicar', { p_item: id, p_capa: candidato.ref })
+    if (erroAplicar) {
+      if (erroAplicar.message === 'capa_indisponivel') throw new ErroDeNegocio('Esta capa não está mais disponível.')
+      lancarErroRpc(erroAplicar)
+    }
+    await removerCapaAntiga(supabase, anterior?.capa_url, `pub/${caminho as string}`)
+    revalidateListagens(itemId)
+    return
+  }
+
   // Baixa, publica no catálogo compartilhado e aponta o item para ela (sem cópia própria).
   const path = await aplicarCapaDeApi(supabase, id, candidato.url)
   if (!path) throw new ErroDeNegocio('Não foi possível baixar essa imagem')
@@ -547,6 +567,9 @@ async function aplicarCapaEscolhidaImpl(itemId: string, candidatoBruto: Candidat
         busca_atualizado_em: new Date().toISOString(),
       })
       .eq('id', item.serie.id)
+    // ...e conta uma confirmação na memória compartilhada, para o próximo colecionador da mesma série pular a resolução.
+    const chaves = await chavesDoItem(supabase, id)
+    await registrarMemoriaGlobal(supabase, chaves?.serieChave ?? null, termo.termo, candidato.provedor, candidato.ref ?? null)
   }
 
   revalidateListagens(itemId)

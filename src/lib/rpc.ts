@@ -6,6 +6,8 @@ export function lancarErroRpc(error: { message: string }): never {
   if (m === 'item_nao_encontrado') throw new ErroDeNegocio('Item não encontrado')
   if (m === 'serie_nao_encontrada') throw new ErroDeNegocio('Série não encontrada')
   if (m === 'tag_nao_encontrada') throw new ErroDeNegocio('Tag não encontrada')
+  if (m === 'capa_indisponivel') throw new ErroDeNegocio('Esta capa não está mais disponível.')
+  if (m === 'contribuicao_nao_autorizada') throw new ErroDeNegocio('Ative "Contribuir com as capas que eu enviar" nas configurações para compartilhar fotos.')
   if (m === 'nada_a_marcar') throw new ErroDeNegocio('Esta série não tem volumes comprados para marcar como lidos.')
   if (m === 'critica_longa') throw new ErroDeNegocio('A crítica passa de 2000 caracteres.')
   if (m.startsWith('volumes_repetidos:')) {

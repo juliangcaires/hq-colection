@@ -115,8 +115,10 @@ export type CriarVolumesInput = z.infer<typeof criarVolumesInputSchema>
 export const candidatoCapaSchema = z.object({
   url: z.string().url().max(1000),
   label: z.string().max(300).default(''),
-  provedor: z.enum(['google_books', 'open_library', 'anilist', 'mangadex']),
+  provedor: z.enum(['google_books', 'open_library', 'anilist', 'mangadex', 'comunidade']),
   ref: z.string().max(64).regex(/^[A-Za-z0-9-]+$/).nullish(),
+  usos: z.number().int().min(0).max(1_000_000).optional(),
+  destaque: z.boolean().optional(),
 })
 
 const referenciaDeTagSchema = z.union([
