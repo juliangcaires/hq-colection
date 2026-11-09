@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
-import { calcularVolumesFaltantes, serieEstaCompleta } from '@/lib/volumes'
+import { calcularVolumesFaltantes, serieEstaCompleta, serieEstaLida } from '@/lib/volumes'
 
 /**
  * Roda as migrations num PostgreSQL em memória (PGlite) com stubs mínimos de `auth` e `storage`.
@@ -62,14 +62,15 @@ describe('series_com_resumo', () => {
       for (const v of volumes) {
         await db.query(`insert into itens(user_id,serie_id,titulo,numero_volume,estado) values ($1,$2,'t',$3,$4)`, [U, rows[0].id, v.numero_volume, v.estado])
       }
-      const { rows: r } = await db.query<{ faltantes: number[]; completa: boolean }>(
-        `select faltantes, completa from series_com_resumo(null) where id = $1`,
+      const { rows: r } = await db.query<{ faltantes: number[]; completa: boolean; lida: boolean }>(
+        `select faltantes, completa, lida from series_com_resumo(null) where id = $1`,
         [rows[0].id]
       )
       const faltantes = calcularVolumesFaltantes(volumes, total)
       const completa = serieEstaCompleta({ totalVolumes: total, temNumeracao: numerada, volumes })
-      if (JSON.stringify(r[0].faltantes) !== JSON.stringify(faltantes) || r[0].completa !== completa) {
-        divergentes.push({ total, numerada, volumes, sql: r[0], ts: { faltantes, completa } })
+      const lida = serieEstaLida(volumes)
+      if (JSON.stringify(r[0].faltantes) !== JSON.stringify(faltantes) || r[0].completa !== completa || r[0].lida !== lida) {
+        divergentes.push({ total, numerada, volumes, sql: r[0], ts: { faltantes, completa, lida } })
       }
     }
     expect(divergentes).toEqual([])

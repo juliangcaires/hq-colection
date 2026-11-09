@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { listarItens } from '@/lib/queries'
 import { urlsDeCapas } from '@/lib/supabase/capas'
-import { calcularVolumesFaltantes, serieEstaCompleta } from '@/lib/volumes'
+import { calcularVolumesFaltantes, serieEstaCompleta, serieEstaLida } from '@/lib/volumes'
 import { uuidOuNull } from '@/lib/filtros-url'
 import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
@@ -50,6 +50,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
     temNumeracao: Boolean(serie.tem_numeracao),
     volumes: itens,
   })
+  const lida = serieEstaLida(itens)
   const numerosOcupados = itens
     .map((i) => i.numero_volume)
     .filter((n): n is number => n !== null)
@@ -87,6 +88,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
             {serie.tem_numeracao && <span className="text-xs text-muted-foreground">numerada</span>}
             {!serie.em_publicacao && <Badge variant="secondary">encerrada</Badge>}
             {completa && <Badge variant="sucesso">completa</Badge>}
+            {lida && <Badge variant="sucesso">série lida</Badge>}
           </div>
           <h1 className="font-heading text-[28px] leading-tight font-extrabold tracking-tight text-foreground lg:text-[44px]">
             {serie.nome}
