@@ -129,7 +129,10 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
+      {/* key: depois de salvar/marcar como lida, os campos recomeçam dos valores do banco
+          (useState só lê a prop na montagem; sem isso a tela ficava com o valor antigo). */}
       <AvaliarSerie
+        key={JSON.stringify([serie.nota, serie.critica, lidos, notasAvaliadas.length])}
         serieId={id}
         notaAtual={serie.nota === null ? null : Number(serie.nota)}
         criticaAtual={serie.critica}
@@ -140,7 +143,9 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         lidosComCritica={itens.filter((i) => i.estado === 'lido' && i.critica).length}
       />
 
-      <SerieForm serie={{ ...serie, tagIds }} allTags={allTags ?? []} />
+      <SerieForm
+        key={JSON.stringify([serie.updated_at, serie.nome, serie.tipo, serie.total_volumes, serie.em_publicacao, serie.tem_numeracao, serie.observacoes, serie.critica_privada, tagIds])}
+        serie={{ ...serie, tagIds }} allTags={allTags ?? []} />
 
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
