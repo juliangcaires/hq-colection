@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { QuickAddForm } from './quick-add-form'
 import { QuickAddIsbn } from './quick-add-isbn'
+import { PrateleiraIsbn } from './prateleira-isbn'
 
 const QuickAddContext = createContext<{ abrir: () => void } | null>(null)
 
@@ -16,7 +17,7 @@ export function useQuickAdd() {
 
 export function QuickAddProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
-  const [aba, setAba] = useState<'manual' | 'isbn'>('manual')
+  const [aba, setAba] = useState<'manual' | 'isbn' | 'prateleira'>('manual')
   // ISBN que a busca não achou: o cadastro manual abre com ele preenchido.
   const [isbnManual, setIsbnManual] = useState('')
 
@@ -40,9 +41,12 @@ export function QuickAddProvider({ children }: { children: React.ReactNode }) {
             options={[
               { value: 'manual', label: 'Manual' },
               { value: 'isbn', label: 'Por ISBN' },
+              { value: 'prateleira', label: 'Prateleira' },
             ]}
           />
-          {aba === 'isbn' ? (
+          {aba === 'prateleira' ? (
+            <PrateleiraIsbn onDone={fechar} />
+          ) : aba === 'isbn' ? (
             <QuickAddIsbn
               onDone={fechar}
               onCadastroManual={(isbn13) => {

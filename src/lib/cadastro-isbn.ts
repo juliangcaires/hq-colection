@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { baixarEPersistirCapa, buscarCapaPorIsbn } from '@/lib/capa-busca'
 import { normalizarIsbn } from '@/lib/isbn'
+import { normalizarTexto } from '@/lib/texto'
 import { ErroDeNegocio } from '@/lib/resultado'
 import { lancarErroRpc } from '@/lib/rpc'
 import { cadastroIsbnSchema, type CadastroIsbnInput, type ReferenciaDeTag } from '@/lib/schemas'
@@ -41,7 +42,9 @@ async function resolverTag(supabase: Cliente, userId: string, ref: ReferenciaDeT
 export async function cadastrarEdicao(
   supabase: Cliente,
   userId: string,
-  entrada: CadastroIsbnInput
+  entrada: CadastroIsbnInput,
+  /** Séries novas já criadas no mesmo lote (nome normalizado → id), para não criar "One Piece" uma vez por volume. */
+  seriesNovas?: Map<string, string>
 ): Promise<{ itemId: string; capa: boolean; serieId: string | null }> {
   const input = cadastroIsbnSchema.parse(entrada)
   const isbn13 = normalizarIsbn(input.isbn13)
@@ -54,6 +57,8 @@ export async function cadastrarEdicao(
   let serieCriada = false
   if (input.serie && 'id' in input.serie) {
     serieId = input.serie.id
+  } else if (input.serie && seriesNovas?.has(normalizarTexto(input.serie.nova))) {
+    serieId = seriesNovas.get(normalizarTexto(input.serie.nova))!
   } else if (input.serie) {
     const { data, error } = await supabase.rpc('serie_salvar', {
       p_id: null,
@@ -95,6 +100,10 @@ export async function cadastrarEdicao(
   } catch (e) {
     if (serieCriada && serieId) await supabase.from('series').delete().eq('id', serieId)
     throw e
+  }
+
+  if (serieCriada && serieId && input.serie && 'nova' in input.serie) {
+    seriesNovas?.set(normalizarTexto(input.serie.nova), serieId)
   }
 
   const capa = await aplicarCapaDaEdicao(supabase, userId, itemId, isbn13, input.edicaoId ?? null)

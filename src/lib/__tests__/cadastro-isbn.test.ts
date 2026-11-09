@@ -118,4 +118,14 @@ describe('cadastrarEdicao', () => {
     await expect(cadastrarEdicao(fake, USER, { ...base, titulo: '  ' })).rejects.toThrow()
     expect(chamadas).toEqual([])
   })
+
+  it('série nova repetida no mesmo lote é criada uma vez só', async () => {
+    const { fake, chamadas } = supabaseFalso()
+    const cache = new Map<string, string>()
+    await cadastrarEdicao(fake, USER, { ...base, serie: { nova: 'Hellboy' }, editora: null, autores: [] }, cache)
+    await cadastrarEdicao(fake, USER, { ...base, isbn13: '9791032305843', numero_volume: 2, serie: { nova: ' hellboy ' }, editora: null, autores: [] }, cache)
+    expect(chamadas.filter((c) => c.op === 'rpc:serie_salvar')).toHaveLength(1)
+    const itens = chamadas.filter((c) => c.op === 'rpc:item_salvar').map((c) => (c.args[0] as { p_dados: { serie_id: string } }).p_dados.serie_id)
+    expect(itens).toEqual(['serie-nova', 'serie-nova'])
+  })
 })

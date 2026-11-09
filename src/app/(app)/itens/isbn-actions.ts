@@ -109,3 +109,49 @@ async function cadastrarPorIsbnImpl(entrada: CadastroIsbnInput) {
 export async function cadastrarPorIsbn(entrada: CadastroIsbnInput) {
   return executar(() => cadastrarPorIsbnImpl(entrada))
 }
+
+const MAX_ITENS_POR_LOTE = 10
+
+export type ResultadoItemDoLote =
+  | { isbn13: string; ok: true; itemId: string; serieId: string | null; capa: boolean }
+  | { isbn13: string; ok: false; erro: string }
+
+/**
+ * Modo prateleira: salva cada item de forma independente. O erro de um (ISBN inválido, tag que sumiu...)
+ * volta no resultado dele e não impede os outros. Séries novas com o mesmo nome são criadas uma vez só.
+ */
+async function cadastrarLoteDeIsbnImpl(itens: CadastroIsbnInput[]): Promise<ResultadoItemDoLote[]> {
+  if (!Array.isArray(itens) || itens.length === 0 || itens.length > MAX_ITENS_POR_LOTE) {
+    throw new ErroDeNegocio(`Envie de 1 a ${MAX_ITENS_POR_LOTE} itens por vez.`)
+  }
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new ErroDeNegocio('Não autenticado')
+
+  const seriesNovas = new Map<string, string>()
+  const resultados: ResultadoItemDoLote[] = []
+  for (const item of itens) {
+    const isbn13 = typeof item?.isbn13 === 'string' ? item.isbn13.slice(0, 20) : ''
+    try {
+      const r = await cadastrarEdicao(supabase, user.id, item, seriesNovas)
+      resultados.push({ isbn13, ok: true, itemId: r.itemId, serieId: r.serieId, capa: r.capa })
+    } catch (e) {
+      const erro =
+        e instanceof ErroDeNegocio ? e.message : e instanceof z.ZodError ? (e.issues[0]?.message ?? 'Dados inválidos') : 'Não foi possível salvar este item.'
+      if (!(e instanceof ErroDeNegocio) && !(e instanceof z.ZodError)) console.error('[lote isbn]', e)
+      resultados.push({ isbn13, ok: false, erro })
+    }
+  }
+
+  revalidatePath('/colecao')
+  revalidatePath('/desejos')
+  revalidatePath('/series')
+  revalidatePath('/')
+  return resultados
+}
+
+export async function cadastrarLoteDeIsbn(itens: CadastroIsbnInput[]) {
+  return executar(() => cadastrarLoteDeIsbnImpl(itens))
+}
