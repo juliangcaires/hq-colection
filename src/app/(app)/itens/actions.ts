@@ -208,20 +208,27 @@ export async function marcarLidoEmLote(itemIds: string[], avaliacao?: AvaliacaoL
 }
 
 export type ModoAvaliacaoSerie =
-  /** Só a série: nota e crítica gerais, volumes intocados. */
+  /** Só a série: nota e crítica gerais, volumes sem nota nova. */
   | 'serie'
-  /** Série e volumes: a mesma nota e crítica também em cada volume lido (substitui as atuais). */
-  | 'serie_e_volumes'
+  /** Série e volumes lidos sem nota: não toca em volume já avaliado. */
+  | 'serie_e_sem_nota'
+  /** Série e todos os volumes lidos: a nota dos volumes é substituída (a crítica deles nunca). */
+  | 'serie_e_todos'
   /** Sem nota própria: a série passa a valer a média dos volumes (a crítica da série é mantida). */
   | 'media'
 
 const avaliarSerieSchema = z.object({
   serieId: z.string().uuid(),
-  modo: z.enum(['serie', 'serie_e_volumes', 'media']),
+  modo: z.enum(['serie', 'serie_e_sem_nota', 'serie_e_todos', 'media']),
   nota: notaSchema.nullish(),
   critica: z.string().trim().max(2000).nullish(),
 })
 
+/**
+ * Avalia a série sem marcar nada como lido (`serie_marcar_lida` com `p_marcar_lidos = false`).
+ * A crítica da série só vai para volumes lidos que não têm crítica; nenhuma avaliação individual
+ * é sobrescrita, a menos que o usuário escolha `serie_e_todos` (e aí só a nota muda).
+ */
 async function avaliarSerieImpl(input: {
   serieId: string
   modo: ModoAvaliacaoSerie
@@ -230,32 +237,28 @@ async function avaliarSerieImpl(input: {
 }) {
   const { serieId, modo, nota, critica } = avaliarSerieSchema.parse(input)
   const supabase = await createClient()
-  let volumes = 0
 
-  // Volumes primeiro: sem nenhum lido o erro de negócio sai antes de qualquer gravação.
-  if (modo === 'serie_e_volumes') {
-    const { data, error } = await supabase
-      .from('itens')
-      .update({ nota: nota ?? null, critica: critica || null })
-      .eq('serie_id', serieId)
-      .eq('estado', 'lido')
-      .select('id')
+  if (modo === 'media') {
+    const { data: serie, error } = await supabase.from('series').update({ nota: null }).eq('id', serieId).select('id')
     if (error) throw new Error(error.message)
-    if (!data || data.length === 0) throw new ErroDeNegocio('Esta série ainda não tem volumes lidos.')
-    volumes = data.length
-    for (const i of data) revalidatePath(`/item/${i.id}`)
+    if (!serie || serie.length === 0) throw new ErroDeNegocio('Série não encontrada.')
+    revalidarSerie(serieId)
+    return { volumes: 0 }
   }
 
-  const campos = modo === 'media' ? { nota: null } : { nota: nota ?? null, critica: critica || null }
-  const { data: serie, error } = await supabase.from('series').update(campos).eq('id', serieId).select('id')
-  if (error) throw new Error(error.message)
-  if (!serie || serie.length === 0) throw new ErroDeNegocio('Série não encontrada.')
+  const { data, error } = await supabase.rpc('serie_marcar_lida', {
+    p_serie: serieId,
+    p_nota: nota ?? null,
+    // '' limpa a crítica da série; null deixa como está.
+    p_critica: critica ?? null,
+    p_modo: modo,
+    p_marcar_lidos: false,
+  })
+  if (error) lancarErroRpc(error)
 
-  revalidateListagens()
-  revalidatePath(`/serie/${serieId}`)
-  revalidatePath('/series')
-  revalidatePath('/ranking')
-  return { volumes }
+  const r = data as { avaliados: number; snapshot: SnapshotMarcacaoSerie }
+  revalidarSerie(serieId, r.snapshot.itens.map((i) => i.id))
+  return { volumes: r.avaliados }
 }
 
 export async function avaliarSerie(input: {
