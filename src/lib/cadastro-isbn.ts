@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { baixarEPersistirCapa, buscarCapaPorIsbn } from '@/lib/capa-busca'
+import { buscarCapaPorIsbn } from '@/lib/capa-busca'
+import { aplicarCapaDeApi } from '@/lib/capa-catalogo'
 import { normalizarIsbn } from '@/lib/isbn'
 import { normalizarTexto } from '@/lib/texto'
 import { ErroDeNegocio } from '@/lib/resultado'
@@ -119,14 +120,13 @@ export async function cadastrarEdicao(
     })
   }
 
-  const capa = await aplicarCapaDaEdicao(supabase, userId, itemId, isbn13, input.edicaoId ?? null)
+  const capa = await aplicarCapaDaEdicao(supabase, itemId, isbn13, input.edicaoId ?? null)
   return { itemId, capa, serieId }
 }
 
 /** Capa da edição (a que a API informou) e, se não der, a cascata por ISBN já existente. Nunca lança. */
 async function aplicarCapaDaEdicao(
   supabase: Cliente,
-  userId: string,
   itemId: string,
   isbn13: string,
   edicaoId: string | null
@@ -140,11 +140,7 @@ async function aplicarCapaDaEdicao(
     for (let i = 0; i <= urls.length; i++) {
       const url = urls[i] ?? (await buscarCapaPorIsbn(isbn13))?.url
       if (!url) return false
-      const path = await baixarEPersistirCapa(supabase, userId, itemId, url)
-      if (path) {
-        const { error } = await supabase.from('itens').update({ capa_url: path, capa_origem: 'api' }).eq('id', itemId)
-        return !error
-      }
+      if (await aplicarCapaDeApi(supabase, itemId, url)) return true
     }
     return false
   } catch (e) {

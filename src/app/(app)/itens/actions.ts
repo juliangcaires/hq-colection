@@ -17,7 +17,8 @@ import {
   type ItemInput,
 } from '@/lib/schemas'
 import type { TipoObra } from '@/lib/types'
-import { baixarEPersistirCapa, type CandidatoCapa } from '@/lib/capa-busca'
+import { type CandidatoCapa } from '@/lib/capa-busca'
+import { aplicarCapaDeApi, aplicarFotoDoUsuario, usuarioContribuiCapas } from '@/lib/capa-catalogo'
 import { normalizarTermoBusca } from '@/lib/capa-termo'
 import { novoCaminhoDeCapa, removerCapaAntiga } from '@/lib/supabase/capas'
 
@@ -471,6 +472,17 @@ async function uploadCapaManualImpl(itemId: string, formData: FormData) {
   const { data: atual } = await supabase.from('itens').select('capa_url').eq('id', itemId).maybeSingle()
   if (!atual) throw new ErroDeNegocio('Item não encontrado')
 
+  // Opt-in "Contribuir com as capas que eu enviar": a foto (sem metadados) vai para o catálogo público e o
+  // item aponta para ela. Sem opt-in, ou se a publicação falhar, segue o caminho privado de sempre.
+  if (await usuarioContribuiCapas(supabase, user.id)) {
+    const publica = await aplicarFotoDoUsuario(supabase, itemId, new Uint8Array(await file.arrayBuffer()))
+    if (publica) {
+      await removerCapaAntiga(supabase, atual.capa_url, publica)
+      revalidateListagens(itemId)
+      return
+    }
+  }
+
   const { error: uploadError } = await supabase.storage
     .from('capas')
     .upload(path, file, { contentType: file.type })
@@ -478,7 +490,7 @@ async function uploadCapaManualImpl(itemId: string, formData: FormData) {
 
   const { error: updateError } = await supabase
     .from('itens')
-    .update({ capa_url: path, capa_origem: 'foto' })
+    .update({ capa_url: path, capa_origem: 'foto', capa_catalogo_id: null })
     .eq('id', itemId)
   if (updateError) throw new Error(updateError.message)
   await removerCapaAntiga(supabase, atual.capa_url, path)
@@ -510,14 +522,14 @@ async function aplicarCapaEscolhidaImpl(itemId: string, candidatoBruto: Candidat
   if (!existente) throw new ErroDeNegocio('Item não encontrado')
 
   const { data: anterior } = await supabase.from('itens').select('capa_url').eq('id', id).maybeSingle()
-  const path = await baixarEPersistirCapa(supabase, user.id, id, candidato.url)
+  // Baixa, publica no catálogo compartilhado e aponta o item para ela (sem cópia própria).
+  const path = await aplicarCapaDeApi(supabase, id, candidato.url)
   if (!path) throw new ErroDeNegocio('Não foi possível baixar essa imagem')
 
   const { data: item, error } = await supabase
     .from('itens')
-    .update({ capa_url: path, capa_origem: 'api' })
-    .eq('id', id)
     .select('titulo, numero_volume, serie:series(id, nome)')
+    .eq('id', id)
     .single<{ titulo: string; numero_volume: number | null; serie: { id: string; nome: string } | null }>()
   if (error) throw new Error(error.message)
 

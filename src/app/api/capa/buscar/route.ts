@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
+import { aplicarCapaDeApi } from '@/lib/capa-catalogo'
 import {
-  baixarEPersistirCapa,
   buscarCandidatos,
   buscarCapaPorIsbn,
   type MemoriaSerie,
@@ -73,9 +73,8 @@ export async function POST(req: NextRequest) {
   if (isbn) {
     const resultado = await buscarCapaPorIsbn(isbn)
     if (resultado) {
-      const path = await baixarEPersistirCapa(supabase, user.id, itemId, resultado.url)
+      const path = await aplicarCapaDeApi(supabase, itemId, resultado.url)
       if (path) {
-        await supabase.from('itens').update({ capa_url: path, capa_origem: 'api' }).eq('id', itemId)
         await removerCapaAntiga(supabase, item.capa_url, path)
         if (item.serie) {
           await supabase

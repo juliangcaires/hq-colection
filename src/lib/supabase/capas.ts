@@ -26,6 +26,8 @@ export async function removerCapaAntiga(
   caminhoNovo: string | null
 ): Promise<void> {
   if (!caminhoAntigo || caminhoAntigo === caminhoNovo) return
+  // Capa do catálogo público é contribuição compartilhada: trocar ou apagar o item nunca a remove.
+  if (caminhoAntigo.startsWith('pub/')) return
   const { error } = await supabase.storage.from('capas').remove([caminhoAntigo])
   if (error) console.error('[capas] não removeu arquivo antigo', caminhoAntigo, error.message)
 }

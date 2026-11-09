@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/capa-busca', () => ({
-  baixarEPersistirCapa: vi.fn(async () => 'u/capa.jpg'),
   buscarCapaPorIsbn: vi.fn(async () => null),
+}))
+vi.mock('@/lib/capa-catalogo', () => ({
+  aplicarCapaDeApi: vi.fn(async () => 'pub/hash.jpg'),
 }))
 
 import { cadastrarEdicao } from '@/lib/cadastro-isbn'
-import { baixarEPersistirCapa } from '@/lib/capa-busca'
+import { aplicarCapaDeApi } from '@/lib/capa-catalogo'
 
 const USER = 'u1'
 const ISBN = '9788545702870'
@@ -86,8 +88,7 @@ describe('cadastrarEdicao', () => {
     expect(item.p_dados).toMatchObject({ isbn: ISBN, edicao_id: EDICAO, serie_id: 'serie-nova', estado: 'comprado', numero_volume: 1 })
     expect(item.p_tag_ids).toEqual(['gerado-1']) // só o autor novo; a editora ficou na série
     expect(chamadas.some((c) => c.op === 'insert:tags' && (c.args[0] as { nome: string }).nome === 'Mignola')).toBe(false)
-    expect(baixarEPersistirCapa).toHaveBeenCalledWith(expect.anything(), USER, 'item-novo', 'https://books.google.com/x.jpg')
-    expect(chamadas.some((c) => c.op === 'update:itens' && (c.args[0] as { capa_origem: string }).capa_origem === 'api')).toBe(true)
+    expect(aplicarCapaDeApi).toHaveBeenCalledWith(expect.anything(), 'item-novo', 'https://books.google.com/x.jpg')
   })
 
   it('série existente: editora vai no item e nenhuma série é criada', async () => {

@@ -1,7 +1,5 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
 import type { TipoObra } from '@/lib/types'
 import type { TermoBusca } from '@/lib/capa-termo'
-import { novoCaminhoDeCapa } from '@/lib/supabase/capas'
 import { DOMINIOS_CAPA, HOSTS_CAPA_EXATOS } from '@/lib/capa-hosts'
 
 export type Provedor = 'google_books' | 'open_library' | 'anilist' | 'mangadex'
@@ -367,10 +365,10 @@ export function urlDeCapaPermitida(valor: string): URL | null {
   return ok ? url : null
 }
 
-const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
+const MIMES_DE_CAPA = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
 /** Baixa com limites: allowlist a cada salto de redirect, timeout, teto de bytes e MIME de imagem. */
-async function baixarImagemSegura(imageUrl: string): Promise<{ buffer: Uint8Array; mime: string } | null> {
+export async function baixarImagemSegura(imageUrl: string): Promise<{ buffer: Uint8Array; mime: string } | null> {
   let atual = urlDeCapaPermitida(imageUrl)
   if (!atual) return null
 
@@ -387,7 +385,7 @@ async function baixarImagemSegura(imageUrl: string): Promise<{ buffer: Uint8Arra
     if (!res.ok || !res.body) return null
 
     const mime = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
-    if (!EXT_POR_MIME[mime]) return null
+    if (!MIMES_DE_CAPA.has(mime)) return null
     const declarado = Number(res.headers.get('content-length') || 0)
     if (declarado > LIMITE_BYTES_CAPA) return null
 
@@ -413,26 +411,4 @@ async function baixarImagemSegura(imageUrl: string): Promise<{ buffer: Uint8Arra
     return { buffer, mime }
   }
   return null
-}
-
-/** Baixa uma imagem externa (host permitido) e persiste no bucket privado 'capas'. Retorna o path salvo (não a URL — bucket é privado). */
-export async function baixarEPersistirCapa(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: SupabaseClient<any>,
-  userId: string,
-  itemId: string,
-  imageUrl: string
-): Promise<string | null> {
-  try {
-    const baixada = await baixarImagemSegura(imageUrl)
-    if (!baixada) return null
-    const path = novoCaminhoDeCapa(userId, itemId, EXT_POR_MIME[baixada.mime])
-    const { error } = await supabase.storage
-      .from('capas')
-      .upload(path, baixada.buffer, { upsert: true, contentType: baixada.mime })
-    if (error) return null
-    return path
-  } catch {
-    return null
-  }
 }

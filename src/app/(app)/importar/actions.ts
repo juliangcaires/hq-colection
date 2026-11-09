@@ -13,8 +13,8 @@ import {
   normalizarTipo,
   type LinhaCsv,
 } from '@/lib/csv-importacao'
+import { aplicarCapaDeApi } from '@/lib/capa-catalogo'
 import {
-  baixarEPersistirCapa,
   buscarCapaPorIsbn,
   buscarCapaPorMemoria,
   type MemoriaSerie,
@@ -288,9 +288,7 @@ async function importarCsvImpl(rowsBrutas: unknown[], primeiraLinha: number): Pr
       if (row.isbn?.trim()) {
         const resultado = await buscarCapaPorIsbn(row.isbn.trim())
         if (resultado) {
-          const path = await baixarEPersistirCapa(supabase, user.id, item.id, resultado.url)
-          if (path) {
-            await supabase.from('itens').update({ capa_url: path, capa_origem: 'api' }).eq('id', item.id)
+          if (await aplicarCapaDeApi(supabase, item.id, resultado.url)) {
             resumo.capasAplicadas++
             capaAplicada = true
             if (serieId) {
@@ -317,11 +315,7 @@ async function importarCsvImpl(rowsBrutas: unknown[], primeiraLinha: number): Pr
         const memoria = await obterMemoriaSerie(serieId)
         const candidato = await buscarCapaPorMemoria(memoria, numeroVolume)
         if (candidato) {
-          const path = await baixarEPersistirCapa(supabase, user.id, item.id, candidato.url)
-          if (path) {
-            await supabase.from('itens').update({ capa_url: path, capa_origem: 'api' }).eq('id', item.id)
-            resumo.capasAplicadas++
-          }
+          if (await aplicarCapaDeApi(supabase, item.id, candidato.url)) resumo.capasAplicadas++
         }
       }
     } catch (e) {
