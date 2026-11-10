@@ -232,6 +232,34 @@ export async function marcarLidoEmLote(itemIds: string[], avaliacao?: AvaliacaoL
   return executar(() => marcarLidoEmLoteImpl(itemIds, avaliacao))
 }
 
+/**
+ * Volta itens lidos para "comprado" (marcou lido por engano). Nota e crítica ficam guardadas no item;
+ * só a data de leitura é limpa (trigger `trg_itens_lido_em`).
+ */
+async function desmarcarLidoEmLoteImpl(itemIds: string[]) {
+  const ids = idsEmLoteSchema.parse(itemIds)
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('itens')
+    .update({ estado: 'comprado' })
+    .in('id', ids)
+    .eq('estado', 'lido')
+    .select('id')
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) throw new ErroDeNegocio('Só itens lidos podem voltar para comprado.')
+
+  revalidateListagens()
+  revalidatePath('/series')
+  revalidatePath('/ranking')
+  for (const id of ids) revalidatePath(`/item/${id}`)
+  return data.length
+}
+
+export async function desmarcarLidoEmLote(itemIds: string[]) {
+  return executar(() => desmarcarLidoEmLoteImpl(itemIds))
+}
+
 export type ModoAvaliacaoSerie =
   /** Só a série: nota e crítica gerais, volumes sem nota nova. */
   | 'serie'

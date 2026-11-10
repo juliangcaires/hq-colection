@@ -8,7 +8,7 @@ import { Check } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ItemCard } from '@/components/itens/item-card'
 import { removerItensDaSerie } from '@/app/(app)/series/actions'
-import { marcarLidoEmLote } from '@/app/(app)/itens/actions'
+import { desmarcarLidoEmLote, marcarLidoEmLote } from '@/app/(app)/itens/actions'
 import { MarcarLidoDialog } from '@/components/itens/marcar-lido-dialog'
 import { AdquirirDialog } from '@/components/itens/adquirir-button'
 import type { ItemComRelacoes } from '@/lib/types'
@@ -78,6 +78,7 @@ export function VolumesGrid({
 
   const estadosMarcados = itens.filter((i) => selecionados.has(i.id)).map((i) => i.estado)
   const todosDesejo = estadosMarcados.length > 0 && estadosMarcados.every((e) => e === 'desejo')
+  const todosLidos = estadosMarcados.length > 0 && estadosMarcados.every((e) => e === 'lido')
   const todosComprados = estadosMarcados.length > 0 && estadosMarcados.every((e) => e === 'comprado')
 
   function handleMarcarLido() {
@@ -94,6 +95,19 @@ export function VolumesGrid({
         router.refresh()
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao marcar como lido')
+      }
+    })
+  }
+
+  function handleDesmarcarLido() {
+    startTransition(async () => {
+      try {
+        const n = desembrulhar(await desmarcarLidoEmLote(Array.from(selecionados)))
+        toast.success(`${n} volume(s) voltaram para comprado`)
+        sairDaSelecao()
+        router.refresh()
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Erro ao remover como lido')
       }
     })
   }
@@ -141,6 +155,15 @@ export function VolumesGrid({
             onClick={handleMarcarLido}
           >
             Marcar como lido
+          </Button>
+          <Button
+            variant="outline"
+            className="h-11"
+            disabled={!todosLidos || isPending}
+            title={selecionados.size > 0 && !todosLidos ? 'Só para volumes que estão como lido' : undefined}
+            onClick={handleDesmarcarLido}
+          >
+            Remover como lido
           </Button>
           <Button
             variant="destructive"

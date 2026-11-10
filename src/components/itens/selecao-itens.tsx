@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { MarcarLidoDialog } from '@/components/itens/marcar-lido-dialog'
 import { AdquirirDialog } from '@/components/itens/adquirir-button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { marcarLidoEmLote, removerItensEmLote } from '@/app/(app)/itens/actions'
+import { desmarcarLidoEmLote, marcarLidoEmLote, removerItensEmLote } from '@/app/(app)/itens/actions'
 import { desembrulhar } from '@/lib/resultado'
 import type { EstadoItem } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -52,6 +52,7 @@ export function SelecaoItens({ itens, children }: { itens: ItemSelecionavel[]; c
 
   const todosMarcados = itens.length > 0 && selecionados.size === itens.length
   const podeMarcarLido = selecionados.size > 0 && Array.from(selecionados.values()).every((e) => e === 'comprado')
+  const podeDesmarcarLido = selecionados.size > 0 && Array.from(selecionados.values()).every((e) => e === 'lido')
   const podeComprar = selecionados.size > 0 && Array.from(selecionados.values()).every((e) => e === 'desejo')
   const ids = Array.from(selecionados.keys())
 
@@ -69,6 +70,19 @@ export function SelecaoItens({ itens, children }: { itens: ItemSelecionavel[]; c
         router.refresh()
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao marcar como lido')
+      }
+    })
+  }
+
+  function desmarcarLido() {
+    startTransition(async () => {
+      try {
+        const n = desembrulhar(await desmarcarLidoEmLote(ids))
+        toast.success(`${n} ${n === 1 ? 'item voltou' : 'itens voltaram'} para comprado`)
+        sair()
+        router.refresh()
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Erro ao remover como lido')
       }
     })
   }
@@ -128,6 +142,19 @@ export function SelecaoItens({ itens, children }: { itens: ItemSelecionavel[]; c
                 onClick={marcarLido}
               >
                 Marcar como lido
+              </Button>
+              <Button
+                variant="outline"
+                className="h-11"
+                disabled={!podeDesmarcarLido || isPending}
+                title={
+                  selecionados.size > 0 && !podeDesmarcarLido
+                    ? 'Só dá para remover como lido quando todos os selecionados estão lidos'
+                    : undefined
+                }
+                onClick={desmarcarLido}
+              >
+                Remover como lido
               </Button>
               <Button
                 variant="destructive"
