@@ -50,7 +50,7 @@ export function VarianteDoItem({
 
   if (principal) {
     return (
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface-2/60 p-3 text-sm">
+      <div className="flex w-full basis-full flex-wrap items-center gap-3 rounded-xl border border-border bg-surface-2/60 p-3 text-sm">
         <Layers className="size-5 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
           <p>
@@ -70,7 +70,7 @@ export function VarianteDoItem({
 
   if (variantes.length > 0) {
     return (
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface-2/60 p-3 text-sm">
+      <div className="flex w-full basis-full flex-wrap items-center gap-3 rounded-xl border border-border bg-surface-2/60 p-3 text-sm">
         <Layers className="size-5 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
           <p>
@@ -90,37 +90,34 @@ export function VarianteDoItem({
     )
   }
 
-  if (!aberto) {
-    return (
-      <div>
-        <Button variant="outline" className="h-10 gap-2" onClick={() => setAberto(true)}>
-          <Layers className="size-4" aria-hidden />É variante de…
-        </Button>
-      </div>
-    )
-  }
-
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-2/60 p-3">
-      <p className="text-sm font-medium">É variante de…</p>
-      <VariantePicker valor={escolhido} onChange={setEscolhido} excluirId={itemId} sugestoes={sugestoes} disabled={isPending} />
-      <p className="text-xs text-muted-foreground">{AVISO} Se o volume normal já foi lido ou avaliado, este assume o mesmo.</p>
-      <div className="flex gap-2">
-        <Button className="h-10" disabled={!escolhido || isPending} onClick={() => escolhido && aplicar(escolhido.id, 'Vinculado como variante')}>
-          Vincular
-        </Button>
-        <Button
-          variant="outline"
-          className="h-10"
-          disabled={isPending}
-          onClick={() => {
-            setAberto(false)
-            setEscolhido(null)
-          }}
-        >
-          Cancelar
-        </Button>
-      </div>
-    </div>
+    <>
+      <Button variant="outline" className="h-10 gap-2" aria-expanded={aberto} onClick={() => setAberto((a) => !a)}>
+        <Layers className="size-4" aria-hidden />É variante de…
+      </Button>
+      {aberto && (
+        <div className="order-last flex w-full basis-full flex-col gap-3 rounded-xl border border-border bg-surface-2/60 p-3">
+          <p className="text-sm font-medium">É variante de…</p>
+          <VariantePicker valor={escolhido} onChange={setEscolhido} excluirId={itemId} sugestoes={sugestoes} disabled={isPending} />
+          <p className="text-xs text-muted-foreground">{AVISO} Se o volume normal já foi lido ou avaliado, este assume o mesmo.</p>
+          <div className="flex gap-2">
+            <Button className="h-10" disabled={!escolhido || isPending} onClick={() => escolhido && aplicar(escolhido.id, 'Vinculado como variante')}>
+              Vincular
+            </Button>
+            <Button
+              variant="outline"
+              className="h-10"
+              disabled={isPending}
+              onClick={() => {
+                setAberto(false)
+                setEscolhido(null)
+              }}
+            >
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

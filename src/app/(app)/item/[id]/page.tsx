@@ -86,6 +86,8 @@ export default async function ItemPage({
   return (
     <div className="mx-auto flex max-w-[1120px] flex-col gap-4">
       <ScrollRestore />
+      {/* Botões de ação na mesma linha; painéis abertos (order-last) vão para baixo da linha. */}
+      <div className="flex flex-wrap items-start gap-3">
       {item.estado !== 'desejo' && <EmprestimoDoItem itemId={item.id} titulo={item.titulo} aberto={emprestimo} hoje={hojeIso(FUSO_DO_APP)} />}
       <VarianteDoItem
         key={JSON.stringify([item.id, item.variante_de, (variantesRows ?? []).length])}
@@ -94,8 +96,9 @@ export default async function ItemPage({
         variantes={(variantesRows ?? []).map((r) => ligado(r as never))}
         sugestoes={sugestoes}
       />
-      <AmigosDaObra avaliacoes={amigos} rotulo="volume" />
       {chaveRow?.obra_chave && item.estado !== 'desejo' && <VinculoDeObra itemId={item.id} obraChave={chaveRow.obra_chave} vinculos={vinculos} />}
+      </div>
+      <AmigosDaObra avaliacoes={amigos} rotulo="volume" />
       {/* key: depois de salvar (ou de adquirir / marcar como lido) o formulário recomeça dos valores do banco, sem
           remontar quando só a capa muda (busca/upload de capa não pode apagar edição em andamento). */}
       <ItemForm

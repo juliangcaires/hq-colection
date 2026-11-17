@@ -75,31 +75,30 @@ export function VinculoDeObra({
   }
 
   return (
-    <section aria-label="Vínculo com obra de amigo" className="flex flex-col gap-2 rounded-xl border border-border bg-surface-2/60 p-3 text-sm">
+    <>
       {vinculos.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {vinculos.map((v) => (
-            <li key={v.obraChave} className="flex flex-wrap items-center gap-3">
-              <Link2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-              <p className="min-w-0 flex-1">
-                <span className="font-medium">Mesma obra que </span>
-                {v.disponivel ? rotuloObraDeAmigo(v) : 'um item de amigo que não está mais disponível'}
-              </p>
-              <Button variant="outline" className="h-10" disabled={pendente} onClick={() => desfazer(v.obraChave)}>
-                Desfazer
-              </Button>
-            </li>
-          ))}
-        </ul>
+        <section aria-label="Vínculo com obra de amigo" className="w-full basis-full rounded-xl border border-border bg-surface-2/60 p-3 text-sm">
+          <ul className="flex flex-col gap-2">
+            {vinculos.map((v) => (
+              <li key={v.obraChave} className="flex flex-wrap items-center gap-3">
+                <Link2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <p className="min-w-0 flex-1">
+                  <span className="font-medium">Mesma obra que </span>
+                  {v.disponivel ? rotuloObraDeAmigo(v) : 'um item de amigo que não está mais disponível'}
+                </p>
+                <Button variant="outline" className="h-10" disabled={pendente} onClick={() => desfazer(v.obraChave)}>
+                  Desfazer
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
-      {!aberto ? (
-        <div>
-          <Button variant="outline" className="h-10 gap-2" onClick={() => setAberto(true)}>
-            <Link2 className="size-4" aria-hidden />É a mesma obra que…
-          </Button>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
+      <Button variant="outline" className="h-10 gap-2" aria-expanded={aberto} onClick={() => (aberto ? fechar() : setAberto(true))}>
+        <Link2 className="size-4" aria-hidden />É a mesma obra que…
+      </Button>
+      {aberto && (
+        <section aria-label="Buscar obra de amigo" className="order-last flex w-full basis-full flex-col gap-3 rounded-xl border border-border bg-surface-2/60 p-3 text-sm">
           <p className="font-medium">É a mesma obra que… (um volume de um amigo)</p>
           <form
             className="flex gap-2"
@@ -139,8 +138,8 @@ export function VinculoDeObra({
               Cancelar
             </Button>
           </div>
-        </div>
+        </section>
       )}
-    </section>
+    </>
   )
 }

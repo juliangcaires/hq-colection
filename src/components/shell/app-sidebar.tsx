@@ -48,26 +48,28 @@ export function AppSidebar({ conta, signOut }: { conta: ContaDoUsuario; signOut:
   const { abrir } = useQuickAdd()
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-[232px] shrink-0 flex-col gap-5 border-r border-border bg-card px-4 py-6 lg:flex">
-      <Link href="/" className="px-2 font-heading text-[22px] font-extrabold tracking-tight text-foreground">
+    <aside className="sticky top-0 hidden h-dvh w-[232px] shrink-0 flex-col gap-4 border-r border-border bg-card px-4 py-5 lg:flex">
+      <Link href="/" className="shrink-0 px-2 font-heading text-[22px] font-extrabold tracking-tight text-foreground">
         Minha Coleção
       </Link>
-      <Button onClick={abrir} className="h-11 w-full gap-2">
+      <Button onClick={abrir} className="h-11 w-full shrink-0 gap-2">
         <Plus className="size-4" aria-hidden />
         Adicionar item
       </Button>
-      <nav aria-label="Navegação principal" className="flex flex-col gap-1">
-        {PRINCIPAL.map((l) => (
-          <Item key={l.href} {...l} pathname={pathname} />
-        ))}
-      </nav>
-      <div role="separator" className="h-px bg-border" />
-      <nav aria-label="Mais" className="flex flex-col gap-1">
-        {SECUNDARIA.map((l) => (
-          <Item key={l.href} {...l} pathname={pathname} />
-        ))}
-      </nav>
-      <div className="mt-auto flex items-center gap-3">
+      <div className="-mx-2 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2">
+        <nav aria-label="Navegação principal" className="flex flex-col gap-1">
+          {PRINCIPAL.map((l) => (
+            <Item key={l.href} {...l} pathname={pathname} />
+          ))}
+        </nav>
+        <div role="separator" className="h-px shrink-0 bg-border" />
+        <nav aria-label="Mais" className="flex flex-col gap-1">
+          {SECUNDARIA.map((l) => (
+            <Item key={l.href} {...l} pathname={pathname} />
+          ))}
+        </nav>
+      </div>
+      <div className="flex shrink-0 items-center gap-3 border-t border-border pt-3">
         <Avatar apelido={conta.apelido ?? conta.email} nome={conta.nome} url={conta.avatarUrl} size={40} />
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-xs text-muted-foreground">{conta.email}</span>
