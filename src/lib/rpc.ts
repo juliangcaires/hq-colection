@@ -26,6 +26,9 @@ export function lancarErroRpc(error: { message: string }): never {
   if (m === 'variante_de_variante') throw new ErroDeNegocio('Esse volume já é uma variante de outro. Escolha o volume normal.')
   if (m === 'variante_com_variantes') throw new ErroDeNegocio('Este volume já tem variantes; não pode ser variante de outro.')
   if (m.includes('itens_variante_nao_propria')) throw new ErroDeNegocio('Um volume não pode ser variante dele mesmo.')
+  if (m === 'comentario_vazio') throw new ErroDeNegocio('Escreva alguma coisa para comentar.')
+  if (m === 'comentario_longo') throw new ErroDeNegocio('O comentário passa de 500 caracteres.')
+  if (m === 'comentario_nao_encontrado') throw new ErroDeNegocio('Comentário não encontrado.')
   if (m === 'critica_longa') throw new ErroDeNegocio('A crítica passa de 2000 caracteres.')
   if (m.startsWith('volumes_repetidos:')) {
     const numeros = m

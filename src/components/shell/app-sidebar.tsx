@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { FileUp, Heart, House, Layers, LayoutGrid, Plus, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
+import { FileUp, Heart, House, Newspaper, Layers, LayoutGrid, Plus, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { estaAtivo } from '@/lib/nav'
 import { Avatar } from '@/components/ui/avatar'
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 
 const PRINCIPAL = [
   { href: '/', label: 'Início', Icon: House },
+  { href: '/feed', label: 'Feed', Icon: Newspaper },
   { href: '/colecao', label: 'Coleção', Icon: LayoutGrid },
   { href: '/series', label: 'Séries', Icon: Layers },
   { href: '/desejos', label: 'Desejos', Icon: Heart },

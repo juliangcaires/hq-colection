@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Heart, House, Layers, LayoutGrid, Plus } from 'lucide-react'
+import { Heart, House, Layers, LayoutGrid, Newspaper, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { estaAtivo } from '@/lib/nav'
 import { useQuickAdd } from '@/components/quick-add/quick-add-provider'
 
 const ESQUERDA = [
   { href: '/', label: 'Início', Icon: House },
+  { href: '/feed', label: 'Feed', Icon: Newspaper },
   { href: '/colecao', label: 'Coleção', Icon: LayoutGrid },
 ]
 const DIREITA = [
@@ -42,7 +43,7 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Navegação principal"
-      className="fixed inset-x-0 bottom-0 z-40 grid h-[calc(var(--nav-h)+env(safe-area-inset-bottom))] grid-cols-5 items-center border-t border-border bg-card/90 px-2 pt-1.5 pb-[calc(1.375rem+env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 grid h-[calc(var(--nav-h)+env(safe-area-inset-bottom))] grid-cols-6 items-center border-t border-border bg-card/90 px-2 pt-1.5 pb-[calc(1.375rem+env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden"
     >
       {ESQUERDA.map((l) => (
         <Aba key={l.href} {...l} pathname={pathname} />
