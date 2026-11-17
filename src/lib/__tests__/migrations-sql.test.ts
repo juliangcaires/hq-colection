@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -1380,6 +1380,129 @@ describe('feed de amigos (migration 0018)', () => {
     expect(sql).toMatch(/revoke all on feed_curtidas from public, anon, authenticated/)
     expect(sql).toMatch(/revoke all on feed_comentarios from public, anon, authenticated/)
     for (const f of ['feed_listar(int, timestamptz)', 'feed_curtir(uuid)', 'feed_comentar(uuid, text)', 'feed_resumo_semana()']) {
+      expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
+      expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
+    }
+  })
+})
+
+describe('notas entre amigos (migration 0019)', () => {
+  // Dono (Ana, U), amigo (Beto), desconhecido (Caio), ex-amigo (Dora).
+  const CAIO = '88888888-8888-8888-8888-888888888888'
+  const DORA = '77777777-7777-7777-7777-777777777777'
+  const CHAVE = 'berserk|3|manga'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const salvar = async (extra: object) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'Berserk 3', tipo: 'manga', estado: 'lido', prioridade: 0, obra_chave: CHAVE, ...extra })])).rows[0].id
+  const obra = async (chave = CHAVE) => (await db.query<Record<string, unknown>>(`select * from obra_amigos($1)`, [chave])).rows
+  const serie = async (chave = 'berserk|manga') => (await db.query<Record<string, unknown>>(`select * from serie_amigos($1)`, [chave])).rows
+
+  let amizadeDora = ''
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}'), ('${DORA}') on conflict do nothing;
+      delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos) values
+        ('${U}', 'ana', '{notas_criticas,lidos}'), ('${OUTRO}', 'beto', '{notas_criticas,lidos}'),
+        ('${CAIO}', 'caio', '{notas_criticas,lidos}'), ('${DORA}', 'dora', '{notas_criticas,lidos}');
+    `)
+    const sol = async (apelido: string) => (await db.query<{ id: string }>(`select amizade_solicitar($1) id`, [apelido])).rows[0].id
+    const idBeto = await como(OUTRO, () => sol('ana'))
+    await db.query(`select amizade_responder($1, true)`, [idBeto])
+    amizadeDora = await como(DORA, () => sol('ana'))
+    await db.query(`select amizade_responder($1, true)`, [amizadeDora])
+    // Beto, Caio e Dora leram e avaliaram a mesma obra.
+    for (const uid of [OUTRO, CAIO, DORA]) {
+      await como(uid, () => salvar({ nota: uid === OUTRO ? 4.5 : 2, critica: `crítica de ${uid.slice(0, 2)}` }))
+    }
+  })
+
+  it('amigo vê; desconhecido (Caio) não vê ninguém', async () => {
+    const r = await obra()
+    expect(r.map((x) => x.apelido).sort()).toEqual(['beto', 'dora'])
+    await como(CAIO, async () => expect(await obra()).toEqual([])) // Caio não tem amigos
+  })
+
+  it('ex-amigo some na hora', async () => {
+    await admin(`delete from amizades where id = '${amizadeDora}'`)
+    expect((await obra()).map((x) => x.apelido)).toEqual(['beto'])
+    await como(DORA, async () => expect(await obra()).toEqual([]))
+  })
+
+  it('crítica privada nunca sai; escopo sem notas_criticas tira tudo', async () => {
+    await admin(`update itens set critica_privada = true where user_id = '${OUTRO}'`)
+    const [r] = await obra()
+    expect(Number(r.nota)).toBe(4.5)
+    expect(r.critica).toBeNull()
+    await admin(`update perfis set escopo_amigos = '{lidos}' where user_id = '${OUTRO}'`)
+    expect(await obra()).toEqual([])
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos}' where user_id = '${OUTRO}'; update itens set critica_privada = false where user_id = '${OUTRO}'`)
+  })
+
+  it('variante não duplica; chave diferente não casa; só lido', async () => {
+    const principal = await como(OUTRO, async () => (await db.query<{ id: string }>(`select id from itens where obra_chave = $1`, [CHAVE])).rows[0].id)
+    await como(OUTRO, () => salvar({ titulo: 'Berserk 3 capa alternativa', nota: 4.5, variante_de: principal }))
+    expect(await obra()).toHaveLength(1)
+    expect(await obra('berserk|4|manga')).toEqual([])
+    expect(await obra('')).toEqual([])
+    // Volta a ser só "comprado": sai da lista.
+    await admin(`update itens set variante_de = null, estado = 'comprado' where user_id = '${OUTRO}'`)
+    expect(await obra()).toEqual([])
+    await admin(`delete from itens where user_id = '${OUTRO}'`)
+  })
+
+  it('curtir/comentar só onde o item aparece no feed; casou_por usa o ISBN', async () => {
+    const id = await como(OUTRO, () => salvar({ nota: 5, isbn: '9781506711980' }))
+    const [sem] = await obra()
+    expect(sem.interagivel).toBe(false)
+    expect(sem.casou_por).toBe('nome')
+    await como(OUTRO, () => db.query(`select feed_configurar(true)`))
+    // item já nasceu lido com o feed desligado, mas lido_marcado_em é preenchido sempre
+    const [com] = (await db.query<Record<string, unknown>>(`select * from obra_amigos($1, '9781506711980')`, [CHAVE])).rows
+    expect(com.item_id).toBe(id)
+    expect(com.interagivel).toBe(true)
+    expect(com.casou_por).toBe('isbn')
+    await db.query(`select feed_curtir($1)`, [id])
+    expect(Number((await obra())[0].curtidas)).toBe(1)
+  })
+
+  it('série: nota própria ou média dos volumes; crítica privada fora; desconhecido não vê', async () => {
+    await admin(`
+      insert into series(id, user_id, nome, tipo, serie_chave, nota, critica) values
+        ('aaaaaaaa-0000-0000-0000-000000000001', '${OUTRO}', 'Berserk', 'manga', 'berserk|manga', null, 'Série ótima');
+      insert into itens(user_id, serie_id, titulo, tipo, estado, nota) values
+        ('${OUTRO}', 'aaaaaaaa-0000-0000-0000-000000000001', 'v1', 'manga', 'lido', 4),
+        ('${OUTRO}', 'aaaaaaaa-0000-0000-0000-000000000001', 'v2', 'manga', 'lido', 5);
+    `)
+    const [r] = await serie()
+    expect(Number(r.nota)).toBe(4.5)
+    expect(r.critica).toBe('Série ótima')
+    await admin(`update series set critica_privada = true, nota = 3 where user_id = '${OUTRO}'`)
+    const [p] = await serie()
+    expect(Number(p.nota)).toBe(3)
+    expect(p.critica).toBeNull()
+    await como(CAIO, async () => expect(await serie()).toEqual([]))
+  })
+
+  it('migration: funções exigem login e a camada interna fica fechada', () => {
+    const sql = readFileSync(path.join(PASTA, '0019_notas_entre_amigos.sql'), 'utf8')
+    expect(sql).toMatch(/revoke all on all functions in schema privado/)
+    for (const f of ['obra_amigos(text, text)', 'serie_amigos(text)']) {
       expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
       expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
     }
