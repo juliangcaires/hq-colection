@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -1015,5 +1015,57 @@ describe('amigos, presentes e empréstimos (migration 0014)', () => {
     }
     expect(sql).toMatch(/revoke all on presentes from public, anon, authenticated;/)
     expect(sql).toMatch(/revoke all on all functions in schema privado from public, anon, authenticated;/)
+  })
+})
+
+describe('foto de perfil (migration 0016)', () => {
+  const ARQ = 'b'.repeat(32)
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+
+  it('bucket avatares é público, limitado a imagens e a 300 KB', async () => {
+    await db.query(`reset role`)
+    const { rows } = await db.query<{ public: boolean; file_size_limit: string; allowed_mime_types: string[] }>(`select public, file_size_limit, allowed_mime_types from storage.buckets where id = 'avatares'`)
+    await db.query(`set role authenticated`)
+    expect(rows[0].public).toBe(true)
+    expect(Number(rows[0].file_size_limit)).toBe(307200)
+    expect(rows[0].allowed_mime_types).toEqual(['image/jpeg', 'image/png', 'image/webp'])
+  })
+
+  it('policies: cada um escreve só na própria pasta; ninguém altera nem apaga o arquivo do outro', async () => {
+    await db.query(`reset role`)
+    await db.exec(`alter table storage.objects enable row level security; grant usage on schema storage to authenticated; grant all on storage.objects to authenticated; set role authenticated;`)
+    const meu = `${U}/${ARQ}.webp`
+    const dele = `${OUTRO}/${ARQ}.webp`
+    await db.query(`insert into storage.objects(bucket_id, name) values ('avatares', $1)`, [meu])
+    // não grava na pasta alheia, nem com nome fora do padrão na própria
+    await expect(db.query(`insert into storage.objects(bucket_id, name) values ('avatares', $1)`, [dele])).rejects.toThrow()
+    await expect(db.query(`insert into storage.objects(bucket_id, name) values ('avatares', $1)`, [`${U}/foto.gif`])).rejects.toThrow()
+    await como(OUTRO, async () => {
+      await db.query(`insert into storage.objects(bucket_id, name) values ('avatares', $1)`, [dele])
+      // o outro não vê, não sobrescreve e não apaga o meu
+      expect((await db.query(`select 1 from storage.objects where name = $1`, [meu])).rows).toHaveLength(0)
+      const up = await db.query(`update storage.objects set name = $2 where name = $1 returning 1`, [meu, `${U}/${'c'.repeat(32)}.webp`])
+      expect(up.rows).toHaveLength(0)
+      const del = await db.query(`delete from storage.objects where name = $1 returning 1`, [meu])
+      expect(del.rows).toHaveLength(0)
+      // nem move o próprio arquivo para a minha pasta
+      await expect(db.query(`update storage.objects set name = $2 where name = $1`, [dele, `${U}/${'d'.repeat(32)}.webp`])).rejects.toThrow()
+    })
+    expect((await db.query(`select 1 from storage.objects where name = $1`, [meu])).rows).toHaveLength(1)
+    expect((await db.query(`delete from storage.objects where name = $1 returning 1`, [meu])).rows).toHaveLength(1)
+  })
+
+  it('amigos_listar e o resumo trazem avatar_url', async () => {
+    const cols = (await db.query<{ column_name: string }>(`select column_name from information_schema.columns where table_name = 'perfis'`)).rows.map((r) => r.column_name)
+    expect(cols).toContain('avatar_url')
+    const r = await db.query(`select * from amigos_listar()`)
+    expect(r.fields.map((f) => f.name)).toContain('avatar_url')
   })
 })

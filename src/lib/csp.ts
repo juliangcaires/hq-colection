@@ -1,4 +1,5 @@
 import { FONTES_IMG_CAPA } from '@/lib/capa-hosts'
+import { prefixoPublicoDeAvatares } from '@/lib/avatar'
 
 /**
  * Fonte de `img-src` para as capas do catálogo público: só o prefixo do bucket `capas-publicas` no Supabase
@@ -23,13 +24,14 @@ export function fonteImgCapasPublicas(supabaseUrl: string | undefined): string |
  */
 export function politicaDeSeguranca(nonce: string, { dev, supabaseUrl }: { dev: boolean; supabaseUrl?: string }): string {
   const capasPublicas = fonteImgCapasPublicas(supabaseUrl)
+  const avatares = prefixoPublicoDeAvatares(supabaseUrl)
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}`,
     "style-src 'self' 'unsafe-inline'",
     // Hosts de capa: a grade de candidatos da busca automática carrega as imagens direto da fonte,
     // e as capas do catálogo compartilhado vêm do bucket público.
-    `img-src 'self' blob: data: ${[...FONTES_IMG_CAPA, ...(capasPublicas ? [capasPublicas] : [])].join(' ')}`,
+    `img-src 'self' blob: data: ${[...FONTES_IMG_CAPA, ...(capasPublicas ? [capasPublicas] : []), ...(avatares ? [avatares] : [])].join(' ')}`,
     "font-src 'self'",
     "connect-src 'self'",
     "object-src 'none'",
