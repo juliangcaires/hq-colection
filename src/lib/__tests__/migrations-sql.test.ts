@@ -29,7 +29,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -1782,4 +1782,255 @@ describe('chave da obra sem sufixo de edição (migration 0022)', () => {
     expect(await chaves()).toEqual(esperado)
     await d.close()
   }, 60_000)
+})
+
+describe('ranking dos amigos (migration 0023)', () => {
+  // Ana (U) é a visitante. Amigos com escopo de notas: Beto, Carla, Edu, Fabi. Gui é amigo SEM `notas_criticas`,
+  // Dora é ex-amiga e Caio nunca foi amigo: nenhum dos três pode aparecer nem pesar na média.
+  const ID = (n: number) => `${String(n).repeat(8)}-${String(n).repeat(4)}-${String(n).repeat(4)}-${String(n).repeat(4)}-${String(n).repeat(12)}`
+  const BETO = OUTRO
+  const CARLA = ID(2)
+  const EDU = ID(3)
+  const FABI = ID(4)
+  const GUI = ID(5)
+  const DORA = ID(6)
+  const CAIO = ID(7)
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const salvar = async (extra: object) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'x', tipo: 'hq', estado: 'lido', prioridade: 0, ...extra })])).rows[0].id
+  type Linha = Record<string, unknown>
+  const rank = async (args: { tipo?: string | null; desde?: string | null; ate?: string | null; ordem?: string; soNaoLidos?: boolean; limite?: number; offset?: number } = {}) =>
+    (await db.query<Linha>(`select * from ranking_amigos($1, $2, $3, $4, $5, $6, $7)`, [args.tipo ?? null, args.desde ?? null, args.ate ?? null, args.ordem ?? 'nota', args.soNaoLidos ?? false, args.limite ?? 30, args.offset ?? 0])).rows
+  const titulos = (linhas: Linha[]) => linhas.map((l) => l.titulo)
+  const erro = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+      return null
+    } catch (e) {
+      return (e as Error).message
+    }
+  }
+  const ISBN_A = '978-1-5067-1198-0'
+  const ISBN_B = '9781506711980'
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CARLA}'), ('${EDU}'), ('${FABI}'), ('${GUI}'), ('${DORA}'), ('${CAIO}') on conflict do nothing;
+      delete from obra_equivalencias; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos) values
+        ('${U}', 'ana', '{notas_criticas,lidos,colecao}'), ('${BETO}', 'beto', '{notas_criticas,lidos,colecao}'),
+        ('${CARLA}', 'carla', '{notas_criticas,lidos,colecao}'), ('${EDU}', 'edu', '{notas_criticas,lidos,colecao}'),
+        ('${FABI}', 'fabi', '{notas_criticas,lidos,colecao}'), ('${GUI}', 'gui', '{lidos,colecao}'),
+        ('${DORA}', 'dora', '{notas_criticas,lidos,colecao}'), ('${CAIO}', 'caio', '{notas_criticas,lidos,colecao}');
+    `)
+    const amizades: string[] = []
+    for (const uid of [BETO, CARLA, EDU, FABI, GUI, DORA]) {
+      const id = await como(uid, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id)
+      await db.query(`select amizade_responder($1, true)`, [id])
+      amizades.push(id)
+    }
+    // Notas visíveis: 10, soma 35 -> C = 3,5 (o exemplo do estudo: n=1 5★ -> 4,25; n=4 média 4,75 -> 4,50).
+    const obra = (titulo: string, chave: string, nota: number, lido_em: string, extra: object = {}) => ({ titulo, obra_chave: chave, nota, lido_em, ...extra })
+    await como(BETO, async () => {
+      await salvar(obra('Obra X', 'obra x|1|hq', 5, '2026-02-10'))
+      const y = await salvar(obra('Obra Y', 'obra y|1|hq', 5, '2025-06-01', { critica: 'ótima', critica_privada: true }))
+      await salvar(obra('Obra Y capa alternativa', 'obra y|1|hq', 5, '2025-06-01', { variante_de: y }))
+      await salvar(obra('Obra Z', 'obra z|1|hq', 2, '2025-12-01'))
+    })
+    await como(CARLA, async () => {
+      await salvar(obra('Obra Y', 'obra y|1|hq', 5, '2025-06-02'))
+      await salvar(obra('Obra W', 'obra w|1|manga', 1, '2026-03-01', { tipo: 'manga' }))
+      await salvar(obra('Batman Absolute 1', 'batman absolute|1|hq', 3, '2024-01-10', { isbn: ISBN_A }))
+    })
+    await como(EDU, async () => {
+      await salvar(obra('Obra Y', 'obra y|1|hq', 5, '2025-06-03'))
+      await salvar(obra('Obra V', 'obra v|1|hq', 1, '2026-05-01'))
+      await salvar(obra('Absolute Batman 1', 'absolute batman|1|hq', 4, '2024-01-20', { isbn: ISBN_B }))
+    })
+    await como(FABI, () => salvar(obra('Obra Y', 'obra y|1|hq', 4, '2025-06-04')))
+    // Quem não pode contar: sem escopo de notas (Gui), ex-amiga (Dora) e desconhecido (Caio).
+    await como(GUI, () => salvar(obra('Obra X', 'obra x|1|hq', 1, '2026-02-11')))
+    await como(DORA, () => salvar(obra('Obra X', 'obra x|1|hq', 1, '2026-02-12')))
+    await como(CAIO, () => salvar(obra('Obra Y', 'obra y|1|hq', 1, '2025-06-05')))
+    await admin(`delete from amizades where id = '${amizades[5]}'`) // Dora vira ex-amiga
+    // Ana: leu Z (nota 4), só comprou Y, e leu o Batman por outro nome (mesmo ISBN).
+    await salvar(obra('Obra Z', 'obra z|1|hq', 4, '2026-01-05'))
+    await salvar({ titulo: 'Obra Y', obra_chave: 'obra y|1|hq', estado: 'comprado' })
+    await salvar(obra('Batman Absolute Omnibus', 'batman absolute omnibus|1|hq', 5, '2026-01-06', { isbn: ISBN_B }))
+  }, 60_000)
+
+  it('exemplo do estudo: 1 voto 5★ (4,25) fica atrás de 4 votos média 4,75 (4,50); só amigos aceitos com escopo contam', async () => {
+    const r = await rank()
+    expect(titulos(r)).toEqual(['Obra Y', 'Obra X', 'Absolute Batman 1', 'Obra Z', 'Obra V', 'Obra W'])
+    const y = r[0]
+    expect([Number(y.n), Number(y.soma), Number(y.media), Number(y.score)]).toEqual([4, 19, 4.75, 4.5])
+    const x = r[1]
+    expect([Number(x.n), Number(x.soma), Number(x.media), Number(x.score)]).toEqual([1, 5, 5, 4.25]) // Gui, Dora e Caio fora
+    expect(r.every((l) => Number(l.total) === 6)).toBe(true)
+  })
+
+  it('o escopo e a amizade valem na hora: dar escopo ao Gui o inclui (e muda C); desligar volta', async () => {
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos}' where user_id = '${GUI}'`)
+    const com = (await rank()).find((l) => l.titulo === 'Obra X')!
+    expect(Number(com.n)).toBe(2)
+    await admin(`update perfis set escopo_amigos = '{lidos,colecao}' where user_id = '${GUI}'`)
+    expect(Number((await rank()).find((l) => l.titulo === 'Obra X')!.n)).toBe(1)
+    await como(CAIO, async () => expect(await rank()).toEqual([])) // sem amigos, nada
+  })
+
+  it('o mesmo ISBN com chaves diferentes é uma linha só (raiz = menor chave); variante conta uma vez', async () => {
+    const bat = (await rank()).filter((l) => String(l.titulo).includes('Batman'))
+    expect(bat).toHaveLength(1)
+    expect(bat[0].obra_chave).toBe('absolute batman|1|hq')
+    expect(bat[0].isbn).toBe('9781506711980')
+    expect([Number(bat[0].n), Number(bat[0].media)]).toEqual([2, 3.5])
+    // a variante do Beto em Y não somou: Y tem os 4 amigos, não 5
+    expect(Number((await rank()).find((l) => l.titulo === 'Obra Y')!.n)).toBe(4)
+    // avatares: no máximo 3, com apelido
+    const avatares = (await rank())[0].avatares as { apelido: string }[]
+    expect(avatares).toHaveLength(3)
+    expect(avatares.every((a) => typeof a.apelido === 'string')).toBe(true)
+  })
+
+  it('sua nota fica fora da média e vem à parte; o ISBN também acha o seu item', async () => {
+    const r = await rank()
+    const z = r.find((l) => l.titulo === 'Obra Z')!
+    expect(Number(z.minha_nota)).toBe(4)
+    expect(Number(z.media)).toBe(2) // a sua nota não entra
+    expect(z.meu_item_id).not.toBeNull()
+    const bat = r.find((l) => l.titulo === 'Absolute Batman 1')!
+    expect(Number(bat.minha_nota)).toBe(5)
+    expect(Number(bat.media)).toBe(3.5)
+    const y = r.find((l) => l.titulo === 'Obra Y')!
+    expect(y.meu_item_id).not.toBeNull() // só comprou: tem o item, sem nota
+    expect(y.minha_nota).toBeNull()
+    expect(r.find((l) => l.titulo === 'Obra X')!.meu_item_id).toBeNull()
+  })
+
+  it('"só os que eu não li" tira o que você já leu, mantém o que você só comprou', async () => {
+    const r = await rank({ soNaoLidos: true })
+    expect(titulos(r)).toEqual(['Obra Y', 'Obra X', 'Obra V', 'Obra W'])
+    expect(Number(r[0].total)).toBe(4)
+  })
+
+  it('ordens: mais lidos, média simples e mais recentes; desempate por votos, média, leitura e título', async () => {
+    expect(titulos(await rank({ ordem: 'lidos' }))).toEqual(['Obra Y', 'Absolute Batman 1', 'Obra X', 'Obra Z', 'Obra V', 'Obra W'])
+    expect(titulos(await rank({ ordem: 'media' }))).toEqual(['Obra X', 'Obra Y', 'Absolute Batman 1', 'Obra Z', 'Obra V', 'Obra W'])
+    expect(titulos(await rank({ ordem: 'recentes' }))).toEqual(['Obra V', 'Obra W', 'Obra X', 'Obra Z', 'Obra Y', 'Absolute Batman 1'])
+    // V e W têm score, votos e média iguais: a leitura mais recente (V) vence; igualando as datas, o título decide
+    const nota = await rank()
+    expect(Number(nota[4].score)).toBe(Number(nota[5].score))
+    await admin(`update itens set lido_em = '2026-05-01' where titulo = 'Obra W'`)
+    expect(titulos(await rank()).slice(-2)).toEqual(['Obra V', 'Obra W'])
+    await admin(`update itens set lido_em = '2026-03-01' where titulo = 'Obra W' and user_id = '${CARLA}'`)
+  })
+
+  it('mais votos desempata scores iguais antes da média', async () => {
+    // BAT (n=2, score 3,5) vs. um item com n=1 e score 3,5: nota 3,5 de 1 voto também dá (3,5+3,5)/2 = 3,5
+    await como(FABI, () => salvar({ titulo: 'Obra T', obra_chave: 'obra t|1|hq', nota: 3.5, lido_em: '2026-06-01' }))
+    const r = await rank()
+    const posT = titulos(r).indexOf('Obra T')
+    expect(Number(r[posT].score)).toBe(Number(r[titulos(r).indexOf('Absolute Batman 1')].score))
+    expect(posT).toBeGreaterThan(titulos(r).indexOf('Absolute Batman 1')) // n=2 antes de n=1
+    await admin(`delete from itens where titulo = 'Obra T'`)
+  })
+
+  it('filtros: tipo e período (data de leitura do amigo)', async () => {
+    expect(titulos(await rank({ tipo: 'manga' }))).toEqual(['Obra W'])
+    expect(titulos(await rank({ tipo: 'hq' }))).not.toContain('Obra W')
+    expect(titulos(await rank({ desde: '2026-01-01', ate: '2026-12-31' }))).toEqual(['Obra X', 'Obra V', 'Obra W'])
+    const so2025 = await rank({ desde: '2025-01-01', ate: '2025-12-31' })
+    expect(titulos(so2025)).toEqual(['Obra Y', 'Obra Z'])
+    expect(Number(so2025[0].n)).toBe(4)
+    expect(await rank({ desde: '2030-01-01', ate: '2030-12-31' })).toEqual([])
+  })
+
+  it('crítica não existe na resposta; privada ou não, só a nota conta; sem escopo o amigo some', async () => {
+    const colunas = Object.keys((await rank())[0])
+    expect(colunas).not.toContain('critica')
+    expect(Number((await rank()).find((l) => l.titulo === 'Obra Y')!.n)).toBe(4) // a crítica de Beto em Y é privada
+    await admin(`update perfis set escopo_amigos = '{lidos}' where user_id = '${BETO}'`)
+    const sem = await rank()
+    expect(titulos(sem)).not.toContain('Obra X')
+    expect(Number(sem.find((l) => l.titulo === 'Obra Y')!.n)).toBe(3)
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos,colecao}' where user_id = '${BETO}'`)
+    expect(Number((await rank()).find((l) => l.titulo === 'Obra Y')!.n)).toBe(4)
+  })
+
+  it('sem a data de leitura visível (escopo sem "lidos") a nota só entra em "sempre"', async () => {
+    await admin(`update perfis set escopo_amigos = '{notas_criticas}' where user_id = '${FABI}'`)
+    expect(Number((await rank()).find((l) => l.titulo === 'Obra Y')!.n)).toBe(4)
+    expect(Number((await rank({ desde: '2025-01-01', ate: '2025-12-31' })).find((l) => l.titulo === 'Obra Y')!.n)).toBe(3)
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos,colecao}' where user_id = '${FABI}'`)
+  })
+
+  it('vínculo manual só vale na sua visão: acha o SEU item, sem juntar notas', async () => {
+    await salvar({ titulo: 'Outro nome', obra_chave: 'outro nome|9|hq', nota: 3, estado: 'lido', lido_em: '2026-02-02' })
+    await db.query(`select obra_equivalencia_criar('outro nome|9|hq', 'obra v|1|hq')`)
+    const v = (await rank()).find((l) => l.titulo === 'Obra V')!
+    expect(Number(v.minha_nota)).toBe(3)
+    expect(Number(v.n)).toBe(1)
+    expect(titulos(await rank({ soNaoLidos: true }))).not.toContain('Obra V')
+    await admin(`delete from obra_equivalencias; delete from itens where obra_chave = 'outro nome|9|hq'`)
+  })
+
+  it('paginação: limite, deslocamento e total', async () => {
+    const p1 = await rank({ limite: 2 })
+    expect(titulos(p1)).toEqual(['Obra Y', 'Obra X'])
+    expect(Number(p1[0].total)).toBe(6)
+    expect(titulos(await rank({ limite: 2, offset: 2 }))).toEqual(['Absolute Batman 1', 'Obra Z'])
+    expect(await rank({ limite: 2, offset: 10 })).toEqual([])
+  })
+
+  it('capa: do catálogo público sempre; privada só se o feed já mostra o item a você', async () => {
+    const hash = 'a'.repeat(64)
+    await admin(`update itens set capa_url = 'pub/${hash}.jpg' where titulo = 'Obra X' and user_id = '${BETO}'`)
+    await admin(`update itens set capa_url = '${CARLA}/privada.jpg' where titulo = 'Obra W' and user_id = '${CARLA}'`)
+    let r = await rank()
+    expect(r.find((l) => l.titulo === 'Obra X')!.capa_publica).toBe(`pub/${hash}.jpg`)
+    expect(r.find((l) => l.titulo === 'Obra W')!.capa_item_id).toBeNull() // feed da Carla desligado
+    await como(CARLA, () => db.query(`select feed_configurar(true)`))
+    await admin(`update itens set lido_marcado_em = now() where titulo = 'Obra W'`)
+    r = await rank()
+    expect(r.find((l) => l.titulo === 'Obra W')!.capa_item_id).not.toBeNull()
+    expect(r.find((l) => l.titulo === 'Obra W')!.capa_publica).toBeNull()
+  })
+
+  it('estado para as telas vazias, login obrigatório e parâmetros inválidos', async () => {
+    const e = (await db.query<{ amigos: number; amigos_com_notas: number }>(`select * from ranking_amigos_estado()`)).rows[0]
+    expect([Number(e.amigos), Number(e.amigos_com_notas)]).toEqual([5, 4]) // Beto, Carla, Edu, Fabi, Gui; Gui sem escopo
+    await como(CAIO, async () => {
+      const c = (await db.query<{ amigos: number; amigos_com_notas: number }>(`select * from ranking_amigos_estado()`)).rows[0]
+      expect([Number(c.amigos), Number(c.amigos_com_notas)]).toEqual([0, 0])
+    })
+    expect(await erro(() => rank({ ordem: 'qualquer' }))).toMatch(/ordem_invalida/)
+    expect(await erro(() => rank({ tipo: 'livro' }))).toMatch(/tipo_invalido/)
+    await db.query(`select set_config('app.uid','',false)`)
+    expect(await erro(() => rank())).toMatch(/nao_autenticado/)
+    await db.query(`select set_config('app.uid','${U}',false)`)
+  })
+
+  it('migration: funções exigem login e a camada interna fica fechada', () => {
+    const sql = readFileSync(path.join(PASTA, '0023_ranking_amigos.sql'), 'utf8')
+    expect(sql).toMatch(/revoke all on all functions in schema privado/)
+    for (const f of ['ranking_amigos(text, date, date, text, boolean, int, int)', 'ranking_amigos_estado()']) {
+      expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
+      expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
+    }
+  })
 })
