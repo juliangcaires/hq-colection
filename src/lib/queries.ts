@@ -2,6 +2,15 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EstadoItem, ItemComRelacoes, Tag, TipoObra, TipoTag } from '@/lib/types'
 import { lerTodasAsLinhas, TAMANHO_PAGINA } from '@/lib/paginar'
 import { escaparLike } from '@/lib/like'
+import {
+  anosDeLeitura,
+  filtrarSemNota,
+  histogramaDeNotas,
+  ordenarRanking,
+  type BarraDoHistograma,
+  type FiltrosRanking,
+  type LinhaDoRanking,
+} from '@/lib/ranking'
 
 const ITEM_SELECT =
   '*, serie:series(id, nome, tipo, em_publicacao, tem_numeracao, serie_tags(tags(id, nome, tipo, cor, user_id, created_at))), item_tags(tags(id, nome, tipo, cor, user_id, created_at))'
@@ -303,47 +312,110 @@ export type ResumoDoRanking = {
   media: number | null
 }
 
+type LinhaCrua = {
+  id: string
+  titulo: string
+  nota: number | string | null
+  critica: string | null
+  lido_em: string | null
+  updated_at: string
+  numero_volume: number | null
+  capa_url: string | null
+  estado: EstadoItem
+  prioridade: number
+  preco: number | null
+  variante_de: string | null
+  serie_id: string | null
+  serie: { id: string; nome: string; tipo: TipoObra; tem_numeracao: boolean; serie_tags: { tag_id: string }[] | null } | null
+  item_tags: { tag_id: string }[] | null
+}
+
+const RANKING_SELECT =
+  'id, titulo, estado, prioridade, preco, numero_volume, capa_url, variante_de, nota, critica, lido_em, updated_at, serie_id, serie:series(id, nome, tipo, tem_numeracao, serie_tags(tag_id)), item_tags(tag_id)'
+
+export type ResultadoDoRanking = {
+  /** A página pedida, já filtrada e ordenada. */
+  itens: ItemDoRanking[]
+  /** Quantos itens passam em TODOS os filtros (total da paginação). */
+  total: number
+  /** Resumo do recorte (filtros menos a nota clicada); `semNota` é do tipo escolhido. */
+  resumo: ResumoDoRanking
+  histograma: BarraDoHistograma[]
+  /** Anos em que houve leitura avaliada (para o seletor de período). */
+  anos: number[]
+}
+
 /**
- * Ranking de lidos por nota: maior nota primeiro; empate pelo mais recentemente alterado
- * (não há data de leitura no banco) e, por fim, título e id para a ordem ser estável entre páginas.
+ * Ranking de lidos por nota, com ordenação e filtros (período, tag, série, crítica, nota).
+ * Traz uma linha leve de cada lido avaliado e filtra/ordena em memória (mesma abordagem do filtro de
+ * tag da Coleção: a tag vale para o item OU para a série), porque o ranking é de uma só pessoa.
+ * Variante compartilha a nota do principal: conta uma vez.
  */
 export async function listarRanking(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any>,
-  tipo: TipoObra | undefined,
-  limite: number
-): Promise<{ itens: ItemDoRanking[]; resumo: ResumoDoRanking }> {
-  let consulta = supabase
-    .from('itens')
-    .select(`${CARD_SELECT}, nota, critica`)
-    .eq('estado', 'lido')
-    .is('variante_de', null) // variante compartilha a nota do principal: conta uma vez
-    .not('nota', 'is', null)
-    .order('nota', { ascending: false })
-    .order('updated_at', { ascending: false })
-    .order('titulo')
-    .order('id')
-    .limit(limite)
-  if (tipo) consulta = consulta.eq('tipo', tipo)
+  filtros: FiltrosRanking,
+  limite: number,
+  hoje: Date = new Date()
+): Promise<ResultadoDoRanking> {
+  const linhasCruas = await lerTodasAsLinhas<LinhaCrua>((de, ate) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = supabase
+      .from('itens')
+      .select(RANKING_SELECT)
+      .eq('estado', 'lido')
+      .is('variante_de', null)
+      .order('id')
+    if (filtros.tipo) q = q.eq('tipo', filtros.tipo)
+    return q.range(de, ate)
+  })
 
-  const [{ data, error }, notas] = await Promise.all([
-    consulta,
-    lerTodasAsLinhas<{ id: string; nota: number | null }>((de, ate) => {
-      let q = supabase.from('itens').select('id, nota').eq('estado', 'lido').is('variante_de', null).order('id')
-      if (tipo) q = q.eq('tipo', tipo)
-      return q.range(de, ate)
-    }),
-  ])
-  if (error) throw new Error(error.message)
+  const avaliadas = linhasCruas.filter((l) => l.nota !== null)
+  const linhas: LinhaDoRanking[] = avaliadas.map((l) => ({
+    id: l.id,
+    titulo: l.titulo,
+    nota: Number(l.nota),
+    critica: l.critica,
+    lido_em: l.lido_em,
+    updated_at: l.updated_at,
+    numero_volume: l.numero_volume,
+    serie_id: l.serie_id,
+    serie_nome: l.serie?.nome ?? null,
+    tagIds: [...(l.item_tags ?? []), ...(l.serie?.serie_tags ?? [])].map((t) => t.tag_id),
+  }))
 
-  const itens = ((data ?? []) as unknown as ItemDoRanking[]).map((i) => ({ ...i, nota: Number(i.nota) }))
-  const comNota = notas.filter((n) => n.nota !== null).map((n) => Number(n.nota))
+  const recorte = filtrarSemNota(linhas, filtros, hoje)
+  const passam = filtros.nota === undefined ? recorte : recorte.filter((l) => l.nota === filtros.nota)
+  const ordenadas = ordenarRanking(passam, filtros.ordem)
+
+  const porId = new Map(avaliadas.map((l) => [l.id, l]))
+  const itens = ordenadas.slice(0, limite).map((l) => {
+    const c = porId.get(l.id)!
+    return {
+      id: c.id,
+      titulo: c.titulo,
+      estado: c.estado,
+      prioridade: c.prioridade,
+      preco: c.preco,
+      numero_volume: c.numero_volume,
+      capa_url: c.capa_url,
+      variante_de: c.variante_de,
+      serie: c.serie ? { id: c.serie.id, nome: c.serie.nome, tipo: c.serie.tipo, tem_numeracao: c.serie.tem_numeracao } : null,
+      nota: l.nota,
+      critica: l.critica,
+    } as unknown as ItemDoRanking
+  })
+
+  const notas = recorte.map((l) => l.nota)
   return {
     itens,
+    total: passam.length,
     resumo: {
-      avaliados: comNota.length,
-      semNota: notas.length - comNota.length,
-      media: comNota.length > 0 ? comNota.reduce((a, b) => a + b, 0) / comNota.length : null,
+      avaliados: recorte.length,
+      semNota: linhasCruas.length - avaliadas.length,
+      media: notas.length > 0 ? notas.reduce((a, b) => a + b, 0) / notas.length : null,
     },
+    histograma: histogramaDeNotas(recorte),
+    anos: anosDeLeitura(linhas),
   }
 }
