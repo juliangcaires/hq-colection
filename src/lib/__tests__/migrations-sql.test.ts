@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
+import { chaveObra, chaveSerie } from '@/lib/texto'
 import { calcularVolumesFaltantes, serieEstaCompleta, serieEstaLida } from '@/lib/volumes'
 
 /**
@@ -28,7 +29,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -1688,6 +1689,97 @@ describe('escopo dos amigos com notas por padrão (migration 0021)', () => {
     await d.exec(`insert into perfis (user_id) values ('${NOVA}')`)
     const nova = (await d.query<{ escopo_amigos: string[] }>(`select escopo_amigos from perfis where user_id = '${NOVA}'`)).rows[0].escopo_amigos
     expect(nova).toEqual(['colecao', 'series', 'lidos', 'notas_criticas'])
+    await d.close()
+  }, 60_000)
+})
+
+describe('chave da obra sem sufixo de edição (migration 0022)', () => {
+  const A = '22222222-2222-2222-2222-222222222222'
+  const B = '33333333-3333-3333-3333-333333333333'
+  const ate0021 = ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao']
+  const novo = async () => {
+    const d = new PGlite()
+    await d.exec(`
+      create schema auth; create table auth.users(id uuid primary key);
+      create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('app.uid', true),'')::uuid $$;
+      create schema storage;
+      create table storage.buckets(id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+      create table storage.objects(bucket_id text, name text);
+      create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
+      create role authenticated; create role anon;
+    `)
+    for (const f of ate0021) await d.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
+    return d
+  }
+  const migration = readFileSync(path.join(PASTA, '0022_chave_obra_edicao_luxo.sql'), 'utf8')
+
+  it('SQL e TS dão a mesma chave (obra e série), com e sem sufixo', async () => {
+    const d = await novo()
+    await d.exec(migration)
+    const casos: { serie: string | null; numero: number | null; titulo: string; tipo: 'hq' | 'manga' | null }[] = [
+      { serie: 'Berserk', numero: 3, titulo: 'Berserk Vol. 3', tipo: 'manga' },
+      { serie: 'Berserk — Edição de Luxo', numero: 3, titulo: 'x', tipo: 'manga' },
+      { serie: 'Berserk Edição de Luxo', numero: 3, titulo: 'x', tipo: 'manga' },
+      { serie: 'Batman Deluxe', numero: 1, titulo: 'Batman', tipo: 'hq' },
+      { serie: 'Batman: Deluxe Edition', numero: 1.5, titulo: 'Batman', tipo: 'hq' },
+      { serie: 'Akira (Nova Edição)', numero: 2, titulo: 'Akira', tipo: 'manga' },
+      { serie: 'Watchmen — Edição Definitiva', numero: null, titulo: 'Watchmen Edição Definitiva', tipo: 'hq' },
+      { serie: 'Sandman Omnibus', numero: 1, titulo: 'Sandman Omnibus', tipo: 'hq' },
+      { serie: 'Nova York', numero: 1, titulo: 'Nova York', tipo: 'hq' },
+      { serie: 'Deluxe', numero: 1, titulo: 'x', tipo: 'hq' },
+      { serie: 'Mônica & Cascão #5', numero: 5, titulo: 'Ação — Édição', tipo: null },
+      { serie: null, numero: null, titulo: 'Maus', tipo: 'hq' },
+      { serie: null, numero: null, titulo: 'Maus Edição de Luxo', tipo: 'hq' },
+      { serie: 'Vol. de Tomo', numero: null, titulo: 'T', tipo: 'hq' },
+    ]
+    for (const c of casos) {
+      const r = await d.query<{ o: string; s: string }>(
+        `select privado.chave_obra($1, $2::numeric, $3, $4) o, privado.chave_serie($5, $4) s`,
+        [c.serie, c.numero, c.titulo, c.tipo, c.serie ?? c.titulo]
+      )
+      expect(r.rows[0].o, JSON.stringify(c)).toBe(chaveObra(c))
+      expect(r.rows[0].s, JSON.stringify(c)).toBe(chaveSerie(c.serie ?? c.titulo, c.tipo))
+    }
+    await d.close()
+  }, 60_000)
+
+  it('casos de negócio: luxo junta; omnibus e número diferente não', () => {
+    const k = (serie: string, numero: number | null, tipo: 'hq' | 'manga' = 'manga') => chaveObra({ serie, numero, titulo: '', tipo })
+    expect(k('Berserk Edição de Luxo', 3)).toBe(k('Berserk', 3))
+    expect(k('Batman Deluxe', 1, 'hq')).toBe(k('Batman', 1, 'hq'))
+    expect(k('Berserk Omnibus', 1)).not.toBe(k('Berserk', 1))
+    expect(k('Berserk Edição de Luxo', 4)).not.toBe(k('Berserk', 3))
+    expect(k('Berserk Edição de Luxo', 3, 'hq')).not.toBe(k('Berserk', 3))
+  })
+
+  it('recalcula só o que tem sufixo, é idempotente e acompanha os vínculos manuais', async () => {
+    const d = await novo()
+    await d.exec(`
+      insert into auth.users values ('${A}'), ('${B}');
+      insert into series (id, user_id, nome, tipo, serie_chave) values
+        ('aaaaaaaa-0000-0000-0000-000000000001', '${A}', 'Berserk', 'manga', 'berserk|manga'),
+        ('aaaaaaaa-0000-0000-0000-000000000002', '${B}', 'Berserk Edição de Luxo', 'manga', 'berserk luxo|manga'),
+        ('aaaaaaaa-0000-0000-0000-000000000003', '${B}', 'Batman Absolute', 'hq', 'batman absolute|hq');
+      insert into itens (id, user_id, serie_id, titulo, numero_volume, tipo, estado, obra_chave) values
+        ('bbbbbbbb-0000-0000-0000-000000000001', '${A}', 'aaaaaaaa-0000-0000-0000-000000000001', 'Berserk 3', 3, 'manga', 'comprado', 'berserk|3|manga'),
+        ('bbbbbbbb-0000-0000-0000-000000000002', '${B}', 'aaaaaaaa-0000-0000-0000-000000000002', 'Berserk Luxo 3', 3, 'manga', 'comprado', 'berserk luxo|3|manga'),
+        ('bbbbbbbb-0000-0000-0000-000000000003', '${B}', 'aaaaaaaa-0000-0000-0000-000000000003', 'Absolute', 1, 'hq', 'comprado', 'batman absolute|1|hq'),
+        ('bbbbbbbb-0000-0000-0000-000000000004', '${B}', null, 'Maus Edição de Luxo', null, 'hq', 'comprado', 'maus luxo||hq'),
+        ('bbbbbbbb-0000-0000-0000-000000000005', '${B}', null, 'Sem chave', null, 'hq', 'comprado', null);
+      insert into obra_equivalencias (user_id, obra_chave, obra_chave_amigo) values
+        ('${A}', 'berserk|3|manga', 'berserk luxo|3|manga'),
+        ('${A}', 'berserk|3|manga', 'batman absolute|1|hq');
+    `)
+    await d.exec(migration)
+    const chaves = async () =>
+      (await d.query<{ id: string; obra_chave: string | null }>(`select right(id::text, 1) id, obra_chave from itens order by id`)).rows.map((r) => `${r.id}=${r.obra_chave}`)
+    const esperado = ['1=berserk|3|manga', '2=berserk|3|manga', '3=batman absolute|1|hq', '4=maus||hq', '5=null']
+    expect(await chaves()).toEqual(esperado)
+    expect((await d.query<{ serie_chave: string }>(`select serie_chave from series order by nome`)).rows.map((r) => r.serie_chave)).toEqual(['batman absolute|hq', 'berserk|manga', 'berserk|manga'])
+    // vínculo que virou "a mesma obra" some; o outro permanece
+    expect((await d.query<{ obra_chave_amigo: string }>(`select obra_chave_amigo from obra_equivalencias`)).rows).toEqual([{ obra_chave_amigo: 'batman absolute|1|hq' }])
+    await d.exec(migration) // idempotente
+    expect(await chaves()).toEqual(esperado)
     await d.close()
   }, 60_000)
 })

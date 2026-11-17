@@ -18,10 +18,13 @@ export function VinculoDeObra({
   itemId,
   obraChave,
   vinculos,
+  sugestoes = [],
 }: {
   itemId: string
   obraChave: string
   vinculos: (ObraDeAmigo & { disponivel: boolean })[]
+  /** Quase-casamentos (mesmo número e tipo, série parecida) para confirmar com um clique. */
+  sugestoes?: ObraDeAmigo[]
 }) {
   const router = useRouter()
   const [aberto, setAberto] = useState(false)
@@ -62,6 +65,18 @@ export function VinculoDeObra({
     })
   }
 
+  function confirmarSugestao(s: ObraDeAmigo) {
+    startTransition(async () => {
+      try {
+        desembrulhar(await vincularObra(obraChave, s.obraChave, itemId))
+        toast.success('Vínculo criado: só você vê essa ligação')
+        router.refresh()
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Não foi possível vincular')
+      }
+    })
+  }
+
   function desfazer(chaveAmigo: string) {
     startTransition(async () => {
       try {
@@ -76,6 +91,21 @@ export function VinculoDeObra({
 
   return (
     <>
+      {sugestoes.length > 0 && (
+        <section aria-label="Obras parecidas de amigos" className="w-full basis-full rounded-xl border border-border bg-surface-2/60 p-3 text-sm">
+          <p className="mb-2 font-medium">Parece a mesma obra? É?</p>
+          <ul className="flex flex-col gap-2">
+            {sugestoes.map((s) => (
+              <li key={`${s.apelido}|${s.obraChave}`} className="flex flex-wrap items-center gap-3">
+                <p className="min-w-0 flex-1">{rotuloObraDeAmigo(s)}</p>
+                <Button className="h-10" disabled={pendente} onClick={() => confirmarSugestao(s)}>
+                  É a mesma
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {vinculos.length > 0 && (
         <section aria-label="Vínculo com obra de amigo" className="w-full basis-full rounded-xl border border-border bg-surface-2/60 p-3 text-sm">
           <ul className="flex flex-col gap-2">

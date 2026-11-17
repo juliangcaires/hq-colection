@@ -10,7 +10,7 @@ import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
 import { VarianteDoItem } from '@/components/itens/variante-do-item'
 import type { CandidatoVariante } from '@/app/(app)/itens/actions'
 import { AmigosDaObra } from '@/components/amigos/amigos-da-obra'
-import { carregarEquivalencias, carregarObraAmigos } from '@/lib/notas-amigos'
+import { carregarEquivalencias, carregarObraAmigos, carregarQuaseCasamentos } from '@/lib/notas-amigos'
 import { VinculoDeObra } from '@/components/amigos/vinculo-de-obra'
 import { completarChaves } from '@/lib/obra-chaves'
 import { origemValida, vizinhosDeVolume } from '@/lib/navegacao-item'
@@ -79,6 +79,10 @@ export default async function ItemPage({
     carregarObraAmigos(supabase, chaveRow?.obra_chave ?? null, isbnParaCasar).catch(() => []),
     carregarEquivalencias(supabase, chaveRow?.obra_chave ?? null).catch(() => []),
   ])
+  // "Parece a mesma obra?": só quando ainda não casou com ninguém por esta chave/vínculo.
+  const quaseCasamentos = item.estado === 'desejo' || amigos.length > 0
+    ? []
+    : await carregarQuaseCasamentos(supabase, chaveRow?.obra_chave ?? null, item.serie?.nome ?? item.titulo, vinculos.map((v) => v.obraChave)).catch(() => [])
 
   const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
   const vizinhos = vizinhosDeVolume(irmaos ?? [], item.id, item.numero_volume)
@@ -96,7 +100,7 @@ export default async function ItemPage({
         variantes={(variantesRows ?? []).map((r) => ligado(r as never))}
         sugestoes={sugestoes}
       />
-      {chaveRow?.obra_chave && item.estado !== 'desejo' && <VinculoDeObra itemId={item.id} obraChave={chaveRow.obra_chave} vinculos={vinculos} />}
+      {chaveRow?.obra_chave && item.estado !== 'desejo' && <VinculoDeObra itemId={item.id} obraChave={chaveRow.obra_chave} vinculos={vinculos} sugestoes={quaseCasamentos} />}
       </div>
       <AmigosDaObra avaliacoes={amigos} rotulo="volume" />
       {/* key: depois de salvar (ou de adquirir / marcar como lido) o formulário recomeça dos valores do banco, sem
