@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -1658,4 +1658,36 @@ describe('casar obra por ISBN e vínculo manual (migration 0020)', () => {
     }
     expect(sql).toContain('grant select, delete on obra_equivalencias to authenticated;')
   })
+})
+
+describe('escopo dos amigos com notas por padrão (migration 0021)', () => {
+  const ANTIGA = '22222222-2222-2222-2222-222222222222'
+  const NOVA = '33333333-3333-3333-3333-333333333333'
+
+  it('conta nova nasce com notas_criticas; conta existente não muda', async () => {
+    const d = new PGlite()
+    await d.exec(`
+      create schema auth; create table auth.users(id uuid primary key);
+      create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('app.uid', true),'')::uuid $$;
+      create schema storage;
+      create table storage.buckets(id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+      create table storage.objects(bucket_id text, name text);
+      create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
+      create role authenticated; create role anon;
+    `)
+    const ate0020 = ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual']
+    for (const f of ate0020) await d.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
+    await d.exec(`insert into auth.users values ('${ANTIGA}'), ('${NOVA}'); insert into perfis (user_id) values ('${ANTIGA}');`)
+    const antes = (await d.query<{ escopo_amigos: string[] }>(`select escopo_amigos from perfis where user_id = '${ANTIGA}'`)).rows[0].escopo_amigos
+    expect(antes).toEqual(['colecao', 'series', 'lidos'])
+
+    await d.exec(readFileSync(path.join(PASTA, '0021_escopo_amigos_notas_padrao.sql'), 'utf8'))
+
+    const depois = (await d.query<{ escopo_amigos: string[] }>(`select escopo_amigos from perfis where user_id = '${ANTIGA}'`)).rows[0].escopo_amigos
+    expect(depois).toEqual(antes)
+    await d.exec(`insert into perfis (user_id) values ('${NOVA}')`)
+    const nova = (await d.query<{ escopo_amigos: string[] }>(`select escopo_amigos from perfis where user_id = '${NOVA}'`)).rows[0].escopo_amigos
+    expect(nova).toEqual(['colecao', 'series', 'lidos', 'notas_criticas'])
+    await d.close()
+  }, 60_000)
 })

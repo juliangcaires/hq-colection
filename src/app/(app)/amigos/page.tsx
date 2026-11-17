@@ -20,7 +20,7 @@ export default async function AmigosPage() {
       <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">Amigos</h1>
       <PainelDeAmigos
         amizades={(amizades ?? []) as LinhaDeAmizade[]}
-        escopoInicial={((perfil?.escopo_amigos as SecaoCompartilhavel[] | undefined) ?? ['colecao', 'series', 'lidos'])}
+        escopoInicial={((perfil?.escopo_amigos as SecaoCompartilhavel[] | undefined) ?? ['colecao', 'series', 'lidos', 'notas_criticas'])}
         temApelido={Boolean(perfil?.apelido)}
       />
     </div>
