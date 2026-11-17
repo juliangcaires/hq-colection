@@ -26,7 +26,8 @@ import {
   usuarioContribuiCapas,
 } from '@/lib/capa-catalogo'
 import { normalizarTermoBusca } from '@/lib/capa-termo'
-import { novoCaminhoDeCapa, removerCapaAntiga } from '@/lib/supabase/capas'
+import { escaparLike } from '@/lib/like'
+import { novoCaminhoDeCapa, removerCapaAntiga, urlsDeCapas } from '@/lib/supabase/capas'
 
 const LIMITE_CAPA_BYTES = 5 * 1024 * 1024
 const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
@@ -57,6 +58,8 @@ function dadosDoItem(p: ItemInput) {
     critica: p.critica || null,
     lido_em: p.estado === 'lido' ? p.lido_em || null : null,
     critica_privada: p.critica_privada,
+    // Chave só quando informada: no banco, ausente mantém o vínculo atual (formulários que não conhecem variante).
+    ...(p.variante_de !== undefined && { variante_de: p.variante_de || null }),
   }
 }
 
@@ -622,4 +625,73 @@ async function denunciarCapaImpl(capaId: string) {
 
 export async function denunciarCapa(capaId: string) {
   return executar(() => denunciarCapaImpl(capaId))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Capa variante (migration 0017): vincular a um volume normal, desvincular e buscar o volume normal.
+// ---------------------------------------------------------------------------------------------
+
+export type CandidatoVariante = {
+  id: string
+  titulo: string
+  numero_volume: number | null
+  serie_nome: string | null
+  capa_url: string | null
+}
+
+/** Volumes normais (não-variantes) da coleção cujo título casa com o termo — para o "é variante de...". */
+async function buscarPrincipaisDeVarianteImpl(termo: string, excluirId?: string | null) {
+  const limpo = z.string().trim().max(100).parse(termo)
+  const excluir = excluirId ? z.string().uuid().parse(excluirId) : null
+  if (limpo.length < 2) return [] as CandidatoVariante[]
+  const supabase = await createClient()
+  let q = supabase
+    .from('itens')
+    .select('id, titulo, numero_volume, capa_url, serie:series(nome)')
+    .is('variante_de', null)
+    .ilike('titulo', `%${escaparLike(limpo)}%`)
+    .order('titulo')
+    .order('id')
+    .limit(15)
+  if (excluir) q = q.neq('id', excluir)
+  const { data, error } = await q
+  if (error) throw new Error(error.message)
+  const linhas = (data ?? []) as unknown as {
+    id: string
+    titulo: string
+    numero_volume: number | null
+    capa_url: string | null
+    serie: { nome: string } | { nome: string }[] | null
+  }[]
+  const capas = urlsDeCapas(linhas.map((l) => l.capa_url))
+  return linhas.map(
+    (l): CandidatoVariante => ({
+      id: l.id,
+      titulo: l.titulo,
+      numero_volume: l.numero_volume === null ? null : Number(l.numero_volume),
+      serie_nome: (Array.isArray(l.serie) ? l.serie[0]?.nome : l.serie?.nome) ?? null,
+      capa_url: capas.get(l.capa_url ?? '') ?? null,
+    })
+  )
+}
+
+export async function buscarPrincipaisDeVariante(termo: string, excluirId?: string | null) {
+  return executar(() => buscarPrincipaisDeVarianteImpl(termo, excluirId))
+}
+
+/** Vincula o item ao volume normal (ou desvincula com `null`). A herança de nota/lido fica no banco. */
+async function definirVarianteImpl(itemId: string, principalId: string | null) {
+  const item = z.string().uuid().parse(itemId)
+  const principal = principalId === null ? null : z.string().uuid().parse(principalId)
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('item_definir_variante', { p_item: item, p_principal: principal })
+  if (error) lancarErroRpc(error)
+  revalidateListagens(item)
+  if (principal) revalidatePath(`/item/${principal}`)
+  revalidatePath('/ranking')
+  revalidatePath('/series')
+}
+
+export async function definirVariante(itemId: string, principalId: string | null) {
+  return executar(() => definirVarianteImpl(itemId, principalId))
 }

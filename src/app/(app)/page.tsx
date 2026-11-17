@@ -51,6 +51,8 @@ export default async function Home() {
     { count: totalDesejos },
     { count: totalComprados },
     { count: totalLidos },
+    { count: lidosPrincipais },
+    { count: compradosPrincipais },
     ultimosItens,
     filaDeLeitura,
     seriesComFuros,
@@ -59,15 +61,18 @@ export default async function Home() {
     supabase.from('itens').select('id', { count: 'exact', head: true }).eq('estado', 'desejo'),
     supabase.from('itens').select('id', { count: 'exact', head: true }).eq('estado', 'comprado'),
     supabase.from('itens').select('id', { count: 'exact', head: true }).eq('estado', 'lido'),
+    // Variante (outra capa do mesmo volume) conta na estante, mas não em lidos nem no progresso.
+    supabase.from('itens').select('id', { count: 'exact', head: true }).eq('estado', 'lido').is('variante_de', null),
+    supabase.from('itens').select('id', { count: 'exact', head: true }).eq('estado', 'comprado').is('variante_de', null),
     listarUltimosItens(supabase, 8),
     listarFilaDeLeitura(supabase, 8),
     listarSeriesComFuros(supabase, 5),
     supabase.from('emprestimos').select('id', { count: 'exact', head: true }).is('devolvido_em', null).lt('devolver_ate', hojeIso(FUSO_DO_APP)),
   ])
 
-  const comprados = totalComprados ?? 0
-  const lidos = totalLidos ?? 0
-  const naEstante = comprados + lidos
+  const naEstante = (totalComprados ?? 0) + (totalLidos ?? 0)
+  const lidos = lidosPrincipais ?? 0
+  const obrasNaEstante = (compradosPrincipais ?? 0) + lidos
   const capaMap = urlsDeCapas([...filaDeLeitura, ...ultimosItens].map((i) => i.capa_url))
   const capa = (url: string | null) => capaMap.get(url ?? '') ?? null
 
@@ -96,10 +101,10 @@ export default async function Home() {
         <div className="flex items-baseline justify-between text-sm">
           <h2 className="font-heading text-[19px] font-bold text-foreground">Progresso de leitura</h2>
           <span className="text-muted-foreground">
-            {lidos} de {naEstante}
+            {lidos} de {obrasNaEstante}
           </span>
         </div>
-        <ProgressBar value={lidos} max={naEstante} label="Progresso de leitura" />
+        <ProgressBar value={lidos} max={obrasNaEstante} label="Progresso de leitura" />
       </section>
 
       {filaDeLeitura.length > 0 && (

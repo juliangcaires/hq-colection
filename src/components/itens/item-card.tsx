@@ -39,6 +39,9 @@ export function ItemCard({ item, capaUrl, de }: { item: ItemDeLista; capaUrl: st
         )}
         {isLido && <span className={cn(SELO, 'bg-read')}>Lido</span>}
         {isDesejo && <span className={cn(SELO, 'bg-warning')}>Desejo</span>}
+        {item.variante_de && (
+          <span className="absolute bottom-1.5 left-1.5 rounded-[4px] bg-background/80 px-1.5 py-0.5 text-[10px] font-bold tracking-wide uppercase text-foreground">Variante</span>
+        )}
       </div>
       <div className="flex flex-col text-[13px] leading-tight">
         <span className="truncate font-medium text-foreground">{item.titulo}</span>

@@ -64,6 +64,8 @@ export type Item = {
   critica_privada: boolean
   /** Data em que virou lido (AAAA-MM-DD); null em item não lido ou lido antes da coluna existir. */
   lido_em: string | null
+  /** Quando preenchido, este item é uma variante (outra capa/edição) do volume `variante_de`: compartilham lido, nota e crítica. */
+  variante_de: string | null
   created_at: string
   updated_at: string
 }

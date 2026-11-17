@@ -7,6 +7,8 @@ import { uuidOuNull } from '@/lib/filtros-url'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
 import { EmprestimoDoItem } from '@/components/emprestimos/emprestimo-do-item'
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
+import { VarianteDoItem } from '@/components/itens/variante-do-item'
+import type { CandidatoVariante } from '@/app/(app)/itens/actions'
 import { origemValida, vizinhosDeVolume } from '@/lib/navegacao-item'
 
 export default async function ItemPage({
@@ -37,6 +39,32 @@ export default async function ItemPage({
       : Promise.resolve({ data: null }),
   ])
 
+  // Variante (migration 0017): o volume normal deste item, ou as variantes dele; sem vínculo, sugere o mesmo
+  // número na mesma série (a obra casada) como candidato a volume normal.
+  const [{ data: principalRow }, { data: variantesRows }, { data: sugestoesRows }] = await Promise.all([
+    item.variante_de
+      ? supabase.from('itens').select('id, titulo, numero_volume, serie:series(nome)').eq('id', item.variante_de).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase.from('itens').select('id, titulo, numero_volume, serie:series(nome)').eq('variante_de', id).order('created_at'),
+    !item.variante_de && item.serie && item.numero_volume !== null
+      ? supabase
+          .from('itens')
+          .select('id, titulo, numero_volume, capa_url, serie:series(nome)')
+          .eq('serie_id', item.serie.id)
+          .eq('numero_volume', item.numero_volume)
+          .is('variante_de', null)
+          .neq('id', id)
+          .limit(5)
+      : Promise.resolve({ data: null }),
+  ])
+  const ligado = (r: { id: string; titulo: string; numero_volume: number | string | null; serie: { nome: string } | { nome: string }[] | null }) => ({
+    id: r.id,
+    titulo: r.titulo,
+    numero_volume: r.numero_volume === null ? null : Number(r.numero_volume),
+    serie_nome: (Array.isArray(r.serie) ? r.serie[0]?.nome : r.serie?.nome) ?? null,
+  })
+  const sugestoes: CandidatoVariante[] = (sugestoesRows ?? []).map((r) => ({ ...ligado(r as never), capa_url: null }))
+
   const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
   const vizinhos = vizinhosDeVolume(irmaos ?? [], item.id, item.numero_volume)
 
@@ -44,6 +72,13 @@ export default async function ItemPage({
     <div className="mx-auto flex max-w-[1120px] flex-col gap-4">
       <ScrollRestore />
       {item.estado !== 'desejo' && <EmprestimoDoItem itemId={item.id} titulo={item.titulo} aberto={emprestimo} hoje={hojeIso(FUSO_DO_APP)} />}
+      <VarianteDoItem
+        key={JSON.stringify([item.id, item.variante_de, (variantesRows ?? []).length])}
+        itemId={item.id}
+        principal={principalRow ? ligado(principalRow as never) : null}
+        variantes={(variantesRows ?? []).map((r) => ligado(r as never))}
+        sugestoes={sugestoes}
+      />
       {/* key: depois de salvar (ou de adquirir / marcar como lido) o formulário recomeça dos valores do banco, sem
           remontar quando só a capa muda (busca/upload de capa não pode apagar edição em andamento). */}
       <ItemForm

@@ -55,16 +55,20 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
   const numerosOcupados = itens
     .map((i) => i.numero_volume)
     .filter((n): n is number => n !== null)
-  const possuidos = itens.filter((i) => i.estado !== 'desejo').length
-  const desejados = itens.length - possuidos
-  const lidos = itens.filter((i) => i.estado === 'lido').length
-  const notasAvaliadas = itens
+  // Variante (outra capa de um volume que já está aqui) conta 2 na estante, mas 1 na posse da série, em lidos e na
+  // média: tudo abaixo usa `principais`. `estante` é o que aparece como "exemplares".
+  const principais = itens.filter((i) => !i.variante_de)
+  const variantes = itens.filter((i) => i.variante_de && i.estado !== 'desejo').length
+  const possuidos = principais.filter((i) => i.estado !== 'desejo').length
+  const desejados = itens.filter((i) => i.estado === 'desejo').length
+  const lidos = principais.filter((i) => i.estado === 'lido').length
+  const notasAvaliadas = principais
     .filter((i) => i.estado === 'lido' && i.nota !== null)
     .map((i) => Number(i.nota))
   const mediaVolumes = notasAvaliadas.length > 0 ? notasAvaliadas.reduce((a, b) => a + b, 0) / notasAvaliadas.length : null
-  const naFila = itens.filter((i) => i.estado === 'comprado').length
+  const naFila = principais.filter((i) => i.estado === 'comprado').length
   const capaHero = itens.map((i) => capaMap.get(i.capa_url ?? '')).find(Boolean) ?? null
-  const aMarcar = itens.filter((i) => i.estado !== 'desejo')
+  const aMarcar = principais.filter((i) => i.estado !== 'desejo')
   const resumoMarcacao = {
     comprados: naFila,
     desejos: desejados,
@@ -103,6 +107,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
             {possuidos} volume(ns) na coleção
             {serie.total_volumes ? ` de ${serie.total_volumes}` : ''}
             {desejados > 0 ? ` · ${desejados} na lista de desejos` : ''}
+            {variantes > 0 ? ` · ${variantes} ${variantes === 1 ? 'variante' : 'variantes'} (contam na estante, não no progresso)` : ''}
           </p>
           <SerieProgress lidos={lidos} naFila={naFila} faltando={volumesFaltantes.length} />
         </div>
@@ -143,8 +148,8 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         media={mediaVolumes}
         avaliados={notasAvaliadas.length}
         lidos={lidos}
-        lidosSemCritica={itens.filter((i) => i.estado === 'lido' && !i.critica).length}
-        lidosComCritica={itens.filter((i) => i.estado === 'lido' && i.critica).length}
+        lidosSemCritica={principais.filter((i) => i.estado === 'lido' && !i.critica).length}
+        lidosComCritica={principais.filter((i) => i.estado === 'lido' && i.critica).length}
       />
 
       <SerieForm

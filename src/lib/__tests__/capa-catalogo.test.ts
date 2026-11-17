@@ -64,6 +64,25 @@ describe('chavesDoItem', () => {
     const { fake } = supabaseFalso({ item: null })
     expect(await chavesDoItem(fake, 'i1')).toBeNull()
   })
+  it('variante é marcada como tal', async () => {
+    const { fake } = supabaseFalso({ item: { ...ITEM_BD, variante_de: 'principal-1' } })
+    expect(await chavesDoItem(fake, 'i1')).toMatchObject({ variante: true })
+  })
+})
+
+describe('variante e o catálogo de capas', () => {
+  it('variante sem ISBN não contribui ao catálogo (nada registrado, nada aplicado)', async () => {
+    baixar.mockResolvedValue({ buffer: JPEG, mime: 'image/jpeg' })
+    const { fake, rpcs } = supabaseFalso({ item: { ...ITEM_BD, isbn: null, variante_de: 'principal-1' } })
+    expect(await aplicarCapaDeApi(fake, 'i1', 'https://books.google.com/x')).toBeNull()
+    expect(rpcs.filter((r) => r.nome === 'capa_catalogo_registrar')).toEqual([])
+  })
+  it('variante com ISBN próprio contribui normalmente', async () => {
+    baixar.mockResolvedValue({ buffer: JPEG, mime: 'image/jpeg' })
+    const { fake, rpcs } = supabaseFalso({ item: { ...ITEM_BD, variante_de: 'principal-1' } })
+    expect(await aplicarCapaDeApi(fake, 'i1', 'https://books.google.com/x')).toMatch(/^pub\//)
+    expect(rpcs.filter((r) => r.nome === 'capa_catalogo_registrar')).toHaveLength(1)
+  })
 })
 
 describe('aplicarCapaDeApi', () => {
