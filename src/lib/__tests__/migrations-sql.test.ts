@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -1067,5 +1067,92 @@ describe('foto de perfil (migration 0016)', () => {
     expect(cols).toContain('avatar_url')
     const r = await db.query(`select * from amigos_listar()`)
     expect(r.fields.map((f) => f.name)).toContain('avatar_url')
+  })
+})
+
+describe('capa variante (migration 0017)', () => {
+  const dados = (extra: object) => JSON.stringify({ titulo: 'V', tipo: 'hq', estado: 'comprado', prioridade: 0, ...extra })
+  const novo = async (extra: object = {}) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') as id`, [dados(extra)])).rows[0].id
+  const ler = async (id: string) =>
+    (await db.query<{ estado: string; nota: string | null; critica: string | null; lido_em: string | null; critica_privada: boolean; variante_de: string | null }>(
+      `select estado, nota, critica, lido_em::text, critica_privada, variante_de from itens where id = $1`, [id])).rows[0]
+
+  it('vincular herda o que o principal já tem e editar um reflete no outro (nos dois sentidos)', async () => {
+    const principal = await novo({ estado: 'lido', nota: 4.5, critica: 'Ótimo', lido_em: '2026-05-01', critica_privada: true })
+    const variante = await novo({ variante_de: principal })
+    expect(await ler(variante)).toMatchObject({ estado: 'lido', critica: 'Ótimo', lido_em: '2026-05-01', critica_privada: true, variante_de: principal })
+    expect(Number((await ler(variante)).nota)).toBe(4.5)
+
+    await db.query(`select item_salvar($1, $2::jsonb, '{}')`, [variante, dados({ estado: 'lido', nota: 2, critica: 'Mudei', lido_em: '2026-06-02', variante_de: principal })])
+    expect(await ler(principal)).toMatchObject({ estado: 'lido', critica: 'Mudei', lido_em: '2026-06-02' })
+    expect(Number((await ler(principal)).nota)).toBe(2)
+
+    await db.query(`update itens set nota = 5, estado = 'comprado' where id = $1`, [principal])
+    expect(await ler(variante)).toMatchObject({ estado: 'comprado', lido_em: null })
+    expect(Number((await ler(variante)).nota)).toBe(5)
+  })
+
+  it('vincular depois (item_definir_variante) e desvincular; desvinculado deixa de sincronizar', async () => {
+    const principal = await novo({ estado: 'lido', nota: 3 })
+    const outro = await novo({ estado: 'comprado' })
+    await db.query(`select item_definir_variante($1, $2)`, [outro, principal])
+    expect((await ler(outro)).estado).toBe('lido')
+    await db.query(`select item_definir_variante($1, null)`, [outro])
+    expect((await ler(outro)).variante_de).toBeNull()
+    await db.query(`update itens set nota = 1 where id = $1`, [principal])
+    expect(Number((await ler(outro)).nota)).toBe(3)
+  })
+
+  it('várias variantes do mesmo principal ficam iguais entre si', async () => {
+    const principal = await novo({ estado: 'comprado' })
+    const v1 = await novo({ variante_de: principal })
+    const v2 = await novo({ variante_de: principal })
+    await db.query(`update itens set estado = 'lido', nota = 4 where id = $1`, [v1])
+    for (const id of [principal, v2]) expect(await ler(id)).toMatchObject({ estado: 'lido' })
+    expect(Number((await ler(v2)).nota)).toBe(4)
+  })
+
+  it('recusa cadeia, vínculo consigo, principal de outro usuário e variante que já tem variantes', async () => {
+    const a = await novo()
+    const b = await novo({ variante_de: a })
+    await expect(db.query(`select item_definir_variante($1, $2)`, [await novo(), b])).rejects.toThrow('variante_de_variante')
+    await expect(db.query(`select item_definir_variante($1, $1)`, [a])).rejects.toThrow()
+    await expect(db.query(`select item_definir_variante($1, $2)`, [a, await novo()])).rejects.toThrow('variante_com_variantes')
+    await expect(db.query(`select item_definir_variante($1, '33333333-3333-3333-3333-333333333333')`, [a])).rejects.toThrow('variante_principal_nao_encontrado')
+  })
+
+  it('desejo não sincroniza; ao adquirir, a variante assume o estado do principal', async () => {
+    const principal = await novo({ estado: 'lido', nota: 4 })
+    const variante = await novo({ estado: 'desejo', variante_de: principal })
+    expect((await ler(variante)).estado).toBe('desejo')
+    await db.query(`update itens set nota = 2 where id = $1`, [principal])
+    expect((await ler(variante)).nota).toBeNull()
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [variante])
+    expect(await ler(variante)).toMatchObject({ estado: 'lido' })
+    expect(Number((await ler(variante)).nota)).toBe(2)
+  })
+
+  it('apagar o principal solta a variante (sem apagá-la)', async () => {
+    const principal = await novo()
+    const variante = await novo({ variante_de: principal })
+    await db.query(`delete from itens where id = $1`, [principal])
+    expect((await ler(variante)).variante_de).toBeNull()
+  })
+
+  it('série: variante não gera duplicidade em completa/lida; estante (itens) conta 2', async () => {
+    const { rows: [s] } = await db.query<{ s: string }>(`select serie_salvar(null, '{"nome":"VarSerie","tipo":"hq","tem_numeracao":true,"total_volumes":2}', '{}') s`)
+    const v1 = await novo({ serie_id: s.s, numero_volume: 1, estado: 'comprado' })
+    await novo({ serie_id: s.s, numero_volume: 1, estado: 'comprado', variante_de: v1 })
+    let r = (await db.query<{ completa: boolean; lida: boolean; faltantes: number[] }>(`select completa, lida, faltantes from series_com_resumo('VarSerie')`)).rows[0]
+    expect(r).toEqual({ completa: false, lida: false, faltantes: [2] })
+    await novo({ serie_id: s.s, numero_volume: 2, estado: 'comprado' })
+    await db.query(`update itens set estado = 'lido' where serie_id = $1 and numero_volume = 1 and variante_de is null`, [s.s])
+    await db.query(`update itens set estado = 'lido' where serie_id = $1 and numero_volume = 2`, [s.s])
+    r = (await db.query(`select completa, lida, faltantes from series_com_resumo('VarSerie')`)).rows[0] as typeof r
+    expect(r).toEqual({ completa: true, lida: true, faltantes: [] })
+    const { rows: [c] } = await db.query<{ estante: number; lidos: number }>(
+      `select count(*)::int estante, count(*) filter (where estado = 'lido' and variante_de is null)::int lidos from itens where serie_id = $1`, [s.s])
+    expect(c).toEqual({ estante: 3, lidos: 2 })
   })
 })
