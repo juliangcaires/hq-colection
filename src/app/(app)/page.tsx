@@ -8,6 +8,16 @@ import { StatTile } from '@/components/ui/stat-tile'
 import { TipoBadge } from '@/components/ui/tipo-badge'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
+import { cn } from '@/lib/utils'
+
+// Faixas de capas em UMA linha, sem rolagem: 4 capas no celular, 6 no tablet (sm), 8 no desktop largo (xl).
+// As que não cabem ficam ocultas; o "Ver tudo" do cabeçalho cobre o resto.
+const FAIXA_UMA_LINHA = 'grid grid-cols-4 gap-2.5 sm:grid-cols-6 lg:gap-x-[18px] xl:grid-cols-8'
+function classeDaPosicao(i: number): string | undefined {
+  if (i >= 6) return 'hidden xl:block'
+  if (i >= 4) return 'hidden sm:block'
+  return undefined
+}
 
 function SectionHeader({ titulo, href }: { titulo: string; href?: string }) {
   return (
@@ -95,10 +105,10 @@ export default async function Home() {
       {filaDeLeitura.length > 0 && (
         <section className="flex flex-col gap-3">
           <SectionHeader titulo="Na fila de leitura" href="/colecao?estado=comprado" />
-          <div className="-mx-5 flex gap-3 overflow-x-auto px-5 lg:mx-0 lg:grid lg:grid-cols-[repeat(auto-fill,minmax(132px,1fr))] lg:gap-x-[18px] lg:overflow-visible lg:px-0">
-            {filaDeLeitura.map((item) => (
-              <div key={item.id} className="w-28 shrink-0 lg:w-auto">
-                <ItemCard item={item} capaUrl={capa(item.capa_url)} />
+          <div className={FAIXA_UMA_LINHA}>
+            {filaDeLeitura.map((item, i) => (
+              <div key={item.id} className={cn('min-w-0', classeDaPosicao(i))}>
+                <ItemCard item={item} capaUrl={capa(item.capa_url)} de="/" />
               </div>
             ))}
           </div>
@@ -132,9 +142,11 @@ export default async function Home() {
         {ultimosItens.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum item adicionado ainda.</p>
         ) : (
-          <div className="grid grid-cols-4 gap-2.5 lg:grid-cols-[repeat(auto-fill,minmax(132px,1fr))] lg:gap-x-[18px]">
-            {ultimosItens.map((item) => (
-              <ItemCard key={item.id} item={item} capaUrl={capa(item.capa_url)} />
+          <div className={FAIXA_UMA_LINHA}>
+            {ultimosItens.map((item, i) => (
+              <div key={item.id} className={cn('min-w-0', classeDaPosicao(i))}>
+                <ItemCard item={item} capaUrl={capa(item.capa_url)} de="/" />
+              </div>
             ))}
           </div>
         )}

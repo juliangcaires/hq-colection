@@ -12,6 +12,7 @@ import { desembrulhar } from '@/lib/resultado'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AdquirirButton, AdquirirDialog } from '@/components/itens/adquirir-button'
 import type { ItemDeLista } from '@/lib/queries'
+import { hrefDoItem } from '@/lib/navegacao-item'
 
 type ItemDesejo = ItemDeLista
 
@@ -142,7 +143,7 @@ export function DesejosLista({
           if (!selecionando) {
             return (
               <div key={item.id} className="flex items-center gap-3 p-3">
-                <Link href={`/item/${item.id}`} className="flex flex-1 items-center gap-3 overflow-hidden">
+                <Link href={hrefDoItem(item.id, '/desejos')} className="flex flex-1 items-center gap-3 overflow-hidden">
                   {conteudo}
                 </Link>
                 <AdquirirButton itemId={item.id} titulo={item.titulo} />

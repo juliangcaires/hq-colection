@@ -7,25 +7,38 @@ import { uuidOuNull } from '@/lib/filtros-url'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
 import { EmprestimoDoItem } from '@/components/emprestimos/emprestimo-do-item'
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
+import { origemValida, vizinhosDeVolume } from '@/lib/navegacao-item'
 
-export default async function ItemPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ItemPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ de?: string | string[] }>
+}) {
   const id = uuidOuNull((await params).id)
   if (!id) notFound()
+  const origem = origemValida((await searchParams).de)
   const supabase = await createClient()
 
   const item = await listarItem(supabase, id)
   if (!item) notFound()
 
-  const [{ data: seriesData }, capaMap, { data: emprestimo }] = await Promise.all([
+  const [{ data: seriesData }, capaMap, { data: emprestimo }, { data: irmaos }] = await Promise.all([
     supabase.from('series').select('id, nome').order('nome'),
     urlsDeCapas([item.capa_url]),
     // Só item que o dono tem pode ser emprestado; desejo nem consulta.
     item.estado === 'desejo'
       ? Promise.resolve({ data: null })
       : supabase.from('emprestimos').select('id, para_quem, emprestado_em, devolver_ate').eq('item_id', id).is('devolvido_em', null).maybeSingle(),
+    // Volumes da mesma série (qualquer estado, desejo inclusive) para as setas anterior/próximo.
+    item.serie && item.numero_volume !== null
+      ? supabase.from('itens').select('id, numero_volume').eq('serie_id', item.serie.id).not('numero_volume', 'is', null)
+      : Promise.resolve({ data: null }),
   ])
 
   const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
+  const vizinhos = vizinhosDeVolume(irmaos ?? [], item.id, item.numero_volume)
 
   return (
     <div className="mx-auto flex max-w-[1120px] flex-col gap-4">
@@ -34,9 +47,12 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
       {/* key: depois de salvar (ou de adquirir / marcar como lido) o formulário recomeça dos valores do banco, sem
           remontar quando só a capa muda (busca/upload de capa não pode apagar edição em andamento). */}
       <ItemForm
-        key={JSON.stringify([item.updated_at, item.estado, item.nota, item.critica, item.lido_em, item.titulo, item.preco, item.loja, item.data_aquisicao, item.prioridade])}
+        key={JSON.stringify([item.id, item.updated_at, item.estado, item.nota, item.critica, item.lido_em, item.titulo, item.preco, item.loja, item.data_aquisicao, item.prioridade])}
         item={item} capaUrl={capaUrl}
         series={seriesData ?? []}
+        origem={origem}
+        volumeAnteriorId={vizinhos.anterior?.id ?? null}
+        volumeProximoId={vizinhos.proximo?.id ?? null}
       />
     </div>
   )

@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Check, ChevronDown, Layers, MoreHorizontal, Star, ArrowLeft, Minus, Plus } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Layers, MoreHorizontal, Star, ArrowLeft, Minus, Plus } from 'lucide-react'
 import { Estrelas } from '@/components/ui/estrelas'
 import { formatarNota } from '@/lib/nota'
 import { TipoBadge } from '@/components/ui/tipo-badge'
@@ -41,6 +41,7 @@ import { CandidatosDeCapa } from '@/components/itens/candidatos-de-capa'
 import { descreverFalhaProvedor, type CandidatoCapa, type ResultadoProvedor } from '@/lib/capa-busca'
 import { desembrulhar } from '@/lib/resultado'
 import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
+import { hrefDoItem, rotuloDaOrigem } from '@/lib/navegacao-item'
 
 type SerieOpcao = { id: string; nome: string }
 
@@ -48,10 +49,17 @@ export function ItemForm({
   item,
   capaUrl,
   series,
+  origem = null,
+  volumeAnteriorId = null,
+  volumeProximoId = null,
 }: {
   item: ItemComRelacoes
   capaUrl: string | null
   series: SerieOpcao[]
+  /** Página de onde o item foi aberto (já validada); define o destino e o rótulo do Voltar. */
+  origem?: string | null
+  volumeAnteriorId?: string | null
+  volumeProximoId?: string | null
 }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -400,11 +408,11 @@ export function ItemForm({
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between">
         <Link
-          href={item.estado === 'desejo' ? '/desejos' : '/colecao'}
+          href={origem ?? (item.estado === 'desejo' ? '/desejos' : '/colecao')}
           className="flex min-h-11 items-center gap-1.5 text-sm font-medium text-link hover:underline"
         >
           <ArrowLeft className="size-4" aria-hidden />
-          {item.estado === 'desejo' ? 'Desejos' : 'Coleção'}
+          {origem ? rotuloDaOrigem(origem) : item.estado === 'desejo' ? 'Desejos' : 'Coleção'}
         </Link>
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -498,8 +506,32 @@ export function ItemForm({
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <TipoBadge tipo={tipo} />
-              {item.serie ? item.serie.nome : 'Avulso (sem série)'}
-              {numeroVolume && ` · #${numeroVolume}`}
+              {item.serie ? (
+                <Link href={`/serie/${item.serie.id}`} className="text-link hover:underline">
+                  {item.serie.nome}
+                  {numeroVolume && ` · #${numeroVolume}`}
+                </Link>
+              ) : (
+                'Avulso (sem série)'
+              )}
+              {item.serie && (volumeAnteriorId || volumeProximoId) && (
+                <span className="ml-1 flex items-center gap-1">
+                  {volumeAnteriorId ? (
+                    <Link href={hrefDoItem(volumeAnteriorId, origem)} aria-label="Volume anterior" className="flex size-9 items-center justify-center rounded-[10px] border border-border bg-card text-foreground">
+                      <ChevronLeft className="size-4" aria-hidden />
+                    </Link>
+                  ) : (
+                    <span aria-hidden className="size-9" />
+                  )}
+                  {volumeProximoId ? (
+                    <Link href={hrefDoItem(volumeProximoId, origem)} aria-label="Próximo volume" className="flex size-9 items-center justify-center rounded-[10px] border border-border bg-card text-foreground">
+                      <ChevronRight className="size-4" aria-hidden />
+                    </Link>
+                  ) : (
+                    <span aria-hidden className="size-9" />
+                  )}
+                </span>
+              )}
             </div>
             {/* Mobile: o resumo vira uma linha de chips sob o título. */}
             <div className="mt-3 flex flex-wrap gap-1.5 lg:hidden">

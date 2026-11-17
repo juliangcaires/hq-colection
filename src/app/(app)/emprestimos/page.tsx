@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
+import { hrefDoItem } from '@/lib/navegacao-item'
 import { createClient } from '@/lib/supabase/server'
 import { urlsDeCapas } from '@/lib/supabase/capas'
 import { BotaoDevolver } from '@/components/emprestimos/botao-devolver'
@@ -42,7 +43,7 @@ export default async function EmprestimosPage() {
     const sub = [e.item?.serie?.nome, e.item?.numero_volume != null ? `#${e.item.numero_volume}` : null].filter(Boolean).join(' ')
     return (
       <li className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
-        <Link href={`/item/${e.item_id}`} className="flex min-w-0 flex-1 items-center gap-3">
+        <Link href={hrefDoItem(e.item_id, '/emprestimos')} className="flex min-w-0 flex-1 items-center gap-3">
           <div className="relative aspect-[2/3] w-11 shrink-0 overflow-hidden rounded bg-surface-2 ring-1 ring-white/10">
             {capa && <Image unoptimized src={capa} alt="" fill sizes="44px" className="object-cover" />}
           </div>
