@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -1154,5 +1154,234 @@ describe('capa variante (migration 0017)', () => {
     const { rows: [c] } = await db.query<{ estante: number; lidos: number }>(
       `select count(*)::int estante, count(*) filter (where estado = 'lido' and variante_de is null)::int lidos from itens where serie_id = $1`, [s.s])
     expect(c).toEqual({ estante: 3, lidos: 2 })
+  })
+})
+
+describe('feed de amigos (migration 0018)', () => {
+  // Quatro contas: dono (Ana, U), amigo (Beto), desconhecido (Caio) e ex-amigo (Dora).
+  const CAIO = '88888888-8888-8888-8888-888888888888'
+  const DORA = '77777777-7777-7777-7777-777777777777'
+  let amizadeDora = ''
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const lido = async (extra: object = {}) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'Leitura', tipo: 'hq', estado: 'lido', prioridade: 0, ...extra })])).rows[0].id
+  const feed = async () => (await db.query<Record<string, unknown>>(`select * from feed_listar()`)).rows
+  const titulos = async () => (await feed()).map((r) => r.titulo)
+  const solicitar = async (apelido: string) => (await db.query<{ id: string }>(`select amizade_solicitar($1) id`, [apelido])).rows[0].id
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}'), ('${DORA}') on conflict do nothing;
+      delete from amizades; delete from itens; delete from perfis;
+      insert into perfis(user_id, apelido) values ('${U}', 'ana'), ('${OUTRO}', 'beto'), ('${CAIO}', 'caio'), ('${DORA}', 'dora');
+    `)
+    // Beto e Dora pedem; Ana aceita os dois. Depois Dora vira ex-amiga.
+    const idBeto = await como(OUTRO, () => solicitar('ana'))
+    await db.query(`select amizade_responder($1, true)`, [idBeto])
+    amizadeDora = await como(DORA, () => solicitar('ana'))
+    await db.query(`select amizade_responder($1, true)`, [amizadeDora])
+  })
+
+  it('interruptor desligado (padrão): nada aparece, nem para o dono', async () => {
+    await lido({ titulo: 'Escondido' })
+    expect(await titulos()).toEqual([])
+    await como(OUTRO, async () => expect(await titulos()).toEqual([]))
+  })
+
+  it('ligar: o amigo vê, o desconhecido não; desligar some na hora e o item é preservado', async () => {
+    await db.query(`select feed_configurar(true)`)
+    expect(await titulos()).toContain('Escondido')
+    await como(OUTRO, async () => expect(await titulos()).toContain('Escondido'))
+    await como(CAIO, async () => expect(await titulos()).toEqual([]))
+    await db.query(`select feed_configurar(false)`)
+    await como(OUTRO, async () => expect(await titulos()).toEqual([]))
+    await db.query(`select feed_configurar(true)`)
+    await como(OUTRO, async () => expect(await titulos()).toContain('Escondido'))
+  })
+
+  it('ligar libera nota/crítica aos amigos; crítica privada nunca sai', async () => {
+    const { rows } = await db.query<{ escopo_amigos: string[] }>(`select escopo_amigos from perfis where user_id = $1`, [U])
+    expect(rows[0].escopo_amigos).toContain('notas_criticas')
+    await lido({ titulo: 'Com nota', nota: 4.5, critica: 'Gostei' })
+    await lido({ titulo: 'Privada', nota: 3, critica: 'Segredo', critica_privada: true })
+    await como(OUTRO, async () => {
+      const f = await feed()
+      const a = f.find((r) => r.titulo === 'Com nota')!
+      expect(Number(a.nota)).toBe(4.5)
+      expect(a.critica).toBe('Gostei')
+      const b = f.find((r) => r.titulo === 'Privada')!
+      expect(Number(b.nota)).toBe(3)
+      expect(b.critica).toBeNull()
+    })
+    // Sem `notas_criticas` no escopo, nem a nota sai.
+    await db.query(`select amigos_escopo_atualizar('{colecao,series,lidos}')`)
+    await como(OUTRO, async () => {
+      const a = (await feed()).find((r) => r.titulo === 'Com nota')!
+      expect(a.nota).toBeNull()
+      expect(a.critica).toBeNull()
+    })
+    await db.query(`select amigos_escopo_atualizar('{colecao,series,lidos,notas_criticas}')`)
+  })
+
+  it('só entra item que foi marcado como lido depois (sem passado), não variante, não oculto', async () => {
+    const antigo = await lido({ titulo: 'Antigo' })
+    await admin(`update itens set lido_marcado_em = null where id = '${antigo}'`)
+    const velho = await lido({ titulo: 'Velho' })
+    await admin(`update itens set lido_marcado_em = now() - interval '91 days' where id = '${velho}'`)
+    const principal = await lido({ titulo: 'Principal' })
+    await lido({ titulo: 'Variante', variante_de: principal })
+    const oculto = await lido({ titulo: 'Oculto' })
+    await db.query(`select feed_ocultar($1, true)`, [oculto])
+    const t = await titulos()
+    expect(t).toContain('Principal')
+    for (const fora of ['Antigo', 'Velho', 'Variante', 'Oculto']) expect(t).not.toContain(fora)
+    await db.query(`select feed_ocultar($1, false)`, [oculto])
+    expect(await titulos()).toContain('Oculto')
+    // Deixar de ser lido tira do feed.
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [oculto])
+    expect(await titulos()).not.toContain('Oculto')
+    // O amigo não oculta o item de outra pessoa.
+    await como(OUTRO, () => expect(db.query(`select feed_ocultar($1, true)`, [principal])).rejects.toThrow('item_nao_encontrado'))
+  })
+
+  it('marcação em lote vira um post por pessoa + série + dia', async () => {
+    const { rows: [s] } = await db.query<{ s: string }>(`select serie_salvar(null, '{"nome":"Lote","tipo":"hq","tem_numeracao":true,"total_volumes":3}', '{}') s`)
+    for (const n of [1, 2, 3]) await lido({ titulo: `Lote ${n}`, serie_id: s.s, numero_volume: n })
+    const posts = (await feed()).filter((r) => r.serie_nome === 'Lote')
+    expect(posts).toHaveLength(1)
+    expect(posts[0].qtd).toBe(3)
+  })
+
+  it('curtir e comentar: amigo e dono podem; desconhecido e ex-amigo não; texto validado', async () => {
+    const id = await lido({ titulo: 'Conversa' })
+    await como(OUTRO, async () => {
+      await db.query(`select feed_curtir($1)`, [id])
+      await db.query(`select feed_curtir($1)`, [id]) // repetir não duplica
+      await db.query(`select feed_comentar($1, '  Boa!  ')`, [id])
+      await expect(db.query(`select feed_comentar($1, '   ')`, [id])).rejects.toThrow('comentario_vazio')
+      await expect(db.query(`select feed_comentar($1, $2)`, [id, 'x'.repeat(501)])).rejects.toThrow('comentario_longo')
+    })
+    await como(CAIO, async () => {
+      await expect(db.query(`select feed_curtir($1)`, [id])).rejects.toThrow('item_nao_encontrado')
+      await expect(db.query(`select feed_comentar($1, 'oi')`, [id])).rejects.toThrow('item_nao_encontrado')
+      expect((await db.query(`select * from feed_comentarios_listar($1)`, [id])).rows).toHaveLength(0)
+    })
+    const p = (await feed()).find((r) => r.item_id === id)!
+    expect(p.curtidas).toBe(1)
+    expect(p.curti).toBe(false)
+    expect(p.comentarios).toBe(1)
+    await como(OUTRO, async () => expect((await feed()).find((r) => r.item_id === id)!.curti).toBe(true))
+    const { rows } = await db.query<{ texto: string }>(`select texto from feed_comentarios_listar($1)`, [id])
+    expect(rows.map((r) => r.texto)).toEqual(['Boa!'])
+    // Tabelas fechadas: nenhum acesso direto.
+    await como(OUTRO, async () => expect((await db.query(`select * from feed_comentarios`)).rows).toHaveLength(0))
+  })
+
+  it('comentário de um amigo não aparece para outro amigo do dono que não o conhece; o dono vê todos', async () => {
+    // Caio vira amigo da Ana; Beto e Caio não se conhecem.
+    const idCaio = await como(CAIO, () => solicitar('ana'))
+    await db.query(`select amizade_responder($1, true)`, [idCaio])
+    const id = await lido({ titulo: 'Rodinha' })
+    await como(OUTRO, async () => {
+      await db.query(`select feed_curtir($1)`, [id])
+      await db.query(`select feed_comentar($1, 'do Beto')`, [id])
+    })
+    await como(CAIO, async () => {
+      await db.query(`select feed_comentar($1, 'do Caio')`, [id])
+      const textos = (await db.query<{ texto: string }>(`select texto from feed_comentarios_listar($1)`, [id])).rows.map((r) => r.texto)
+      expect(textos).toEqual(['do Caio'])
+      const p = (await feed()).find((r) => r.item_id === id)!
+      expect(p.comentarios).toBe(1)
+      expect(p.curtidas).toBe(0)
+    })
+    const donoVe = (await db.query<{ texto: string }>(`select texto from feed_comentarios_listar($1)`, [id])).rows.map((r) => r.texto)
+    expect(donoVe).toEqual(['do Beto', 'do Caio'])
+  })
+
+  it('apagar comentário: o autor ou o dono do item, mais ninguém', async () => {
+    const id = await lido({ titulo: 'Moderação' })
+    const cBeto = await como(OUTRO, async () => (await db.query<{ c: string }>(`select feed_comentar($1, 'um') c`, [id])).rows[0].c)
+    const cCaio = await como(CAIO, async () => (await db.query<{ c: string }>(`select feed_comentar($1, 'dois') c`, [id])).rows[0].c)
+    await como(OUTRO, () => expect(db.query(`select feed_apagar_comentario($1)`, [cCaio])).rejects.toThrow('comentario_nao_encontrado'))
+    await como(OUTRO, () => db.query(`select feed_apagar_comentario($1)`, [cBeto]))
+    await db.query(`select feed_apagar_comentario($1)`, [cCaio]) // dono
+    expect((await db.query(`select * from feed_comentarios_listar($1)`, [id])).rows).toHaveLength(0)
+  })
+
+  it('ex-amigo: desfazer a amizade corta feed, curtida e comentário na hora', async () => {
+    const id = await lido({ titulo: 'Para a Dora' })
+    await como(DORA, async () => {
+      expect(await titulos()).toContain('Para a Dora')
+      await db.query(`select feed_comentar($1, 'da Dora')`, [id])
+    })
+    await db.query(`select amizade_desfazer($1)`, [amizadeDora])
+    await como(DORA, async () => {
+      expect(await titulos()).toEqual([])
+      await expect(db.query(`select feed_curtir($1)`, [id])).rejects.toThrow('item_nao_encontrado')
+      await expect(db.query(`select feed_comentar($1, 'ainda aqui?')`, [id])).rejects.toThrow('item_nao_encontrado')
+      expect((await db.query(`select * from feed_comentarios_listar($1)`, [id])).rows).toHaveLength(0)
+    })
+    // O comentário dela some para os amigos que sobraram (ela não é mais amiga de ninguém do círculo).
+    await como(OUTRO, async () => {
+      const textos = (await db.query<{ texto: string }>(`select texto from feed_comentarios_listar($1)`, [id])).rows.map((r) => r.texto)
+      expect(textos).not.toContain('da Dora')
+    })
+  })
+
+  it('capa: só devolve o arquivo privado de item visível', async () => {
+    const id = await lido({ titulo: 'Com capa' })
+    await admin(`update itens set capa_url = '${U}/abc.jpg' where id = '${id}'`)
+    await como(OUTRO, async () => expect((await db.query<{ c: string }>(`select feed_capa($1) c`, [id])).rows[0].c).toBe(`${U}/abc.jpg`))
+    await como(DORA, async () => expect((await db.query<{ c: string | null }>(`select feed_capa($1) c`, [id])).rows[0].c).toBeNull())
+    await db.query(`select feed_ocultar($1, true)`, [id])
+    await como(OUTRO, async () => expect((await db.query<{ c: string | null }>(`select feed_capa($1) c`, [id])).rows[0].c).toBeNull())
+  })
+
+  it('resumo da semana: seus lidos, o que os amigos leram e o destaque', async () => {
+    await admin(`delete from itens; delete from feed_curtidas; delete from feed_comentarios`)
+    await como(OUTRO, async () => {
+      await db.query(`select feed_configurar(true)`)
+      await lido({ titulo: 'Beto leu 1', nota: 3 })
+      await lido({ titulo: 'Beto leu 2', nota: 5 })
+    })
+    await lido({ titulo: 'Eu 1' })
+    await lido({ titulo: 'Eu 2' })
+    await lido({ titulo: 'Eu velho', lido_em: '2020-01-01' })
+    const { rows: [r] } = await db.query<{ r: { meus_lidos: number; amigos: number; lidos_amigos: number; destaque: { titulo: string; apelido: string; nota: number } } }>(`select feed_resumo_semana() r`)
+    expect(r.r.meus_lidos).toBe(2)
+    expect(r.r.amigos).toBe(1)
+    expect(r.r.lidos_amigos).toBe(2)
+    expect(r.r.destaque).toMatchObject({ titulo: 'Beto leu 2', apelido: 'beto', nota: 5 })
+    // Quem não é amigo não entra na conta do Caio... (Caio é amigo da Ana, não do Beto)
+    await como(CAIO, async () => {
+      const { rows: [c] } = await db.query<{ r: { amigos: number } }>(`select feed_resumo_semana() r`)
+      expect(c.r.amigos).toBe(1) // só a Ana, que ligou o feed
+    })
+  })
+
+  it('migration: as funções do feed exigem login e a camada interna fica fechada', () => {
+    const sql = readFileSync(path.join(PASTA, '0018_feed_amigos.sql'), 'utf8')
+    expect(sql).toMatch(/revoke all on all functions in schema privado/)
+    expect(sql).toMatch(/revoke all on feed_curtidas from public, anon, authenticated/)
+    expect(sql).toMatch(/revoke all on feed_comentarios from public, anon, authenticated/)
+    for (const f of ['feed_listar(int, timestamptz)', 'feed_curtir(uuid)', 'feed_comentar(uuid, text)', 'feed_resumo_semana()']) {
+      expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
+      expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
+    }
   })
 })
