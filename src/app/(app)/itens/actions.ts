@@ -34,6 +34,7 @@ const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png':
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
 import { lancarErroRpc } from '@/lib/rpc'
 import { alimentarCatalogoComItem } from '@/lib/isbn-supabase'
+import { gravarChaveDoItem } from '@/lib/obra-chaves'
 
 function revalidateListagens(itemId?: string) {
   revalidatePath('/colecao')
@@ -92,6 +93,7 @@ async function createItemImpl(input: ItemInput) {
 
   // Catálogo é acessório: nunca derruba o salvamento (a função não lança).
   await alimentarCatalogoComItem(supabase, data as string, catalogoDoItem(parsed))
+  await gravarChaveDoItem(supabase, data as string)
 
   revalidateListagens()
   return data as string
@@ -114,6 +116,7 @@ async function updateItemImpl(id: string, input: ItemInput) {
   if (error) lancarErroRpc(error)
 
   await alimentarCatalogoComItem(supabase, itemId, catalogoDoItem(parsed))
+  await gravarChaveDoItem(supabase, itemId)
 
   revalidateListagens(itemId)
 }

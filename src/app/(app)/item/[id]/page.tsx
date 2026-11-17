@@ -9,6 +9,9 @@ import { EmprestimoDoItem } from '@/components/emprestimos/emprestimo-do-item'
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
 import { VarianteDoItem } from '@/components/itens/variante-do-item'
 import type { CandidatoVariante } from '@/app/(app)/itens/actions'
+import { AmigosDaObra } from '@/components/amigos/amigos-da-obra'
+import { carregarObraAmigos } from '@/lib/notas-amigos'
+import { completarChaves } from '@/lib/obra-chaves'
 import { origemValida, vizinhosDeVolume } from '@/lib/navegacao-item'
 
 export default async function ItemPage({
@@ -65,6 +68,12 @@ export default async function ItemPage({
   })
   const sugestoes: CandidatoVariante[] = (sugestoesRows ?? []).map((r) => ({ ...ligado(r as never), capa_url: null }))
 
+  // Notas dos amigos para a mesma obra (0019). Completa as chaves que faltam (itens antigos/importados) e, se este
+  // item ainda não tinha, relê a dele. Falha aqui só some com o bloco, nunca derruba a página.
+  await completarChaves(supabase)
+  const { data: chaveRow } = await supabase.from('itens').select('obra_chave').eq('id', id).maybeSingle()
+  const amigos = await carregarObraAmigos(supabase, chaveRow?.obra_chave ?? null, item.isbn ?? null).catch(() => [])
+
   const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
   const vizinhos = vizinhosDeVolume(irmaos ?? [], item.id, item.numero_volume)
 
@@ -79,6 +88,7 @@ export default async function ItemPage({
         variantes={(variantesRows ?? []).map((r) => ligado(r as never))}
         sugestoes={sugestoes}
       />
+      <AmigosDaObra avaliacoes={amigos} rotulo="volume" />
       {/* key: depois de salvar (ou de adquirir / marcar como lido) o formulário recomeça dos valores do banco, sem
           remontar quando só a capa muda (busca/upload de capa não pode apagar edição em andamento). */}
       <ItemForm

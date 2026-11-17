@@ -15,6 +15,9 @@ import { SerieProgress } from '@/components/series/serie-progress'
 import { AvaliarSerie } from '@/components/series/avaliar-serie'
 import { MarcarSerieLidaDialog } from '@/components/series/marcar-serie-lida-dialog'
 import { VolumesGrid } from '@/components/series/volumes-grid'
+import { AmigosDaObra } from '@/components/amigos/amigos-da-obra'
+import { carregarSerieAmigos } from '@/lib/notas-amigos'
+import { completarChaves } from '@/lib/obra-chaves'
 import { BackButton } from '@/components/ui/back-button'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
 
@@ -42,6 +45,10 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
 
   const capaMap = urlsDeCapas(itens.map((i) => i.capa_url)
   )
+
+  await completarChaves(supabase)
+  const { data: chaveRow } = await supabase.from('series').select('serie_chave').eq('id', id).maybeSingle()
+  const amigos = await carregarSerieAmigos(supabase, chaveRow?.serie_chave ?? null).catch(() => [])
 
   const tagIds = (serie.serie_tags ?? []).map((st: { tag_id: string }) => st.tag_id)
 
@@ -151,6 +158,8 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         lidosSemCritica={principais.filter((i) => i.estado === 'lido' && !i.critica).length}
         lidosComCritica={principais.filter((i) => i.estado === 'lido' && i.critica).length}
       />
+
+      <AmigosDaObra avaliacoes={amigos} rotulo="série" />
 
       <SerieForm
         key={JSON.stringify([serie.updated_at, serie.nome, serie.tipo, serie.total_volumes, serie.em_publicacao, serie.tem_numeracao, serie.observacoes, serie.critica_privada, tagIds])}
