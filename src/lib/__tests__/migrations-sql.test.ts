@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -1506,5 +1506,156 @@ describe('notas entre amigos (migration 0019)', () => {
       expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
       expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
     }
+  })
+})
+
+describe('casar obra por ISBN e vínculo manual (migration 0020)', () => {
+  // Ana (U) é a visitante; Beto (OUTRO) é amigo; Caio não é amigo de ninguém; Dora (ex-amigo) também não.
+  const CAIO = '88888888-8888-8888-8888-888888888888'
+  const DORA = '77777777-7777-7777-7777-777777777777'
+  const MINHA = 'batman absolute|1|hq'
+  const ISBN = '9781506711980'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const salvar = async (extra: object) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'x', tipo: 'hq', estado: 'lido', prioridade: 0, nota: 4, ...extra })])).rows[0].id
+  const obra = async (chave: string | null, isbn: string | null = null) =>
+    (await db.query<Record<string, unknown>>(`select * from obra_amigos($1, $2)`, [chave, isbn])).rows
+  const erro = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+      return null
+    } catch (e) {
+      return (e as Error).message
+    }
+  }
+  const criar = (de: string, para: string) => db.query(`select obra_equivalencia_criar($1, $2)`, [de, para])
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}'), ('${DORA}') on conflict do nothing;
+      delete from obra_equivalencias; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos) values
+        ('${U}', 'ana', '{notas_criticas,lidos,colecao}'), ('${OUTRO}', 'beto', '{notas_criticas,lidos,colecao}'),
+        ('${CAIO}', 'caio', '{notas_criticas,lidos,colecao}'), ('${DORA}', 'dora', '{notas_criticas,lidos,colecao}');
+    `)
+    const id = (await como(OUTRO, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id))
+    await db.query(`select amizade_responder($1, true)`, [id])
+    await salvar({ titulo: 'Batman Absolute 1', obra_chave: MINHA, isbn: ISBN })
+    // Beto: mesmo ISBN com nome diferente (duas edições, a mais nova sem ISBN), e outra obra sem ISBN.
+    await como(OUTRO, async () => {
+      await salvar({ titulo: 'Absolute Batman 1', obra_chave: 'absolute batman|1|hq', isbn: '978-1-5067-1198-0', nota: 5 })
+      await salvar({ titulo: 'Outra Obra', obra_chave: 'outra obra|2|hq', nota: 3 })
+    })
+    // Dora (não é amiga) tem o mesmo ISBN.
+    await como(DORA, () => salvar({ titulo: 'Absolute Batman 1', obra_chave: 'absolute batman|1|hq', isbn: ISBN }))
+  })
+
+  it('ISBN igual casa mesmo com chave diferente; sem ISBN nada muda; não-amigo fica de fora', async () => {
+    expect(await obra(MINHA)).toEqual([])
+    const r = await obra(MINHA, ISBN)
+    expect(r).toHaveLength(1)
+    expect(r[0].apelido).toBe('beto')
+    expect(r[0].casou_por).toBe('isbn')
+    expect(await obra(null, ISBN)).toHaveLength(1) // item sem chave ainda casa por ISBN
+    expect(await obra(MINHA, '9780000000002')).toEqual([])
+  })
+
+  it('ISBN-10 e com hífens normalizam para o mesmo ISBN-13', async () => {
+    expect(await obra(MINHA, '1-50671198-7')).toHaveLength(1)
+    // A camada interna fica fechada para o app; confere a normalização como administrador.
+    await db.query(`reset role`)
+    try {
+      expect((await db.query<{ v: string | null }>(`select privado.isbn13_norm('1506711987') v`)).rows[0].v).toBe(ISBN)
+      expect((await db.query<{ v: string | null }>(`select privado.isbn13_norm('abc') v`)).rows[0].v).toBeNull()
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  })
+
+  it('uma linha por pessoa: casa por chave e por ISBN ao mesmo tempo, e com variante', async () => {
+    await como(OUTRO, () => salvar({ titulo: 'Batman Absolute 1', obra_chave: MINHA, nota: 2 }))
+    const r = await obra(MINHA, ISBN)
+    expect(r).toHaveLength(1)
+    expect(r[0].casou_por).toBe('isbn')
+    const semIsbn = await obra(MINHA)
+    expect(semIsbn).toHaveLength(1)
+    expect(semIsbn[0].casou_por).toBe('nome')
+    await admin(`delete from itens where user_id = '${OUTRO}' and obra_chave = '${MINHA}'`)
+  })
+
+  it('vínculo manual: cria, casa como "manual", só na visão de quem vinculou, e desfaz', async () => {
+    const ALVO = 'outra obra|2|hq'
+    expect(await obra(MINHA)).toEqual([])
+    await criar(MINHA, ALVO)
+    await criar(MINHA, ALVO) // idempotente
+    const r = await obra(MINHA)
+    expect(r).toHaveLength(1)
+    expect(r[0].casou_por).toBe('manual')
+    expect(Number(r[0].nota)).toBe(3)
+    const lista = (await db.query<Record<string, unknown>>(`select * from obra_equivalencias_listar($1)`, [MINHA])).rows
+    expect(lista).toHaveLength(1)
+    expect(lista[0].apelido).toBe('beto')
+    // Não altera a visão do amigo nem a de ninguém mais.
+    await como(OUTRO, async () => expect(await obra(ALVO)).toEqual([]))
+    await como(CAIO, async () => {
+      expect(await obra(MINHA)).toEqual([])
+      expect((await db.query(`select * from obra_equivalencias`)).rows).toEqual([])
+      expect((await db.query<Record<string, unknown>>(`select * from obra_equivalencias_listar($1)`, [MINHA])).rows).toEqual([])
+      await db.query(`select obra_equivalencia_desfazer($1, $2)`, [MINHA, ALVO]) // não apaga o de Ana
+    })
+    expect(await obra(MINHA)).toHaveLength(1)
+    await db.query(`select obra_equivalencia_desfazer($1, $2)`, [MINHA, ALVO])
+    expect(await obra(MINHA)).toEqual([])
+  })
+
+  it('não vincula a quem não é amigo, ao que o amigo não compartilha, nem a obra alheia; escrita direta é negada', async () => {
+    expect(await erro(() => criar(MINHA, 'absolute batman|1|hq')) ).toBeNull() // Beto é amigo e tem essa chave
+    await db.query(`select obra_equivalencia_desfazer($1, 'absolute batman|1|hq')`, [MINHA])
+    // Dora não é amiga: só ela tem essa chave exclusiva.
+    await como(DORA, () => salvar({ titulo: 'Só da Dora', obra_chave: 'so da dora|1|hq' }))
+    expect(await erro(() => criar(MINHA, 'so da dora|1|hq'))).toMatch(/equivalencia_obra_indisponivel/)
+    // Caio não tem item com a chave da Ana.
+    await como(CAIO, async () => expect(await erro(() => criar(MINHA, 'outra obra|2|hq'))).toMatch(/item_nao_encontrado/))
+    // O amigo tira "coleção" e "lidos" do escopo: deixa de ser vinculável.
+    await admin(`update perfis set escopo_amigos = '{notas_criticas}' where user_id = '${OUTRO}'`)
+    expect(await erro(() => criar(MINHA, 'outra obra|2|hq'))).toMatch(/equivalencia_obra_indisponivel/)
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos,colecao}' where user_id = '${OUTRO}'`)
+    expect(await erro(() => criar(MINHA, MINHA))).toMatch(/equivalencia_invalida/)
+    expect(await erro(() => db.query(`insert into obra_equivalencias(user_id, obra_chave, obra_chave_amigo) values ('${U}', '${MINHA}', 'so da dora|1|hq')`))).toMatch(/row-level security|permission denied/)
+  })
+
+  it('busca entre os itens dos amigos respeita amizade e escopo', async () => {
+    const buscar = async (t: string) => (await db.query<Record<string, unknown>>(`select * from amigos_buscar_obras($1)`, [t])).rows
+    expect((await buscar('outra')).map((x) => x.apelido)).toEqual(['beto'])
+    expect(await buscar('o')).toEqual([]) // termo curto demais
+    expect(await buscar('so da dora')).toEqual([]) // não é amiga
+    expect(await buscar('%')).toEqual([]) // curinga é literal
+    await admin(`update perfis set escopo_amigos = '{notas_criticas}' where user_id = '${OUTRO}'`)
+    expect(await buscar('outra')).toEqual([])
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos,colecao}' where user_id = '${OUTRO}'`)
+  })
+
+  it('migration: funções exigem login e a tabela só tem leitura/exclusão para o app', () => {
+    const sql = readFileSync(path.join(PASTA, '0020_casar_obra_por_isbn_e_manual.sql'), 'utf8')
+    for (const f of ['obra_amigos(text, text)', 'obra_equivalencia_criar(text, text)', 'obra_equivalencia_desfazer(text, text)', 'amigos_buscar_obras(text)', 'obra_equivalencias_listar(text)']) {
+      expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
+      expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
+    }
+    expect(sql).toContain('grant select, delete on obra_equivalencias to authenticated;')
   })
 })
