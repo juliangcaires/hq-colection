@@ -10,7 +10,8 @@ import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
 import { VarianteDoItem } from '@/components/itens/variante-do-item'
 import type { CandidatoVariante } from '@/app/(app)/itens/actions'
 import { AmigosDaObra } from '@/components/amigos/amigos-da-obra'
-import { carregarObraAmigos } from '@/lib/notas-amigos'
+import { carregarEquivalencias, carregarObraAmigos } from '@/lib/notas-amigos'
+import { VinculoDeObra } from '@/components/amigos/vinculo-de-obra'
 import { completarChaves } from '@/lib/obra-chaves'
 import { origemValida, vizinhosDeVolume } from '@/lib/navegacao-item'
 
@@ -71,8 +72,13 @@ export default async function ItemPage({
   // Notas dos amigos para a mesma obra (0019). Completa as chaves que faltam (itens antigos/importados) e, se este
   // item ainda não tinha, relê a dele. Falha aqui só some com o bloco, nunca derruba a página.
   await completarChaves(supabase)
-  const { data: chaveRow } = await supabase.from('itens').select('obra_chave').eq('id', id).maybeSingle()
-  const amigos = await carregarObraAmigos(supabase, chaveRow?.obra_chave ?? null, item.isbn ?? null).catch(() => [])
+  const { data: chaveRow } = await supabase.from('itens').select('obra_chave, edicao:edicoes(isbn13)').eq('id', id).maybeSingle()
+  const edicaoRow = Array.isArray(chaveRow?.edicao) ? chaveRow?.edicao[0] : chaveRow?.edicao
+  const isbnParaCasar = (edicaoRow as { isbn13?: string | null } | null | undefined)?.isbn13 ?? item.isbn ?? null
+  const [amigos, vinculos] = await Promise.all([
+    carregarObraAmigos(supabase, chaveRow?.obra_chave ?? null, isbnParaCasar).catch(() => []),
+    carregarEquivalencias(supabase, chaveRow?.obra_chave ?? null).catch(() => []),
+  ])
 
   const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
   const vizinhos = vizinhosDeVolume(irmaos ?? [], item.id, item.numero_volume)
@@ -89,6 +95,7 @@ export default async function ItemPage({
         sugestoes={sugestoes}
       />
       <AmigosDaObra avaliacoes={amigos} rotulo="volume" />
+      {chaveRow?.obra_chave && item.estado !== 'desejo' && <VinculoDeObra itemId={item.id} obraChave={chaveRow.obra_chave} vinculos={vinculos} />}
       {/* key: depois de salvar (ou de adquirir / marcar como lido) o formulário recomeça dos valores do banco, sem
           remontar quando só a capa muda (busca/upload de capa não pode apagar edição em andamento). */}
       <ItemForm

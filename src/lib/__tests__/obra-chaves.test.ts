@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { chaveObra, chaveSerie } from '@/lib/texto'
-import { mediaDosAmigos } from '@/lib/notas-amigos'
+import { casouPorDe, mediaDosAmigos, rotuloCasouPor, rotuloObraDeAmigo } from '@/lib/notas-amigos'
 
 describe('chaveObra', () => {
   it('mesma história em editoras/títulos diferentes casa; editora não entra', () => {
@@ -26,5 +26,24 @@ describe('mediaDosAmigos', () => {
     expect(mediaDosAmigos([{ nota: 4.5 }, { nota: 4 }, { nota: null }])).toEqual({ media: 4.3, qtd: 2 })
     expect(mediaDosAmigos([{ nota: null }])).toBeNull()
     expect(mediaDosAmigos([])).toBeNull()
+  })
+})
+
+describe('motivo do casamento', () => {
+  it('rótulos na tela', () => {
+    expect(rotuloCasouPor('isbn')).toBe('mesmo ISBN')
+    expect(rotuloCasouPor('nome')).toBe('mesmo nome e volume')
+    expect(rotuloCasouPor('manual')).toBe('vínculo manual')
+    expect(rotuloCasouPor(null)).toBeNull()
+  })
+  it('valor desconhecido cai em nome', () => {
+    expect(casouPorDe('isbn')).toBe('isbn')
+    expect(casouPorDe('manual')).toBe('manual')
+    expect(casouPorDe('x')).toBe('nome')
+    expect(casouPorDe(null)).toBe('nome')
+  })
+  it('rótulo da obra do amigo', () => {
+    expect(rotuloObraDeAmigo({ obraChave: 'k', apelido: 'beto', nome: null, titulo: 'Absolute Batman 1', numeroVolume: 1, serieNome: 'Absolute Batman' })).toBe('Absolute Batman #1 — Absolute Batman 1 (@beto)')
+    expect(rotuloObraDeAmigo({ obraChave: 'k', apelido: null, nome: null, titulo: 'Maus', numeroVolume: null, serieNome: null })).toBe('Maus')
   })
 })

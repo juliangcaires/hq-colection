@@ -2,7 +2,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { Estrelas } from '@/components/ui/estrelas'
 import { InteracaoDoItem } from '@/components/feed/interacao-do-item'
 import { formatarNota } from '@/lib/nota'
-import { mediaDosAmigos, type AvaliacaoDeAmigo } from '@/lib/notas-amigos'
+import { mediaDosAmigos, rotuloCasouPor, type AvaliacaoDeAmigo } from '@/lib/notas-amigos'
 
 /**
  * Bloco "Amigos" da página do item e da série: média das notas dos amigos e a nota/crítica de cada um.
@@ -31,7 +31,7 @@ export function AmigosDaObra({ avaliacoes, rotulo }: { avaliacoes: AvaliacaoDeAm
                 <p className="text-xs text-muted-foreground">
                   {a.apelido ? `@${a.apelido}` : ''}
                   {a.lidoEm ? `${a.apelido ? ' · ' : ''}leu em ${new Date(`${a.lidoEm}T12:00:00`).toLocaleDateString('pt-BR')}` : ''}
-                  {a.casouPor && rotulo === 'volume' ? `${a.apelido || a.lidoEm ? ' · ' : ''}${a.casouPor === 'isbn' ? 'mesmo ISBN' : 'mesmo nome e volume'}` : ''}
+                  {a.casouPor && rotulo === 'volume' ? `${a.apelido || a.lidoEm ? ' · ' : ''}${rotuloCasouPor(a.casouPor)}` : ''}
                 </p>
               </div>
               {a.nota !== null && (
