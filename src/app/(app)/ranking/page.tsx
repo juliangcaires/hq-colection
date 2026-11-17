@@ -5,6 +5,8 @@ import { listarRanking, type ItemDoRanking } from '@/lib/queries'
 import { urlsDeCapas } from '@/lib/supabase/capas'
 import { lerLimiteRanking, RANKING_POR_PAGINA } from '@/lib/filtros-url'
 import { lerFiltrosRanking, type BarraDoHistograma } from '@/lib/ranking'
+import { carregarEstadoDosAmigos, carregarRankingAmigos, lerFiltrosAmigos } from '@/lib/ranking-amigos'
+import { RankingAmigos } from '@/components/ranking/ranking-amigos'
 import { CarregarMais } from '@/components/itens/carregar-mais'
 import { Estrelas } from '@/components/ui/estrelas'
 import { formatarNota } from '@/lib/nota'
@@ -82,6 +84,30 @@ function Histograma({ barras, selecionada, params }: { barras: BarraDoHistograma
   )
 }
 
+function AbasDoRanking({ aba, tipo }: { aba: 'meu' | 'amigos'; tipo?: string }) {
+  const abas = [
+    { id: 'meu', label: 'Meu ranking', href: href({ tipo }, {}) },
+    { id: 'amigos', label: 'Amigos', href: `/ranking?${new URLSearchParams({ aba: 'amigos', ...(tipo === 'hq' || tipo === 'manga' ? { tipo } : {}) }).toString()}` },
+  ] as const
+  return (
+    <nav aria-label="Abas do ranking" className="flex w-full max-w-72 gap-1 rounded-xl border border-border bg-card p-1">
+      {abas.map((a) => (
+        <Link
+          key={a.id}
+          href={a.href}
+          aria-current={aba === a.id ? 'page' : undefined}
+          className={cn(
+            'flex h-10 flex-1 items-center justify-center rounded-lg text-sm text-muted-foreground transition-colors hover:text-foreground',
+            aba === a.id && 'bg-primary font-semibold text-primary-foreground hover:text-primary-foreground'
+          )}
+        >
+          {a.label}
+        </Link>
+      ))}
+    </nav>
+  )
+}
+
 export default async function RankingPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams
   const aba = params.aba === 'amigos' ? 'amigos' : 'meu'
@@ -90,6 +116,27 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
   const limite = lerLimiteRanking(params.limite)
 
   const supabase = await createClient()
+  if (aba === 'amigos') {
+    const filtrosAmigos = lerFiltrosAmigos(params)
+    const hoje = new Date()
+    const [{ linhas, total }, estado] = await Promise.all([
+      carregarRankingAmigos(supabase, filtrosAmigos, limite, hoje),
+      carregarEstadoDosAmigos(supabase),
+    ])
+    // Capa dos SEUS itens que casam com as linhas (RLS: só os seus).
+    const meusIds = linhas.map((l) => l.meuItemId).filter((id): id is string => Boolean(id))
+    const { data: meus } = meusIds.length > 0 ? await supabase.from('itens').select('id, capa_url').in('id', meusIds) : { data: [] }
+    const capaDosMeus = new Map((meus ?? []).map((m) => [m.id as string, (m.capa_url as string | null) ?? null]))
+    return (
+      <div className="flex flex-col gap-6">
+        <ScrollRestore />
+        <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">Ranking</h1>
+        <AbasDoRanking aba={aba} tipo={params.tipo} />
+        <RankingAmigos params={params} filtros={filtrosAmigos} linhas={linhas} total={total} limite={limite} estado={estado} capaDosMeus={capaDosMeus} hoje={hoje} />
+      </div>
+    )
+  }
+
   const [{ itens, total, resumo, histograma, anos }, { data: tagsData }, { data: seriesData }] = await Promise.all([
     listarRanking(supabase, filtros, limite),
     supabase.from('tags').select('id, nome, tipo').order('nome'),
@@ -110,28 +157,9 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
       <ScrollRestore />
       <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">Ranking</h1>
 
-      <nav aria-label="Abas do ranking" className="flex w-full max-w-72 gap-1 rounded-xl border border-border bg-card p-1">
-        <Link
-          href={href({ tipo: params.tipo }, {})}
-          aria-current={aba === 'meu' ? 'page' : undefined}
-          className={cn(
-            'flex h-10 flex-1 items-center justify-center rounded-lg text-sm text-muted-foreground transition-colors hover:text-foreground',
-            aba === 'meu' && 'bg-primary font-semibold text-primary-foreground hover:text-primary-foreground'
-          )}
-        >
-          Meu ranking
-        </Link>
-        <span aria-disabled="true" title="Em breve" className="flex h-10 flex-1 cursor-not-allowed items-center justify-center rounded-lg text-sm text-muted-foreground/50">
-          Amigos · em breve
-        </span>
-      </nav>
+      <AbasDoRanking aba={aba} tipo={params.tipo} />
 
-      {aba === 'amigos' ? (
-        <p className="text-sm text-muted-foreground">
-          O ranking dos amigos chega em breve. <Link href="/ranking" className="text-link hover:underline">Voltar ao meu ranking</Link>
-        </p>
-      ) : (
-        <>
+      <>
       <div role="group" aria-label="Tipo" className="flex w-full max-w-64 gap-1 rounded-xl border border-border bg-card p-1">
         {TIPOS.map((t) => {
           const ativo = tipo === t.valor
@@ -298,8 +326,7 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
           />
         </>
       )}
-        </>
-      )}
+      </>
     </div>
   )
 }
