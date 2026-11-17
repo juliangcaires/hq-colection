@@ -16,8 +16,15 @@ const CONCORRENCIA = 3
 
 export type ItemParaCapa = { id: string; titulo: string; tipo: 'hq' | 'manga' }
 
-export async function buscarCapasEmLote(itens: ItemParaCapa[]): Promise<number> {
+type Opcoes = {
+  /** 'lote': só ISBN e memória da série; nunca busca por título nem troca capa existente. */
+  modo?: 'normal' | 'lote'
+  onProgresso?: (feitos: number, total: number) => void
+}
+
+async function processar(itens: ItemParaCapa[], { modo = 'normal', onProgresso }: Opcoes): Promise<number> {
   let cursor = 0
+  let feitos = 0
   let aplicadas = 0
 
   async function trabalhar() {
@@ -27,13 +34,14 @@ export async function buscarCapasEmLote(itens: ItemParaCapa[]): Promise<number> 
         const res = await fetch('/api/capa/buscar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ itemId: item.id, isbn: null, titulo: item.titulo, tipo: item.tipo }),
+          body: JSON.stringify({ itemId: item.id, isbn: null, titulo: item.titulo, tipo: item.tipo, modo }),
         })
         const data: { status?: string } = await res.json()
         if (data.status === 'aplicada') aplicadas++
       } catch {
         // Volume já está criado; falhar a capa não desfaz nada.
       }
+      onProgresso?.(++feitos, itens.length)
     }
   }
 
@@ -42,4 +50,16 @@ export async function buscarCapasEmLote(itens: ItemParaCapa[]): Promise<number> 
   )
 
   return aplicadas
+}
+
+export function buscarCapasEmLote(itens: ItemParaCapa[]): Promise<number> {
+  return processar(itens, {})
+}
+
+/** Volumes sem capa de uma série: só ISBN e memória da série, sem busca por título. */
+export function buscarCapasFaltantes(
+  itens: ItemParaCapa[],
+  onProgresso?: Opcoes['onProgresso']
+): Promise<number> {
+  return processar(itens, { modo: 'lote', onProgresso })
 }

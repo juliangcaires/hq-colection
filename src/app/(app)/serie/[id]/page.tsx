@@ -8,6 +8,7 @@ import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
 import { SerieForm } from '@/components/series/serie-form'
 import { AdicionarVolumesDialog } from '@/components/series/adicionar-volumes-dialog'
+import { BuscarCapasFaltantes } from '@/components/series/buscar-capas-faltantes'
 import { CriarVolumesDialog } from '@/components/series/criar-volumes-dialog'
 import { TipoBadge } from '@/components/ui/tipo-badge'
 import { SerieProgress } from '@/components/series/serie-progress'
@@ -71,6 +72,9 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
     comCritica: aMarcar.filter((i) => i.critica).length,
     comNota: aMarcar.filter((i) => i.nota !== null).length,
   }
+  const semCapa = itens
+    .filter((i) => !i.capa_url)
+    .map((i) => ({ id: i.id, titulo: i.titulo, tipo: serie.tipo as 'hq' | 'manga' }))
   const faltantesExibidos = volumesFaltantes.slice(0, MAX_FALTANTES_EXIBIDOS)
   const faltantesOcultos = volumesFaltantes.length - faltantesExibidos.length
 
@@ -151,6 +155,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-heading text-sm font-semibold text-foreground/90">Volumes</h2>
           <div className="flex flex-wrap items-center gap-2">
+            <BuscarCapasFaltantes itens={semCapa} />
             <CriarVolumesDialog
               serieId={id}
               serieNome={serie.nome}
