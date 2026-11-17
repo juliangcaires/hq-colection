@@ -9,6 +9,7 @@ import { Estrelas } from '@/components/ui/estrelas'
 import { formatarNota } from '@/lib/nota'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
 import { cn } from '@/lib/utils'
+import { hrefDoItem } from '@/lib/navegacao-item'
 
 type SearchParams = { tipo?: string; limite?: string }
 
@@ -102,7 +103,7 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
         <>
           <div className="grid grid-cols-3 gap-3 lg:max-w-[680px] lg:gap-5">
             {podio.map((item, i) => (
-              <Link key={item.id} href={`/item/${item.id}`} className="group flex flex-col gap-2">
+              <Link key={item.id} href={hrefDoItem(item.id, '/ranking')} className="group flex flex-col gap-2">
                 <div className="relative">
                   <Capa item={item} capaUrl={capa(item)} className="group-hover:ring-primary/40" />
                   <span
@@ -131,7 +132,7 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
             <ol start={4} className="flex flex-col divide-y divide-border rounded-xl border border-border bg-card">
               {resto.map((item, i) => (
                 <li key={item.id}>
-                  <Link href={`/item/${item.id}`} className="flex items-center gap-3 p-3 hover:bg-white/[0.03]">
+                  <Link href={hrefDoItem(item.id, '/ranking')} className="flex items-center gap-3 p-3 hover:bg-white/[0.03]">
                     <span className="w-7 shrink-0 text-center font-heading text-lg font-extrabold text-muted-foreground tabular-nums">
                       {i + 4}
                     </span>

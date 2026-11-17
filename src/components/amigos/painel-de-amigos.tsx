@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Check, Copy, UserPlus, X } from 'lucide-react'
+import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -26,6 +27,7 @@ export type LinhaDeAmizade = {
   direcao: 'amigo' | 'enviada' | 'recebida'
   apelido: string | null
   nome_exibicao: string | null
+  avatar_url: string | null
 }
 
 const nomeDe = (a: LinhaDeAmizade) => a.nome_exibicao || a.apelido || 'Alguém'
@@ -161,9 +163,12 @@ export function PainelDeAmigos({
           <ul className="flex flex-col gap-2">
             {amigos.map((a) => (
               <li key={a.amizade_id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
-                <Link href={`/amigos/${a.apelido}`} className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-semibold">{nomeDe(a)}</span>
-                  {a.apelido && <span className="truncate text-xs text-muted-foreground">@{a.apelido}</span>}
+                <Link href={`/amigos/${a.apelido}`} className="flex min-w-0 flex-1 items-center gap-3">
+                  <Avatar apelido={a.apelido} nome={nomeDe(a)} url={a.avatar_url} size={40} />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm font-semibold">{nomeDe(a)}</span>
+                    {a.apelido && <span className="truncate text-xs text-muted-foreground">@{a.apelido}</span>}
+                  </span>
                 </Link>
                 <Button variant="ghost" className="h-10 text-danger-soft-text" disabled={isPending} onClick={() => setDesfazendo(a)}>
                   Desfazer

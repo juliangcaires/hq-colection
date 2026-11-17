@@ -74,7 +74,7 @@ export default async function ColecaoPage({
         <div className="grid grid-cols-3 gap-x-3 gap-y-3.5 lg:grid-cols-[repeat(auto-fill,minmax(132px,1fr))] lg:gap-x-[18px] lg:gap-y-5">
           {itens.map((item) => (
             <CardSelecionavel key={item.id} item={{ id: item.id, estado: item.estado, titulo: item.titulo }}>
-              <ItemCard item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
+              <ItemCard item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} de="/colecao" />
             </CardSelecionavel>
           ))}
         </div>
@@ -117,7 +117,7 @@ function ColecaoAgrupada({
           <div className="grid grid-cols-3 gap-x-3 gap-y-3.5 lg:grid-cols-[repeat(auto-fill,minmax(132px,1fr))] lg:gap-x-[18px] lg:gap-y-5">
             {grupo.itens.map((item) => (
               <CardSelecionavel key={item.id} item={{ id: item.id, estado: item.estado, titulo: item.titulo }}>
-                <ItemCard item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} />
+                <ItemCard item={item} capaUrl={capaMap.get(item.capa_url ?? '') ?? null} de="/colecao" />
               </CardSelecionavel>
             ))}
           </div>

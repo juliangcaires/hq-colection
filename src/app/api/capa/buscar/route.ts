@@ -13,6 +13,7 @@ import { normalizarIsbn } from '@/lib/isbn'
 import {
   buscarCandidatos,
   buscarCapaPorIsbn,
+  buscarCapaPorMemoria,
   type MemoriaSerie,
   type Provedor,
 } from '@/lib/capa-busca'
@@ -24,6 +25,8 @@ const bodySchema = z.object({
   isbn: z.string().trim().max(20).optional().nullable(),
   titulo: z.string().trim().min(1).max(300),
   tipo: z.enum(['hq', 'manga']),
+  // 'lote': só ISBN e memória da série, nunca busca por título, e nunca troca capa existente.
+  modo: z.enum(['normal', 'lote']).optional(),
 })
 
 type SerieRow = {
@@ -48,7 +51,8 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
   }
-  const { itemId, isbn, titulo, tipo } = parsed.data
+  const { itemId, isbn, titulo, tipo, modo } = parsed.data
+  const lote = modo === 'lote'
 
   const { data: item } = await supabase
     .from('itens')
@@ -64,6 +68,10 @@ export async function POST(req: NextRequest) {
 
   if (!item || item.user_id !== user.id) {
     return NextResponse.json({ error: 'Item não encontrado' }, { status: 404 })
+  }
+
+  if (lote && item.capa_url) {
+    return NextResponse.json({ status: 'ja_tem_capa' })
   }
 
   // Identificadores do item no catálogo (ISBN do item ou o informado, chave da edição, chave da série).
@@ -117,6 +125,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: 'aplicada' })
       }
     }
+  }
+
+  // Lote: sem busca livre por título (ambígua e gasta quota). Só a memória da série,
+  // que dá a capa exata do volume quando o provedor sabe buscar por volume.
+  if (lote) {
+    if (memoria?.provedor && item.numero_volume !== null) {
+      const candidato = await buscarCapaPorMemoria(memoria, item.numero_volume)
+      if (candidato && (await aplicarCapaDeApi(supabase, itemId, candidato.url))) {
+        return NextResponse.json({ status: 'aplicada', origem: 'memoria' })
+      }
+    }
+    return NextResponse.json({ status: 'nao_encontrada' })
   }
 
   // 3. Por título — catálogo por chave, provedores e, no fim, capas que só batem no nome (nunca aplicadas sozinhas)

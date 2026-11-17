@@ -67,9 +67,9 @@ export function EmprestimoDoItem({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
+    <>
       {aberto ? (
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-warning/45 bg-warning/10 p-3">
+        <div className="flex w-full min-w-0 basis-full flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-warning/45 bg-warning/10 p-3">
           <HandHelping className="size-5 shrink-0 text-warning-text" aria-hidden />
           <div className="min-w-0 flex-1 text-sm text-warning-text">
             <p className="font-medium">Emprestado para {aberto.para_quem}</p>
@@ -126,6 +126,6 @@ export function EmprestimoDoItem({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }

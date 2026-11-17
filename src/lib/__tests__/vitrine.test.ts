@@ -50,7 +50,7 @@ describe('chamadas', () => {
     expect(r.total).toBe(7)
     expect(r.itens[0]).toMatchObject({ numero_volume: 2.5, nota: 4.5, reservado: false })
     const resumo = await carregarResumo(fake({ nome: 'Ana', apelido: 'ana', escopo: ['colecao'], colecao: 3, lidos: null, desejos: null, series: null }).cliente, link)
-    expect(resumo).toEqual({ nome: 'Ana', apelido: 'ana', escopo: ['colecao'], colecao: 3, lidos: null, desejos: null, series: null })
+    expect(resumo).toEqual({ nome: 'Ana', apelido: 'ana', avatar_url: null, escopo: ['colecao'], colecao: 3, lidos: null, desejos: null, series: null })
   })
 
   it('erro do banco vira exceção (a página mostra o erro, não dados vazios)', async () => {

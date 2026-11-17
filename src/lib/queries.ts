@@ -26,6 +26,7 @@ type RawItemRow = {
   critica: string | null
   lido_em: string | null
   critica_privada: boolean
+  variante_de: string | null
   created_at: string
   updated_at: string
   serie: {
@@ -112,11 +113,11 @@ export async function listarItens(
 /** O que um card de item precisa — sem tags, observações, preço etc. (o payload da lista era 1,1 MB). */
 export type ItemDeLista = Pick<
   ItemComRelacoes,
-  'id' | 'titulo' | 'estado' | 'prioridade' | 'preco' | 'numero_volume' | 'capa_url' | 'serie'
+  'id' | 'titulo' | 'estado' | 'prioridade' | 'preco' | 'numero_volume' | 'capa_url' | 'serie' | 'variante_de'
 >
 
 const CARD_SELECT =
-  'id, titulo, estado, prioridade, preco, numero_volume, capa_url, serie:series(id, nome, tipo, tem_numeracao)'
+  'id, titulo, estado, prioridade, preco, numero_volume, capa_url, variante_de, serie:series(id, nome, tipo, tem_numeracao)'
 
 /** Itens por chamada no `.in('id', …)` — URL do PostgREST tem limite de tamanho. */
 const IDS_POR_CONSULTA = 100
@@ -316,6 +317,7 @@ export async function listarRanking(
     .from('itens')
     .select(`${CARD_SELECT}, nota, critica`)
     .eq('estado', 'lido')
+    .is('variante_de', null) // variante compartilha a nota do principal: conta uma vez
     .not('nota', 'is', null)
     .order('nota', { ascending: false })
     .order('updated_at', { ascending: false })
@@ -327,7 +329,7 @@ export async function listarRanking(
   const [{ data, error }, notas] = await Promise.all([
     consulta,
     lerTodasAsLinhas<{ id: string; nota: number | null }>((de, ate) => {
-      let q = supabase.from('itens').select('id, nota').eq('estado', 'lido').order('id')
+      let q = supabase.from('itens').select('id, nota').eq('estado', 'lido').is('variante_de', null).order('id')
       if (tipo) q = q.eq('tipo', tipo)
       return q.range(de, ate)
     }),

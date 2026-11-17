@@ -28,7 +28,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -1015,5 +1015,647 @@ describe('amigos, presentes e empréstimos (migration 0014)', () => {
     }
     expect(sql).toMatch(/revoke all on presentes from public, anon, authenticated;/)
     expect(sql).toMatch(/revoke all on all functions in schema privado from public, anon, authenticated;/)
+  })
+})
+
+describe('foto de perfil (migration 0016)', () => {
+  const ARQ = 'b'.repeat(32)
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+
+  it('bucket avatares é público, limitado a imagens e a 300 KB', async () => {
+    await db.query(`reset role`)
+    const { rows } = await db.query<{ public: boolean; file_size_limit: string; allowed_mime_types: string[] }>(`select public, file_size_limit, allowed_mime_types from storage.buckets where id = 'avatares'`)
+    await db.query(`set role authenticated`)
+    expect(rows[0].public).toBe(true)
+    expect(Number(rows[0].file_size_limit)).toBe(307200)
+    expect(rows[0].allowed_mime_types).toEqual(['image/jpeg', 'image/png', 'image/webp'])
+  })
+
+  it('policies: cada um escreve só na própria pasta; ninguém altera nem apaga o arquivo do outro', async () => {
+    await db.query(`reset role`)
+    await db.exec(`alter table storage.objects enable row level security; grant usage on schema storage to authenticated; grant all on storage.objects to authenticated; set role authenticated;`)
+    const meu = `${U}/${ARQ}.webp`
+    const dele = `${OUTRO}/${ARQ}.webp`
+    await db.query(`insert into storage.objects(bucket_id, name) values ('avatares', $1)`, [meu])
+    // não grava na pasta alheia, nem com nome fora do padrão na própria
+    await expect(db.query(`insert into storage.objects(bucket_id, name) values ('avatares', $1)`, [dele])).rejects.toThrow()
+    await expect(db.query(`insert into storage.objects(bucket_id, name) values ('avatares', $1)`, [`${U}/foto.gif`])).rejects.toThrow()
+    await como(OUTRO, async () => {
+      await db.query(`insert into storage.objects(bucket_id, name) values ('avatares', $1)`, [dele])
+      // o outro não vê, não sobrescreve e não apaga o meu
+      expect((await db.query(`select 1 from storage.objects where name = $1`, [meu])).rows).toHaveLength(0)
+      const up = await db.query(`update storage.objects set name = $2 where name = $1 returning 1`, [meu, `${U}/${'c'.repeat(32)}.webp`])
+      expect(up.rows).toHaveLength(0)
+      const del = await db.query(`delete from storage.objects where name = $1 returning 1`, [meu])
+      expect(del.rows).toHaveLength(0)
+      // nem move o próprio arquivo para a minha pasta
+      await expect(db.query(`update storage.objects set name = $2 where name = $1`, [dele, `${U}/${'d'.repeat(32)}.webp`])).rejects.toThrow()
+    })
+    expect((await db.query(`select 1 from storage.objects where name = $1`, [meu])).rows).toHaveLength(1)
+    expect((await db.query(`delete from storage.objects where name = $1 returning 1`, [meu])).rows).toHaveLength(1)
+  })
+
+  it('amigos_listar e o resumo trazem avatar_url', async () => {
+    const cols = (await db.query<{ column_name: string }>(`select column_name from information_schema.columns where table_name = 'perfis'`)).rows.map((r) => r.column_name)
+    expect(cols).toContain('avatar_url')
+    const r = await db.query(`select * from amigos_listar()`)
+    expect(r.fields.map((f) => f.name)).toContain('avatar_url')
+  })
+})
+
+describe('capa variante (migration 0017)', () => {
+  const dados = (extra: object) => JSON.stringify({ titulo: 'V', tipo: 'hq', estado: 'comprado', prioridade: 0, ...extra })
+  const novo = async (extra: object = {}) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') as id`, [dados(extra)])).rows[0].id
+  const ler = async (id: string) =>
+    (await db.query<{ estado: string; nota: string | null; critica: string | null; lido_em: string | null; critica_privada: boolean; variante_de: string | null }>(
+      `select estado, nota, critica, lido_em::text, critica_privada, variante_de from itens where id = $1`, [id])).rows[0]
+
+  it('vincular herda o que o principal já tem e editar um reflete no outro (nos dois sentidos)', async () => {
+    const principal = await novo({ estado: 'lido', nota: 4.5, critica: 'Ótimo', lido_em: '2026-05-01', critica_privada: true })
+    const variante = await novo({ variante_de: principal })
+    expect(await ler(variante)).toMatchObject({ estado: 'lido', critica: 'Ótimo', lido_em: '2026-05-01', critica_privada: true, variante_de: principal })
+    expect(Number((await ler(variante)).nota)).toBe(4.5)
+
+    await db.query(`select item_salvar($1, $2::jsonb, '{}')`, [variante, dados({ estado: 'lido', nota: 2, critica: 'Mudei', lido_em: '2026-06-02', variante_de: principal })])
+    expect(await ler(principal)).toMatchObject({ estado: 'lido', critica: 'Mudei', lido_em: '2026-06-02' })
+    expect(Number((await ler(principal)).nota)).toBe(2)
+
+    await db.query(`update itens set nota = 5, estado = 'comprado' where id = $1`, [principal])
+    expect(await ler(variante)).toMatchObject({ estado: 'comprado', lido_em: null })
+    expect(Number((await ler(variante)).nota)).toBe(5)
+  })
+
+  it('vincular depois (item_definir_variante) e desvincular; desvinculado deixa de sincronizar', async () => {
+    const principal = await novo({ estado: 'lido', nota: 3 })
+    const outro = await novo({ estado: 'comprado' })
+    await db.query(`select item_definir_variante($1, $2)`, [outro, principal])
+    expect((await ler(outro)).estado).toBe('lido')
+    await db.query(`select item_definir_variante($1, null)`, [outro])
+    expect((await ler(outro)).variante_de).toBeNull()
+    await db.query(`update itens set nota = 1 where id = $1`, [principal])
+    expect(Number((await ler(outro)).nota)).toBe(3)
+  })
+
+  it('várias variantes do mesmo principal ficam iguais entre si', async () => {
+    const principal = await novo({ estado: 'comprado' })
+    const v1 = await novo({ variante_de: principal })
+    const v2 = await novo({ variante_de: principal })
+    await db.query(`update itens set estado = 'lido', nota = 4 where id = $1`, [v1])
+    for (const id of [principal, v2]) expect(await ler(id)).toMatchObject({ estado: 'lido' })
+    expect(Number((await ler(v2)).nota)).toBe(4)
+  })
+
+  it('recusa cadeia, vínculo consigo, principal de outro usuário e variante que já tem variantes', async () => {
+    const a = await novo()
+    const b = await novo({ variante_de: a })
+    await expect(db.query(`select item_definir_variante($1, $2)`, [await novo(), b])).rejects.toThrow('variante_de_variante')
+    await expect(db.query(`select item_definir_variante($1, $1)`, [a])).rejects.toThrow()
+    await expect(db.query(`select item_definir_variante($1, $2)`, [a, await novo()])).rejects.toThrow('variante_com_variantes')
+    await expect(db.query(`select item_definir_variante($1, '33333333-3333-3333-3333-333333333333')`, [a])).rejects.toThrow('variante_principal_nao_encontrado')
+  })
+
+  it('desejo não sincroniza; ao adquirir, a variante assume o estado do principal', async () => {
+    const principal = await novo({ estado: 'lido', nota: 4 })
+    const variante = await novo({ estado: 'desejo', variante_de: principal })
+    expect((await ler(variante)).estado).toBe('desejo')
+    await db.query(`update itens set nota = 2 where id = $1`, [principal])
+    expect((await ler(variante)).nota).toBeNull()
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [variante])
+    expect(await ler(variante)).toMatchObject({ estado: 'lido' })
+    expect(Number((await ler(variante)).nota)).toBe(2)
+  })
+
+  it('apagar o principal solta a variante (sem apagá-la)', async () => {
+    const principal = await novo()
+    const variante = await novo({ variante_de: principal })
+    await db.query(`delete from itens where id = $1`, [principal])
+    expect((await ler(variante)).variante_de).toBeNull()
+  })
+
+  it('série: variante não gera duplicidade em completa/lida; estante (itens) conta 2', async () => {
+    const { rows: [s] } = await db.query<{ s: string }>(`select serie_salvar(null, '{"nome":"VarSerie","tipo":"hq","tem_numeracao":true,"total_volumes":2}', '{}') s`)
+    const v1 = await novo({ serie_id: s.s, numero_volume: 1, estado: 'comprado' })
+    await novo({ serie_id: s.s, numero_volume: 1, estado: 'comprado', variante_de: v1 })
+    let r = (await db.query<{ completa: boolean; lida: boolean; faltantes: number[] }>(`select completa, lida, faltantes from series_com_resumo('VarSerie')`)).rows[0]
+    expect(r).toEqual({ completa: false, lida: false, faltantes: [2] })
+    await novo({ serie_id: s.s, numero_volume: 2, estado: 'comprado' })
+    await db.query(`update itens set estado = 'lido' where serie_id = $1 and numero_volume = 1 and variante_de is null`, [s.s])
+    await db.query(`update itens set estado = 'lido' where serie_id = $1 and numero_volume = 2`, [s.s])
+    r = (await db.query(`select completa, lida, faltantes from series_com_resumo('VarSerie')`)).rows[0] as typeof r
+    expect(r).toEqual({ completa: true, lida: true, faltantes: [] })
+    const { rows: [c] } = await db.query<{ estante: number; lidos: number }>(
+      `select count(*)::int estante, count(*) filter (where estado = 'lido' and variante_de is null)::int lidos from itens where serie_id = $1`, [s.s])
+    expect(c).toEqual({ estante: 3, lidos: 2 })
+  })
+})
+
+describe('feed de amigos (migration 0018)', () => {
+  // Quatro contas: dono (Ana, U), amigo (Beto), desconhecido (Caio) e ex-amigo (Dora).
+  const CAIO = '88888888-8888-8888-8888-888888888888'
+  const DORA = '77777777-7777-7777-7777-777777777777'
+  let amizadeDora = ''
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const lido = async (extra: object = {}) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'Leitura', tipo: 'hq', estado: 'lido', prioridade: 0, ...extra })])).rows[0].id
+  const feed = async () => (await db.query<Record<string, unknown>>(`select * from feed_listar()`)).rows
+  const titulos = async () => (await feed()).map((r) => r.titulo)
+  const solicitar = async (apelido: string) => (await db.query<{ id: string }>(`select amizade_solicitar($1) id`, [apelido])).rows[0].id
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}'), ('${DORA}') on conflict do nothing;
+      delete from amizades; delete from itens; delete from perfis;
+      insert into perfis(user_id, apelido) values ('${U}', 'ana'), ('${OUTRO}', 'beto'), ('${CAIO}', 'caio'), ('${DORA}', 'dora');
+    `)
+    // Beto e Dora pedem; Ana aceita os dois. Depois Dora vira ex-amiga.
+    const idBeto = await como(OUTRO, () => solicitar('ana'))
+    await db.query(`select amizade_responder($1, true)`, [idBeto])
+    amizadeDora = await como(DORA, () => solicitar('ana'))
+    await db.query(`select amizade_responder($1, true)`, [amizadeDora])
+  })
+
+  it('interruptor desligado (padrão): nada aparece, nem para o dono', async () => {
+    await lido({ titulo: 'Escondido' })
+    expect(await titulos()).toEqual([])
+    await como(OUTRO, async () => expect(await titulos()).toEqual([]))
+  })
+
+  it('ligar: o amigo vê, o desconhecido não; desligar some na hora e o item é preservado', async () => {
+    await db.query(`select feed_configurar(true)`)
+    expect(await titulos()).toContain('Escondido')
+    await como(OUTRO, async () => expect(await titulos()).toContain('Escondido'))
+    await como(CAIO, async () => expect(await titulos()).toEqual([]))
+    await db.query(`select feed_configurar(false)`)
+    await como(OUTRO, async () => expect(await titulos()).toEqual([]))
+    await db.query(`select feed_configurar(true)`)
+    await como(OUTRO, async () => expect(await titulos()).toContain('Escondido'))
+  })
+
+  it('ligar libera nota/crítica aos amigos; crítica privada nunca sai', async () => {
+    const { rows } = await db.query<{ escopo_amigos: string[] }>(`select escopo_amigos from perfis where user_id = $1`, [U])
+    expect(rows[0].escopo_amigos).toContain('notas_criticas')
+    await lido({ titulo: 'Com nota', nota: 4.5, critica: 'Gostei' })
+    await lido({ titulo: 'Privada', nota: 3, critica: 'Segredo', critica_privada: true })
+    await como(OUTRO, async () => {
+      const f = await feed()
+      const a = f.find((r) => r.titulo === 'Com nota')!
+      expect(Number(a.nota)).toBe(4.5)
+      expect(a.critica).toBe('Gostei')
+      const b = f.find((r) => r.titulo === 'Privada')!
+      expect(Number(b.nota)).toBe(3)
+      expect(b.critica).toBeNull()
+    })
+    // Sem `notas_criticas` no escopo, nem a nota sai.
+    await db.query(`select amigos_escopo_atualizar('{colecao,series,lidos}')`)
+    await como(OUTRO, async () => {
+      const a = (await feed()).find((r) => r.titulo === 'Com nota')!
+      expect(a.nota).toBeNull()
+      expect(a.critica).toBeNull()
+    })
+    await db.query(`select amigos_escopo_atualizar('{colecao,series,lidos,notas_criticas}')`)
+  })
+
+  it('só entra item que foi marcado como lido depois (sem passado), não variante, não oculto', async () => {
+    const antigo = await lido({ titulo: 'Antigo' })
+    await admin(`update itens set lido_marcado_em = null where id = '${antigo}'`)
+    const velho = await lido({ titulo: 'Velho' })
+    await admin(`update itens set lido_marcado_em = now() - interval '91 days' where id = '${velho}'`)
+    const principal = await lido({ titulo: 'Principal' })
+    await lido({ titulo: 'Variante', variante_de: principal })
+    const oculto = await lido({ titulo: 'Oculto' })
+    await db.query(`select feed_ocultar($1, true)`, [oculto])
+    const t = await titulos()
+    expect(t).toContain('Principal')
+    for (const fora of ['Antigo', 'Velho', 'Variante', 'Oculto']) expect(t).not.toContain(fora)
+    await db.query(`select feed_ocultar($1, false)`, [oculto])
+    expect(await titulos()).toContain('Oculto')
+    // Deixar de ser lido tira do feed.
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [oculto])
+    expect(await titulos()).not.toContain('Oculto')
+    // O amigo não oculta o item de outra pessoa.
+    await como(OUTRO, () => expect(db.query(`select feed_ocultar($1, true)`, [principal])).rejects.toThrow('item_nao_encontrado'))
+  })
+
+  it('marcação em lote vira um post por pessoa + série + dia', async () => {
+    const { rows: [s] } = await db.query<{ s: string }>(`select serie_salvar(null, '{"nome":"Lote","tipo":"hq","tem_numeracao":true,"total_volumes":3}', '{}') s`)
+    for (const n of [1, 2, 3]) await lido({ titulo: `Lote ${n}`, serie_id: s.s, numero_volume: n })
+    const posts = (await feed()).filter((r) => r.serie_nome === 'Lote')
+    expect(posts).toHaveLength(1)
+    expect(posts[0].qtd).toBe(3)
+  })
+
+  it('curtir e comentar: amigo e dono podem; desconhecido e ex-amigo não; texto validado', async () => {
+    const id = await lido({ titulo: 'Conversa' })
+    await como(OUTRO, async () => {
+      await db.query(`select feed_curtir($1)`, [id])
+      await db.query(`select feed_curtir($1)`, [id]) // repetir não duplica
+      await db.query(`select feed_comentar($1, '  Boa!  ')`, [id])
+      await expect(db.query(`select feed_comentar($1, '   ')`, [id])).rejects.toThrow('comentario_vazio')
+      await expect(db.query(`select feed_comentar($1, $2)`, [id, 'x'.repeat(501)])).rejects.toThrow('comentario_longo')
+    })
+    await como(CAIO, async () => {
+      await expect(db.query(`select feed_curtir($1)`, [id])).rejects.toThrow('item_nao_encontrado')
+      await expect(db.query(`select feed_comentar($1, 'oi')`, [id])).rejects.toThrow('item_nao_encontrado')
+      expect((await db.query(`select * from feed_comentarios_listar($1)`, [id])).rows).toHaveLength(0)
+    })
+    const p = (await feed()).find((r) => r.item_id === id)!
+    expect(p.curtidas).toBe(1)
+    expect(p.curti).toBe(false)
+    expect(p.comentarios).toBe(1)
+    await como(OUTRO, async () => expect((await feed()).find((r) => r.item_id === id)!.curti).toBe(true))
+    const { rows } = await db.query<{ texto: string }>(`select texto from feed_comentarios_listar($1)`, [id])
+    expect(rows.map((r) => r.texto)).toEqual(['Boa!'])
+    // Tabelas fechadas: nenhum acesso direto.
+    await como(OUTRO, async () => expect((await db.query(`select * from feed_comentarios`)).rows).toHaveLength(0))
+  })
+
+  it('comentário de um amigo não aparece para outro amigo do dono que não o conhece; o dono vê todos', async () => {
+    // Caio vira amigo da Ana; Beto e Caio não se conhecem.
+    const idCaio = await como(CAIO, () => solicitar('ana'))
+    await db.query(`select amizade_responder($1, true)`, [idCaio])
+    const id = await lido({ titulo: 'Rodinha' })
+    await como(OUTRO, async () => {
+      await db.query(`select feed_curtir($1)`, [id])
+      await db.query(`select feed_comentar($1, 'do Beto')`, [id])
+    })
+    await como(CAIO, async () => {
+      await db.query(`select feed_comentar($1, 'do Caio')`, [id])
+      const textos = (await db.query<{ texto: string }>(`select texto from feed_comentarios_listar($1)`, [id])).rows.map((r) => r.texto)
+      expect(textos).toEqual(['do Caio'])
+      const p = (await feed()).find((r) => r.item_id === id)!
+      expect(p.comentarios).toBe(1)
+      expect(p.curtidas).toBe(0)
+    })
+    const donoVe = (await db.query<{ texto: string }>(`select texto from feed_comentarios_listar($1)`, [id])).rows.map((r) => r.texto)
+    expect(donoVe).toEqual(['do Beto', 'do Caio'])
+  })
+
+  it('apagar comentário: o autor ou o dono do item, mais ninguém', async () => {
+    const id = await lido({ titulo: 'Moderação' })
+    const cBeto = await como(OUTRO, async () => (await db.query<{ c: string }>(`select feed_comentar($1, 'um') c`, [id])).rows[0].c)
+    const cCaio = await como(CAIO, async () => (await db.query<{ c: string }>(`select feed_comentar($1, 'dois') c`, [id])).rows[0].c)
+    await como(OUTRO, () => expect(db.query(`select feed_apagar_comentario($1)`, [cCaio])).rejects.toThrow('comentario_nao_encontrado'))
+    await como(OUTRO, () => db.query(`select feed_apagar_comentario($1)`, [cBeto]))
+    await db.query(`select feed_apagar_comentario($1)`, [cCaio]) // dono
+    expect((await db.query(`select * from feed_comentarios_listar($1)`, [id])).rows).toHaveLength(0)
+  })
+
+  it('ex-amigo: desfazer a amizade corta feed, curtida e comentário na hora', async () => {
+    const id = await lido({ titulo: 'Para a Dora' })
+    await como(DORA, async () => {
+      expect(await titulos()).toContain('Para a Dora')
+      await db.query(`select feed_comentar($1, 'da Dora')`, [id])
+    })
+    await db.query(`select amizade_desfazer($1)`, [amizadeDora])
+    await como(DORA, async () => {
+      expect(await titulos()).toEqual([])
+      await expect(db.query(`select feed_curtir($1)`, [id])).rejects.toThrow('item_nao_encontrado')
+      await expect(db.query(`select feed_comentar($1, 'ainda aqui?')`, [id])).rejects.toThrow('item_nao_encontrado')
+      expect((await db.query(`select * from feed_comentarios_listar($1)`, [id])).rows).toHaveLength(0)
+    })
+    // O comentário dela some para os amigos que sobraram (ela não é mais amiga de ninguém do círculo).
+    await como(OUTRO, async () => {
+      const textos = (await db.query<{ texto: string }>(`select texto from feed_comentarios_listar($1)`, [id])).rows.map((r) => r.texto)
+      expect(textos).not.toContain('da Dora')
+    })
+  })
+
+  it('capa: só devolve o arquivo privado de item visível', async () => {
+    const id = await lido({ titulo: 'Com capa' })
+    await admin(`update itens set capa_url = '${U}/abc.jpg' where id = '${id}'`)
+    await como(OUTRO, async () => expect((await db.query<{ c: string }>(`select feed_capa($1) c`, [id])).rows[0].c).toBe(`${U}/abc.jpg`))
+    await como(DORA, async () => expect((await db.query<{ c: string | null }>(`select feed_capa($1) c`, [id])).rows[0].c).toBeNull())
+    await db.query(`select feed_ocultar($1, true)`, [id])
+    await como(OUTRO, async () => expect((await db.query<{ c: string | null }>(`select feed_capa($1) c`, [id])).rows[0].c).toBeNull())
+  })
+
+  it('resumo da semana: seus lidos, o que os amigos leram e o destaque', async () => {
+    await admin(`delete from itens; delete from feed_curtidas; delete from feed_comentarios`)
+    await como(OUTRO, async () => {
+      await db.query(`select feed_configurar(true)`)
+      await lido({ titulo: 'Beto leu 1', nota: 3 })
+      await lido({ titulo: 'Beto leu 2', nota: 5 })
+    })
+    await lido({ titulo: 'Eu 1' })
+    await lido({ titulo: 'Eu 2' })
+    await lido({ titulo: 'Eu velho', lido_em: '2020-01-01' })
+    const { rows: [r] } = await db.query<{ r: { meus_lidos: number; amigos: number; lidos_amigos: number; destaque: { titulo: string; apelido: string; nota: number } } }>(`select feed_resumo_semana() r`)
+    expect(r.r.meus_lidos).toBe(2)
+    expect(r.r.amigos).toBe(1)
+    expect(r.r.lidos_amigos).toBe(2)
+    expect(r.r.destaque).toMatchObject({ titulo: 'Beto leu 2', apelido: 'beto', nota: 5 })
+    // Quem não é amigo não entra na conta do Caio... (Caio é amigo da Ana, não do Beto)
+    await como(CAIO, async () => {
+      const { rows: [c] } = await db.query<{ r: { amigos: number } }>(`select feed_resumo_semana() r`)
+      expect(c.r.amigos).toBe(1) // só a Ana, que ligou o feed
+    })
+  })
+
+  it('migration: as funções do feed exigem login e a camada interna fica fechada', () => {
+    const sql = readFileSync(path.join(PASTA, '0018_feed_amigos.sql'), 'utf8')
+    expect(sql).toMatch(/revoke all on all functions in schema privado/)
+    expect(sql).toMatch(/revoke all on feed_curtidas from public, anon, authenticated/)
+    expect(sql).toMatch(/revoke all on feed_comentarios from public, anon, authenticated/)
+    for (const f of ['feed_listar(int, timestamptz)', 'feed_curtir(uuid)', 'feed_comentar(uuid, text)', 'feed_resumo_semana()']) {
+      expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
+      expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
+    }
+  })
+})
+
+describe('notas entre amigos (migration 0019)', () => {
+  // Dono (Ana, U), amigo (Beto), desconhecido (Caio), ex-amigo (Dora).
+  const CAIO = '88888888-8888-8888-8888-888888888888'
+  const DORA = '77777777-7777-7777-7777-777777777777'
+  const CHAVE = 'berserk|3|manga'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const salvar = async (extra: object) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'Berserk 3', tipo: 'manga', estado: 'lido', prioridade: 0, obra_chave: CHAVE, ...extra })])).rows[0].id
+  const obra = async (chave = CHAVE) => (await db.query<Record<string, unknown>>(`select * from obra_amigos($1)`, [chave])).rows
+  const serie = async (chave = 'berserk|manga') => (await db.query<Record<string, unknown>>(`select * from serie_amigos($1)`, [chave])).rows
+
+  let amizadeDora = ''
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}'), ('${DORA}') on conflict do nothing;
+      delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos) values
+        ('${U}', 'ana', '{notas_criticas,lidos}'), ('${OUTRO}', 'beto', '{notas_criticas,lidos}'),
+        ('${CAIO}', 'caio', '{notas_criticas,lidos}'), ('${DORA}', 'dora', '{notas_criticas,lidos}');
+    `)
+    const sol = async (apelido: string) => (await db.query<{ id: string }>(`select amizade_solicitar($1) id`, [apelido])).rows[0].id
+    const idBeto = await como(OUTRO, () => sol('ana'))
+    await db.query(`select amizade_responder($1, true)`, [idBeto])
+    amizadeDora = await como(DORA, () => sol('ana'))
+    await db.query(`select amizade_responder($1, true)`, [amizadeDora])
+    // Beto, Caio e Dora leram e avaliaram a mesma obra.
+    for (const uid of [OUTRO, CAIO, DORA]) {
+      await como(uid, () => salvar({ nota: uid === OUTRO ? 4.5 : 2, critica: `crítica de ${uid.slice(0, 2)}` }))
+    }
+  })
+
+  it('amigo vê; desconhecido (Caio) não vê ninguém', async () => {
+    const r = await obra()
+    expect(r.map((x) => x.apelido).sort()).toEqual(['beto', 'dora'])
+    await como(CAIO, async () => expect(await obra()).toEqual([])) // Caio não tem amigos
+  })
+
+  it('ex-amigo some na hora', async () => {
+    await admin(`delete from amizades where id = '${amizadeDora}'`)
+    expect((await obra()).map((x) => x.apelido)).toEqual(['beto'])
+    await como(DORA, async () => expect(await obra()).toEqual([]))
+  })
+
+  it('crítica privada nunca sai; escopo sem notas_criticas tira tudo', async () => {
+    await admin(`update itens set critica_privada = true where user_id = '${OUTRO}'`)
+    const [r] = await obra()
+    expect(Number(r.nota)).toBe(4.5)
+    expect(r.critica).toBeNull()
+    await admin(`update perfis set escopo_amigos = '{lidos}' where user_id = '${OUTRO}'`)
+    expect(await obra()).toEqual([])
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos}' where user_id = '${OUTRO}'; update itens set critica_privada = false where user_id = '${OUTRO}'`)
+  })
+
+  it('variante não duplica; chave diferente não casa; só lido', async () => {
+    const principal = await como(OUTRO, async () => (await db.query<{ id: string }>(`select id from itens where obra_chave = $1`, [CHAVE])).rows[0].id)
+    await como(OUTRO, () => salvar({ titulo: 'Berserk 3 capa alternativa', nota: 4.5, variante_de: principal }))
+    expect(await obra()).toHaveLength(1)
+    expect(await obra('berserk|4|manga')).toEqual([])
+    expect(await obra('')).toEqual([])
+    // Volta a ser só "comprado": sai da lista.
+    await admin(`update itens set variante_de = null, estado = 'comprado' where user_id = '${OUTRO}'`)
+    expect(await obra()).toEqual([])
+    await admin(`delete from itens where user_id = '${OUTRO}'`)
+  })
+
+  it('curtir/comentar só onde o item aparece no feed; casou_por usa o ISBN', async () => {
+    const id = await como(OUTRO, () => salvar({ nota: 5, isbn: '9781506711980' }))
+    const [sem] = await obra()
+    expect(sem.interagivel).toBe(false)
+    expect(sem.casou_por).toBe('nome')
+    await como(OUTRO, () => db.query(`select feed_configurar(true)`))
+    // item já nasceu lido com o feed desligado, mas lido_marcado_em é preenchido sempre
+    const [com] = (await db.query<Record<string, unknown>>(`select * from obra_amigos($1, '9781506711980')`, [CHAVE])).rows
+    expect(com.item_id).toBe(id)
+    expect(com.interagivel).toBe(true)
+    expect(com.casou_por).toBe('isbn')
+    await db.query(`select feed_curtir($1)`, [id])
+    expect(Number((await obra())[0].curtidas)).toBe(1)
+  })
+
+  it('série: nota própria ou média dos volumes; crítica privada fora; desconhecido não vê', async () => {
+    await admin(`
+      insert into series(id, user_id, nome, tipo, serie_chave, nota, critica) values
+        ('aaaaaaaa-0000-0000-0000-000000000001', '${OUTRO}', 'Berserk', 'manga', 'berserk|manga', null, 'Série ótima');
+      insert into itens(user_id, serie_id, titulo, tipo, estado, nota) values
+        ('${OUTRO}', 'aaaaaaaa-0000-0000-0000-000000000001', 'v1', 'manga', 'lido', 4),
+        ('${OUTRO}', 'aaaaaaaa-0000-0000-0000-000000000001', 'v2', 'manga', 'lido', 5);
+    `)
+    const [r] = await serie()
+    expect(Number(r.nota)).toBe(4.5)
+    expect(r.critica).toBe('Série ótima')
+    await admin(`update series set critica_privada = true, nota = 3 where user_id = '${OUTRO}'`)
+    const [p] = await serie()
+    expect(Number(p.nota)).toBe(3)
+    expect(p.critica).toBeNull()
+    await como(CAIO, async () => expect(await serie()).toEqual([]))
+  })
+
+  it('migration: funções exigem login e a camada interna fica fechada', () => {
+    const sql = readFileSync(path.join(PASTA, '0019_notas_entre_amigos.sql'), 'utf8')
+    expect(sql).toMatch(/revoke all on all functions in schema privado/)
+    for (const f of ['obra_amigos(text, text)', 'serie_amigos(text)']) {
+      expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
+      expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
+    }
+  })
+})
+
+describe('casar obra por ISBN e vínculo manual (migration 0020)', () => {
+  // Ana (U) é a visitante; Beto (OUTRO) é amigo; Caio não é amigo de ninguém; Dora (ex-amigo) também não.
+  const CAIO = '88888888-8888-8888-8888-888888888888'
+  const DORA = '77777777-7777-7777-7777-777777777777'
+  const MINHA = 'batman absolute|1|hq'
+  const ISBN = '9781506711980'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const salvar = async (extra: object) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'x', tipo: 'hq', estado: 'lido', prioridade: 0, nota: 4, ...extra })])).rows[0].id
+  const obra = async (chave: string | null, isbn: string | null = null) =>
+    (await db.query<Record<string, unknown>>(`select * from obra_amigos($1, $2)`, [chave, isbn])).rows
+  const erro = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+      return null
+    } catch (e) {
+      return (e as Error).message
+    }
+  }
+  const criar = (de: string, para: string) => db.query(`select obra_equivalencia_criar($1, $2)`, [de, para])
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}'), ('${DORA}') on conflict do nothing;
+      delete from obra_equivalencias; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos) values
+        ('${U}', 'ana', '{notas_criticas,lidos,colecao}'), ('${OUTRO}', 'beto', '{notas_criticas,lidos,colecao}'),
+        ('${CAIO}', 'caio', '{notas_criticas,lidos,colecao}'), ('${DORA}', 'dora', '{notas_criticas,lidos,colecao}');
+    `)
+    const id = (await como(OUTRO, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id))
+    await db.query(`select amizade_responder($1, true)`, [id])
+    await salvar({ titulo: 'Batman Absolute 1', obra_chave: MINHA, isbn: ISBN })
+    // Beto: mesmo ISBN com nome diferente (duas edições, a mais nova sem ISBN), e outra obra sem ISBN.
+    await como(OUTRO, async () => {
+      await salvar({ titulo: 'Absolute Batman 1', obra_chave: 'absolute batman|1|hq', isbn: '978-1-5067-1198-0', nota: 5 })
+      await salvar({ titulo: 'Outra Obra', obra_chave: 'outra obra|2|hq', nota: 3 })
+    })
+    // Dora (não é amiga) tem o mesmo ISBN.
+    await como(DORA, () => salvar({ titulo: 'Absolute Batman 1', obra_chave: 'absolute batman|1|hq', isbn: ISBN }))
+  })
+
+  it('ISBN igual casa mesmo com chave diferente; sem ISBN nada muda; não-amigo fica de fora', async () => {
+    expect(await obra(MINHA)).toEqual([])
+    const r = await obra(MINHA, ISBN)
+    expect(r).toHaveLength(1)
+    expect(r[0].apelido).toBe('beto')
+    expect(r[0].casou_por).toBe('isbn')
+    expect(await obra(null, ISBN)).toHaveLength(1) // item sem chave ainda casa por ISBN
+    expect(await obra(MINHA, '9780000000002')).toEqual([])
+  })
+
+  it('ISBN-10 e com hífens normalizam para o mesmo ISBN-13', async () => {
+    expect(await obra(MINHA, '1-50671198-7')).toHaveLength(1)
+    // A camada interna fica fechada para o app; confere a normalização como administrador.
+    await db.query(`reset role`)
+    try {
+      expect((await db.query<{ v: string | null }>(`select privado.isbn13_norm('1506711987') v`)).rows[0].v).toBe(ISBN)
+      expect((await db.query<{ v: string | null }>(`select privado.isbn13_norm('abc') v`)).rows[0].v).toBeNull()
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  })
+
+  it('uma linha por pessoa: casa por chave e por ISBN ao mesmo tempo, e com variante', async () => {
+    await como(OUTRO, () => salvar({ titulo: 'Batman Absolute 1', obra_chave: MINHA, nota: 2 }))
+    const r = await obra(MINHA, ISBN)
+    expect(r).toHaveLength(1)
+    expect(r[0].casou_por).toBe('isbn')
+    const semIsbn = await obra(MINHA)
+    expect(semIsbn).toHaveLength(1)
+    expect(semIsbn[0].casou_por).toBe('nome')
+    await admin(`delete from itens where user_id = '${OUTRO}' and obra_chave = '${MINHA}'`)
+  })
+
+  it('vínculo manual: cria, casa como "manual", só na visão de quem vinculou, e desfaz', async () => {
+    const ALVO = 'outra obra|2|hq'
+    expect(await obra(MINHA)).toEqual([])
+    await criar(MINHA, ALVO)
+    await criar(MINHA, ALVO) // idempotente
+    const r = await obra(MINHA)
+    expect(r).toHaveLength(1)
+    expect(r[0].casou_por).toBe('manual')
+    expect(Number(r[0].nota)).toBe(3)
+    const lista = (await db.query<Record<string, unknown>>(`select * from obra_equivalencias_listar($1)`, [MINHA])).rows
+    expect(lista).toHaveLength(1)
+    expect(lista[0].apelido).toBe('beto')
+    // Não altera a visão do amigo nem a de ninguém mais.
+    await como(OUTRO, async () => expect(await obra(ALVO)).toEqual([]))
+    await como(CAIO, async () => {
+      expect(await obra(MINHA)).toEqual([])
+      expect((await db.query(`select * from obra_equivalencias`)).rows).toEqual([])
+      expect((await db.query<Record<string, unknown>>(`select * from obra_equivalencias_listar($1)`, [MINHA])).rows).toEqual([])
+      await db.query(`select obra_equivalencia_desfazer($1, $2)`, [MINHA, ALVO]) // não apaga o de Ana
+    })
+    expect(await obra(MINHA)).toHaveLength(1)
+    await db.query(`select obra_equivalencia_desfazer($1, $2)`, [MINHA, ALVO])
+    expect(await obra(MINHA)).toEqual([])
+  })
+
+  it('não vincula a quem não é amigo, ao que o amigo não compartilha, nem a obra alheia; escrita direta é negada', async () => {
+    expect(await erro(() => criar(MINHA, 'absolute batman|1|hq')) ).toBeNull() // Beto é amigo e tem essa chave
+    await db.query(`select obra_equivalencia_desfazer($1, 'absolute batman|1|hq')`, [MINHA])
+    // Dora não é amiga: só ela tem essa chave exclusiva.
+    await como(DORA, () => salvar({ titulo: 'Só da Dora', obra_chave: 'so da dora|1|hq' }))
+    expect(await erro(() => criar(MINHA, 'so da dora|1|hq'))).toMatch(/equivalencia_obra_indisponivel/)
+    // Caio não tem item com a chave da Ana.
+    await como(CAIO, async () => expect(await erro(() => criar(MINHA, 'outra obra|2|hq'))).toMatch(/item_nao_encontrado/))
+    // O amigo tira "coleção" e "lidos" do escopo: deixa de ser vinculável.
+    await admin(`update perfis set escopo_amigos = '{notas_criticas}' where user_id = '${OUTRO}'`)
+    expect(await erro(() => criar(MINHA, 'outra obra|2|hq'))).toMatch(/equivalencia_obra_indisponivel/)
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos,colecao}' where user_id = '${OUTRO}'`)
+    expect(await erro(() => criar(MINHA, MINHA))).toMatch(/equivalencia_invalida/)
+    expect(await erro(() => db.query(`insert into obra_equivalencias(user_id, obra_chave, obra_chave_amigo) values ('${U}', '${MINHA}', 'so da dora|1|hq')`))).toMatch(/row-level security|permission denied/)
+  })
+
+  it('busca entre os itens dos amigos respeita amizade e escopo', async () => {
+    const buscar = async (t: string) => (await db.query<Record<string, unknown>>(`select * from amigos_buscar_obras($1)`, [t])).rows
+    expect((await buscar('outra')).map((x) => x.apelido)).toEqual(['beto'])
+    expect(await buscar('o')).toEqual([]) // termo curto demais
+    expect(await buscar('so da dora')).toEqual([]) // não é amiga
+    expect(await buscar('%')).toEqual([]) // curinga é literal
+    await admin(`update perfis set escopo_amigos = '{notas_criticas}' where user_id = '${OUTRO}'`)
+    expect(await buscar('outra')).toEqual([])
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos,colecao}' where user_id = '${OUTRO}'`)
+  })
+
+  it('migration: funções exigem login e a tabela só tem leitura/exclusão para o app', () => {
+    const sql = readFileSync(path.join(PASTA, '0020_casar_obra_por_isbn_e_manual.sql'), 'utf8')
+    for (const f of ['obra_amigos(text, text)', 'obra_equivalencia_criar(text, text)', 'obra_equivalencia_desfazer(text, text)', 'amigos_buscar_obras(text)', 'obra_equivalencias_listar(text)']) {
+      expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
+      expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
+    }
+    expect(sql).toContain('grant select, delete on obra_equivalencias to authenticated;')
   })
 })

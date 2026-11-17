@@ -93,3 +93,40 @@ async function desmarcarPresenteImpl(itemId: string, apelido: string) {
 export async function desmarcarPresente(itemId: string, apelido: string) {
   return executar(() => desmarcarPresenteImpl(itemId, apelido))
 }
+
+const chaveSchema = z.string().trim().min(1).max(300)
+
+/** Busca entre os itens dos amigos (só o que eles compartilham) para o vínculo "é a mesma obra que...". */
+async function buscarObrasDeAmigosImpl(termo: string) {
+  const t = z.string().trim().max(80).parse(termo)
+  if (t.length < 2) return []
+  const dados = await rpcAutenticado<Record<string, unknown>[]>('amigos_buscar_obras', { p_termo: t })
+  return (dados ?? []).map((r) => ({
+    obraChave: String(r.obra_chave),
+    apelido: (r.apelido as string | null) ?? null,
+    nome: (r.nome_exibicao as string | null) ?? null,
+    titulo: (r.titulo as string | null) ?? '',
+    numeroVolume: r.numero_volume === null || r.numero_volume === undefined ? null : Number(r.numero_volume),
+    serieNome: (r.serie_nome as string | null) ?? null,
+  }))
+}
+export async function buscarObrasDeAmigos(termo: string) {
+  return executar(() => buscarObrasDeAmigosImpl(termo))
+}
+
+/** "É a mesma obra que...": vale só na visão de quem vinculou. */
+async function vincularObraImpl(obraChave: string, chaveAmigo: string, itemId: string) {
+  await rpcAutenticado('obra_equivalencia_criar', { p_obra_chave: chaveSchema.parse(obraChave), p_chave_amigo: chaveSchema.parse(chaveAmigo) })
+  revalidatePath(`/item/${z.string().uuid().parse(itemId)}`)
+}
+export async function vincularObra(obraChave: string, chaveAmigo: string, itemId: string) {
+  return executar(() => vincularObraImpl(obraChave, chaveAmigo, itemId))
+}
+
+async function desvincularObraImpl(obraChave: string, chaveAmigo: string, itemId: string) {
+  await rpcAutenticado('obra_equivalencia_desfazer', { p_obra_chave: chaveSchema.parse(obraChave), p_chave_amigo: chaveSchema.parse(chaveAmigo) })
+  revalidatePath(`/item/${z.string().uuid().parse(itemId)}`)
+}
+export async function desvincularObra(obraChave: string, chaveAmigo: string, itemId: string) {
+  return executar(() => desvincularObraImpl(obraChave, chaveAmigo, itemId))
+}

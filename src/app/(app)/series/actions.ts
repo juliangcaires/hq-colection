@@ -17,6 +17,7 @@ import {
 import type { EstadoItem, TipoObra, TipoTag } from '@/lib/types'
 import { escaparLike } from '@/lib/like'
 import { lancarErroRpc } from '@/lib/rpc'
+import { gravarChaveDaSerie } from '@/lib/obra-chaves'
 
 function dadosDaSerie(p: SerieInput) {
   return {
@@ -44,6 +45,7 @@ async function createSerieImpl(input: SerieInput) {
     p_tag_ids: parsed.tagIds,
   })
   if (error) lancarErroRpc(error)
+  await gravarChaveDaSerie(supabase, data as string)
 
   revalidatePath('/colecao')
   revalidatePath('/desejos')
@@ -66,6 +68,7 @@ async function updateSerieImpl(id: string, input: SerieInput) {
     p_tag_ids: parsed.tagIds,
   })
   if (error) lancarErroRpc(error)
+  await gravarChaveDaSerie(supabase, serieId)
 
   revalidatePath('/colecao')
   revalidatePath('/desejos')

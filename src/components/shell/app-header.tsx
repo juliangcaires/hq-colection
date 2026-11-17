@@ -3,10 +3,10 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { Search } from 'lucide-react'
-import { iniciais } from '@/lib/nav'
-import { AccountSheet } from './account-sheet'
+import { Avatar } from '@/components/ui/avatar'
+import { AccountSheet, type ContaDoUsuario } from './account-sheet'
 
-export function AppHeader({ email, signOut }: { email?: string; signOut: () => Promise<void> }) {
+export function AppHeader({ conta: dados, signOut }: { conta: ContaDoUsuario; signOut: () => Promise<void> }) {
   const [conta, setConta] = useState(false)
 
   return (
@@ -26,12 +26,12 @@ export function AppHeader({ email, signOut }: { email?: string; signOut: () => P
           type="button"
           onClick={() => setConta(true)}
           aria-label="Abrir menu da conta"
-          className="flex size-11 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground"
+          className="flex size-11 items-center justify-center rounded-full"
         >
-          {iniciais(email)}
+          <Avatar apelido={dados.apelido ?? dados.email} nome={dados.nome} url={dados.avatarUrl} size={36} />
         </button>
       </div>
-      <AccountSheet open={conta} onOpenChange={setConta} email={email} signOut={signOut} />
+      <AccountSheet open={conta} onOpenChange={setConta} conta={dados} signOut={signOut} />
     </header>
   )
 }

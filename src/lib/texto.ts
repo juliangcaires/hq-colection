@@ -41,3 +41,31 @@ export function chaveEdicao({ serie, numero, tipo, editora }: PartesDaChave): st
   const ed = editora ? normalizarParaChave(editora.replace(/\beditora\b/gi, ' ')) : ''
   return [normalizarParaChave(serie), num, tipo ?? '', ed].join('|').slice(0, 400)
 }
+
+export type PartesDaObra = {
+  /** Nome da série, ou null para volume avulso. */
+  serie: string | null
+  numero: number | null
+  titulo: string
+  tipo: 'hq' | 'manga' | null
+}
+
+/**
+ * Identidade da obra (volume) entre usuários: igual à `chaveEdicao` mas SEM a editora, então a mesma história em
+ * edições diferentes casa (migration 0019). Volume numerado: `série|número|tipo`; sem número, o título entra no
+ * lugar; avulso (sem série): `título||tipo`.
+ */
+export function chaveObra({ serie, numero, titulo, tipo }: PartesDaObra): string {
+  const t = tipo ?? ''
+  const nomeSerie = serie ? normalizarParaChave(serie) : ''
+  if (nomeSerie) {
+    if (numero !== null && Number.isFinite(numero)) return [nomeSerie, String(numero), t].join('|').slice(0, 400)
+    return [nomeSerie, `t:${normalizarParaChave(titulo)}`, t].join('|').slice(0, 400)
+  }
+  return [normalizarParaChave(titulo), '', t].join('|').slice(0, 400)
+}
+
+/** Identidade da série entre usuários (`série|tipo`, a mesma de `capas_catalogo.serie_chave`). */
+export function chaveSerie(nome: string, tipo: 'hq' | 'manga' | null): string {
+  return [normalizarParaChave(nome), tipo ?? ''].join('|').slice(0, 400)
+}

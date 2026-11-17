@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { ChevronRight, FileUp, LogOut, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
-import { iniciais } from '@/lib/nav'
+import { Avatar } from '@/components/ui/avatar'
 import { Sheet, SheetClose, SheetContent, SheetTitle } from '@/components/ui/sheet'
 
 const LINKS = [
@@ -14,15 +14,17 @@ const LINKS = [
   { href: '/configuracoes', label: 'Configurações', desc: 'Capas compartilhadas e mais', Icon: Settings, cor: 'bg-primary/15 text-link' },
 ]
 
+export type ContaDoUsuario = { email?: string; apelido: string | null; nome: string | null; avatarUrl: string | null }
+
 export function AccountSheet({
   open,
   onOpenChange,
-  email,
+  conta,
   signOut,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  email?: string
+  conta: ContaDoUsuario
   signOut: () => Promise<void>
 }) {
   return (
@@ -30,10 +32,8 @@ export function AccountSheet({
       <SheetContent>
         <SheetTitle className="sr-only">Menu da conta</SheetTitle>
         <div className="flex items-center gap-3">
-          <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary font-heading text-lg font-extrabold text-primary-foreground">
-            {iniciais(email)}
-          </span>
-          <span className="min-w-0 truncate text-sm text-foreground">{email}</span>
+          <Avatar apelido={conta.apelido ?? conta.email} nome={conta.nome} url={conta.avatarUrl} size={56} />
+          <span className="min-w-0 truncate text-sm text-foreground">{conta.email}</span>
         </div>
         <ul className="flex flex-col">
           {LINKS.map(({ href, label, desc, Icon, cor }) => (

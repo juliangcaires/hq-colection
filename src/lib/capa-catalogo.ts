@@ -23,6 +23,8 @@ export type ChavesDoItem = {
   chave: string
   /** Só série + tipo: base da sugestão "o nome bate". Null em item avulso. */
   serieChave: string | null
+  /** Variante (capa diferente) sem ISBN próprio: a capa dela não pode virar a capa da edição no catálogo comunitário. */
+  variante?: boolean
 }
 
 type TagRef = { nome: string; tipo: string }
@@ -31,13 +33,14 @@ type TagRef = { nome: string; tipo: string }
 export async function chavesDoItem(supabase: Cliente, itemId: string): Promise<ChavesDoItem | null> {
   const { data } = await supabase
     .from('itens')
-    .select('titulo, numero_volume, tipo, isbn, serie:series(nome, serie_tags(tags(nome, tipo))), item_tags(tags(nome, tipo))')
+    .select('titulo, numero_volume, tipo, isbn, variante_de, serie:series(nome, serie_tags(tags(nome, tipo))), item_tags(tags(nome, tipo))')
     .eq('id', itemId)
     .maybeSingle<{
       titulo: string
       numero_volume: number | string | null
       tipo: 'hq' | 'manga'
       isbn: string | null
+      variante_de: string | null
       serie: { nome: string; serie_tags: { tags: TagRef | null }[] | null } | null
       item_tags: { tags: TagRef | null }[] | null
     }>()
@@ -55,6 +58,7 @@ export async function chavesDoItem(supabase: Cliente, itemId: string): Promise<C
       editora,
     }),
     serieChave: serieNome ? `${normalizarParaChave(serieNome)}|${data.tipo}` : null,
+    ...(data.variante_de ? { variante: true } : {}),
   }
 }
 
@@ -82,6 +86,9 @@ async function registrarEAplicar(
 ): Promise<string | null> {
   const chaves = await chavesDoItem(supabase, itemId)
   if (!chaves) return null
+  // Variante sem ISBN próprio não contribui ao catálogo (senão vira sugestão da edição normal): quem chamou
+  // segue o caminho privado.
+  if (chaves.variante && !chaves.isbn13) return null
   const { error } = await supabase.rpc('capa_catalogo_registrar', {
     p_isbn13: chaves.isbn13,
     p_chave: chaves.chave,

@@ -20,7 +20,8 @@ import type { EstadoItem } from '@/lib/types'
 
 const LIMITE_MAXIMO_FAIXA = 5000 // guarda-corpo contra total_volumes absurdo/errado
 
-export type VolumeParaFuros = { numero_volume: number | null; estado: EstadoItem }
+/** `variante_de` preenchido = exemplar com outra capa de um volume que já está na lista: não conta como volume a mais. */
+export type VolumeParaFuros = { numero_volume: number | null; estado: EstadoItem; variante_de?: string | null }
 
 function ehInteiroPositivo(v: number | null | undefined): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v > 0
@@ -76,7 +77,7 @@ export function serieEstaCompleta({
 }): boolean {
   if (!totalVolumes || totalVolumes <= 0) return false
 
-  const adquiridos = volumes.filter((v) => v.estado !== 'desejo').length
+  const adquiridos = volumes.filter((v) => v.estado !== 'desejo' && !v.variante_de).length
   if (adquiridos < totalVolumes) return false
 
   // Série numerada tem como provar que não há furo; sem numeração, a contagem
@@ -90,7 +91,7 @@ export function serieEstaCompleta({
  * Calculado, não gravado — comprar um volume novo devolve a série para "em andamento" sozinho.
  * Mesma regra de `lida` em `series_com_resumo` (migration 0010).
  */
-export function serieEstaLida(volumes: Pick<VolumeParaFuros, 'estado'>[]): boolean {
-  const possuidos = volumes.filter((v) => v.estado !== 'desejo')
+export function serieEstaLida(volumes: Pick<VolumeParaFuros, 'estado' | 'variante_de'>[]): boolean {
+  const possuidos = volumes.filter((v) => v.estado !== 'desejo' && !v.variante_de)
   return possuidos.length > 0 && possuidos.every((v) => v.estado === 'lido')
 }

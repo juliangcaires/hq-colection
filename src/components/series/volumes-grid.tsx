@@ -61,6 +61,7 @@ export function VolumesGrid({
   const [adquirindo, setAdquirindo] = useState(false)
   const [avaliando, setAvaliando] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const de = `/serie/${serieId}`
 
   function toggle(id: string) {
     setSelecionados((prev) => {
@@ -192,7 +193,7 @@ export function VolumesGrid({
           const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
 
           if (!selecionando) {
-            return <ItemCard key={item.id} item={item} capaUrl={capaUrl} />
+            return <ItemCard key={item.id} item={item} capaUrl={capaUrl} de={de} />
           }
 
           const marcado = selecionados.has(item.id)
@@ -214,7 +215,7 @@ export function VolumesGrid({
             >
               {/* Reaproveita o card como está; pointer-events-none neutraliza o <Link> interno. */}
               <div className="pointer-events-none">
-                <ItemCard item={item} capaUrl={capaUrl} />
+                <ItemCard item={item} capaUrl={capaUrl} de={de} />
               </div>
               <span
                 aria-hidden

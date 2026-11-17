@@ -38,7 +38,8 @@ import {
   type ResumoVolumesDaSerie,
 } from '@/app/(app)/series/actions'
 import { buscarTags } from '@/app/(app)/tags/actions'
-import { createItem, criarVolumesEmLote } from '@/app/(app)/itens/actions'
+import { createItem, criarVolumesEmLote, type CandidatoVariante } from '@/app/(app)/itens/actions'
+import { VariantePicker } from '@/components/itens/variante-picker'
 import { buscarCapasEmLote } from '@/lib/capa-lote'
 import type { EstadoItem, TagLite, TipoObra } from '@/lib/types'
 import { desembrulhar } from '@/lib/resultado'
@@ -93,6 +94,8 @@ export function QuickAddForm({ onDone, isbnInicial = '' }: { onDone: () => void;
   const [isbn, setIsbn] = useState(isbnInicial)
   const [prioridade, setPrioridade] = useState('0')
   const [estado, setEstado] = useState<EstadoItem>('desejo')
+  const [ehVariante, setEhVariante] = useState(false)
+  const [principal, setPrincipal] = useState<CandidatoVariante | null>(null)
   const [tipoSelecionado, setTipoSelecionado] = useState<TipoObra>('hq')
 
   const [tagOpen, setTagOpen] = useState(false)
@@ -245,6 +248,11 @@ export function QuickAddForm({ onDone, isbnInicial = '' }: { onDone: () => void;
       return
     }
 
+    if (ehVariante && !principal) {
+      toast.error('Escolha o volume normal ou desmarque "É variante"')
+      return
+    }
+
     startTransition(async () => {
       let serieNovaId: string | null = null
       try {
@@ -260,6 +268,7 @@ export function QuickAddForm({ onDone, isbnInicial = '' }: { onDone: () => void;
           estado,
           prioridade: Number(prioridade) || 0,
           tagIds: tagsExtras.map((t) => t.id),
+          ...(ehVariante && principal && { variante_de: principal.id }),
         }))
         serieNovaId = null // o item existe: a série deixou de ser órfã
 
@@ -504,6 +513,27 @@ export function QuickAddForm({ onDone, isbnInicial = '' }: { onDone: () => void;
               onChange={(e) => setIsbn(e.target.value)}
               placeholder="ex: 9788545..."
             />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <Checkbox
+                checked={ehVariante}
+                onCheckedChange={(v) => {
+                  setEhVariante(v === true)
+                  if (v !== true) setPrincipal(null)
+                }}
+              />
+              <span>É variante (outra capa) de um volume que já tenho</span>
+            </label>
+            {ehVariante && (
+              <>
+                <VariantePicker valor={principal} onChange={setPrincipal} disabled={isPending} />
+                <p className="text-xs text-muted-foreground">
+                  Normal e variante compartilham lido, nota, crítica e data de leitura. Conta 2 na estante e 1 em lidos.
+                </p>
+              </>
+            )}
           </div>
         </>
       )}

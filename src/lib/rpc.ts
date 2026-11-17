@@ -22,6 +22,16 @@ export function lancarErroRpc(error: { message: string }): never {
   if (m === 'capa_indisponivel') throw new ErroDeNegocio('Esta capa não está mais disponível.')
   if (m === 'contribuicao_nao_autorizada') throw new ErroDeNegocio('Ative "Contribuir com as capas que eu enviar" nas configurações para compartilhar fotos.')
   if (m === 'nada_a_marcar') throw new ErroDeNegocio('Esta série não tem volumes comprados para marcar como lidos.')
+  if (m === 'variante_principal_nao_encontrado') throw new ErroDeNegocio('Volume normal não encontrado.')
+  if (m === 'variante_de_variante') throw new ErroDeNegocio('Esse volume já é uma variante de outro. Escolha o volume normal.')
+  if (m === 'variante_com_variantes') throw new ErroDeNegocio('Este volume já tem variantes; não pode ser variante de outro.')
+  if (m.includes('itens_variante_nao_propria')) throw new ErroDeNegocio('Um volume não pode ser variante dele mesmo.')
+  if (m === 'equivalencia_invalida') throw new ErroDeNegocio('Escolha uma obra diferente da sua para vincular.')
+  if (m === 'equivalencia_obra_indisponivel') throw new ErroDeNegocio('Essa obra não está disponível: só dá para vincular a algo que um amigo seu compartilha.')
+  if (m === 'equivalencia_limite') throw new ErroDeNegocio('Você já vinculou obras demais a este volume. Desfaça algum vínculo antes.')
+  if (m === 'comentario_vazio') throw new ErroDeNegocio('Escreva alguma coisa para comentar.')
+  if (m === 'comentario_longo') throw new ErroDeNegocio('O comentário passa de 500 caracteres.')
+  if (m === 'comentario_nao_encontrado') throw new ErroDeNegocio('Comentário não encontrado.')
   if (m === 'critica_longa') throw new ErroDeNegocio('A crítica passa de 2000 caracteres.')
   if (m.startsWith('volumes_repetidos:')) {
     const numeros = m

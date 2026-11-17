@@ -53,3 +53,6 @@ export function criarLimitador({
 /** Páginas: uma "visita" já faz poucas chamadas. Capas: uma grade pede dezenas de imagens de uma vez. */
 export const limitePaginas = criarLimitador({ max: 90, janelaMs: 60_000 })
 export const limiteCapas = criarLimitador({ max: 900, janelaMs: 60_000 })
+
+/** Comentários do feed: por pessoa, para frear spam sem atrapalhar uma conversa normal. */
+export const limiteComentarios = criarLimitador({ max: 10, janelaMs: 60_000 })

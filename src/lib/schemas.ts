@@ -53,6 +53,8 @@ export const itemInputSchema = z.object({
   lido_em: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   /** Crítica que nunca aparece em link nem para amigos. */
   critica_privada: z.boolean().optional(),
+  /** Volume normal de que este item é variante; ausente = não mexe, null = desvincula. */
+  variante_de: z.string().uuid().optional().nullable(),
   tagIds: z.array(z.string().uuid()).default([]),
 })
 

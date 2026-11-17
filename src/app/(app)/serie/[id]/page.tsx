@@ -8,12 +8,16 @@ import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
 import { SerieForm } from '@/components/series/serie-form'
 import { AdicionarVolumesDialog } from '@/components/series/adicionar-volumes-dialog'
+import { BuscarCapasFaltantes } from '@/components/series/buscar-capas-faltantes'
 import { CriarVolumesDialog } from '@/components/series/criar-volumes-dialog'
 import { TipoBadge } from '@/components/ui/tipo-badge'
 import { SerieProgress } from '@/components/series/serie-progress'
 import { AvaliarSerie } from '@/components/series/avaliar-serie'
 import { MarcarSerieLidaDialog } from '@/components/series/marcar-serie-lida-dialog'
 import { VolumesGrid } from '@/components/series/volumes-grid'
+import { AmigosDaObra } from '@/components/amigos/amigos-da-obra'
+import { carregarSerieAmigos } from '@/lib/notas-amigos'
+import { completarChaves } from '@/lib/obra-chaves'
 import { BackButton } from '@/components/ui/back-button'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
 
@@ -42,6 +46,10 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
   const capaMap = urlsDeCapas(itens.map((i) => i.capa_url)
   )
 
+  await completarChaves(supabase)
+  const { data: chaveRow } = await supabase.from('series').select('serie_chave').eq('id', id).maybeSingle()
+  const amigos = await carregarSerieAmigos(supabase, chaveRow?.serie_chave ?? null).catch(() => [])
+
   const tagIds = (serie.serie_tags ?? []).map((st: { tag_id: string }) => st.tag_id)
 
   const volumesFaltantes = calcularVolumesFaltantes(itens, serie.total_volumes)
@@ -54,16 +62,20 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
   const numerosOcupados = itens
     .map((i) => i.numero_volume)
     .filter((n): n is number => n !== null)
-  const possuidos = itens.filter((i) => i.estado !== 'desejo').length
-  const desejados = itens.length - possuidos
-  const lidos = itens.filter((i) => i.estado === 'lido').length
-  const notasAvaliadas = itens
+  // Variante (outra capa de um volume que já está aqui) conta 2 na estante, mas 1 na posse da série, em lidos e na
+  // média: tudo abaixo usa `principais`. `estante` é o que aparece como "exemplares".
+  const principais = itens.filter((i) => !i.variante_de)
+  const variantes = itens.filter((i) => i.variante_de && i.estado !== 'desejo').length
+  const possuidos = principais.filter((i) => i.estado !== 'desejo').length
+  const desejados = itens.filter((i) => i.estado === 'desejo').length
+  const lidos = principais.filter((i) => i.estado === 'lido').length
+  const notasAvaliadas = principais
     .filter((i) => i.estado === 'lido' && i.nota !== null)
     .map((i) => Number(i.nota))
   const mediaVolumes = notasAvaliadas.length > 0 ? notasAvaliadas.reduce((a, b) => a + b, 0) / notasAvaliadas.length : null
-  const naFila = itens.filter((i) => i.estado === 'comprado').length
+  const naFila = principais.filter((i) => i.estado === 'comprado').length
   const capaHero = itens.map((i) => capaMap.get(i.capa_url ?? '')).find(Boolean) ?? null
-  const aMarcar = itens.filter((i) => i.estado !== 'desejo')
+  const aMarcar = principais.filter((i) => i.estado !== 'desejo')
   const resumoMarcacao = {
     comprados: naFila,
     desejos: desejados,
@@ -71,6 +83,9 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
     comCritica: aMarcar.filter((i) => i.critica).length,
     comNota: aMarcar.filter((i) => i.nota !== null).length,
   }
+  const semCapa = itens
+    .filter((i) => !i.capa_url)
+    .map((i) => ({ id: i.id, titulo: i.titulo, tipo: serie.tipo as 'hq' | 'manga' }))
   const faltantesExibidos = volumesFaltantes.slice(0, MAX_FALTANTES_EXIBIDOS)
   const faltantesOcultos = volumesFaltantes.length - faltantesExibidos.length
 
@@ -99,6 +114,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
             {possuidos} volume(ns) na coleção
             {serie.total_volumes ? ` de ${serie.total_volumes}` : ''}
             {desejados > 0 ? ` · ${desejados} na lista de desejos` : ''}
+            {variantes > 0 ? ` · ${variantes} ${variantes === 1 ? 'variante' : 'variantes'} (contam na estante, não no progresso)` : ''}
           </p>
           <SerieProgress lidos={lidos} naFila={naFila} faltando={volumesFaltantes.length} />
         </div>
@@ -139,9 +155,11 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         media={mediaVolumes}
         avaliados={notasAvaliadas.length}
         lidos={lidos}
-        lidosSemCritica={itens.filter((i) => i.estado === 'lido' && !i.critica).length}
-        lidosComCritica={itens.filter((i) => i.estado === 'lido' && i.critica).length}
+        lidosSemCritica={principais.filter((i) => i.estado === 'lido' && !i.critica).length}
+        lidosComCritica={principais.filter((i) => i.estado === 'lido' && i.critica).length}
       />
+
+      <AmigosDaObra avaliacoes={amigos} rotulo="série" />
 
       <SerieForm
         key={JSON.stringify([serie.updated_at, serie.nome, serie.tipo, serie.total_volumes, serie.em_publicacao, serie.tem_numeracao, serie.observacoes, serie.critica_privada, tagIds])}
@@ -151,6 +169,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-heading text-sm font-semibold text-foreground/90">Volumes</h2>
           <div className="flex flex-wrap items-center gap-2">
+            <BuscarCapasFaltantes itens={semCapa} />
             <CriarVolumesDialog
               serieId={id}
               serieNome={serie.nome}
