@@ -35,6 +35,7 @@ type RawItemRow = {
   critica: string | null
   lido_em: string | null
   critica_privada: boolean
+  critica_spoiler: boolean
   variante_de: string | null
   created_at: string
   updated_at: string
@@ -301,7 +302,7 @@ export async function listarSeriesComFuros(
     .map(({ id, nome, tipo, faltantes }) => ({ id, nome, tipo, faltantes }))
 }
 
-export type ItemDoRanking = ItemDeLista & { nota: number; critica: string | null }
+export type ItemDoRanking = ItemDeLista & { nota: number; critica: string | null; critica_spoiler: boolean }
 
 export type ResumoDoRanking = {
   /** Lidos com nota (os que entram no ranking). */
@@ -317,6 +318,7 @@ type LinhaCrua = {
   titulo: string
   nota: number | string | null
   critica: string | null
+  critica_spoiler: boolean
   lido_em: string | null
   updated_at: string
   numero_volume: number | null
@@ -331,7 +333,7 @@ type LinhaCrua = {
 }
 
 const RANKING_SELECT =
-  'id, titulo, estado, prioridade, preco, numero_volume, capa_url, variante_de, nota, critica, lido_em, updated_at, serie_id, serie:series(id, nome, tipo, tem_numeracao, serie_tags(tag_id)), item_tags(tag_id)'
+  'id, titulo, estado, prioridade, preco, numero_volume, capa_url, variante_de, nota, critica, critica_spoiler, lido_em, updated_at, serie_id, serie:series(id, nome, tipo, tem_numeracao, serie_tags(tag_id)), item_tags(tag_id)'
 
 export type ResultadoDoRanking = {
   /** A página pedida, já filtrada e ordenada. */
@@ -403,6 +405,7 @@ export async function listarRanking(
       serie: c.serie ? { id: c.serie.id, nome: c.serie.nome, tipo: c.serie.tipo, tem_numeracao: c.serie.tem_numeracao } : null,
       nota: l.nota,
       critica: l.critica,
+      critica_spoiler: c.critica_spoiler === true,
     } as unknown as ItemDoRanking
   })
 

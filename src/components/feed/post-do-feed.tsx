@@ -7,6 +7,7 @@ import { EyeOff } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Estrelas } from '@/components/ui/estrelas'
+import { CriticaSpoiler } from '@/components/ui/critica-spoiler'
 import { InteracaoDoItem } from '@/components/feed/interacao-do-item'
 import { ocultarDoFeed } from '@/app/(app)/feed/actions'
 import { tempoRelativo, tituloDoPost, urlDeCapaDoFeed, type PostDoFeed } from '@/lib/feed'
@@ -66,7 +67,7 @@ export function PostDoFeed({ post, onOcultar }: { post: PostDoFeed; onOcultar?: 
               <span className="text-sm font-medium text-foreground">{formatarNota(post.nota)}</span>
             </div>
           )}
-          {post.critica && post.qtd === 1 && <p className="text-sm break-words whitespace-pre-wrap text-foreground/90">{post.critica}</p>}
+          {post.critica && post.qtd === 1 && <CriticaSpoiler texto={post.critica} spoiler={post.criticaSpoiler} proprio={post.proprio} />}
         </div>
       </div>
 

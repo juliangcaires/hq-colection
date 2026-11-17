@@ -62,6 +62,8 @@ export type Item = {
   critica: string | null
   /** Crítica privada: nunca aparece em link nem para amigos. */
   critica_privada: boolean
+  /** Crítica com spoiler: para os outros ela aparece num cartão recolhido (0024); para você, normal, com selo. */
+  critica_spoiler: boolean
   /** Data em que virou lido (AAAA-MM-DD); null em item não lido ou lido antes da coluna existir. */
   lido_em: string | null
   /** Quando preenchido, este item é uma variante (outra capa/edição) do volume `variante_de`: compartilham lido, nota e crítica. */

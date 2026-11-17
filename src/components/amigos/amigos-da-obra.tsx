@@ -1,5 +1,6 @@
 import { Avatar } from '@/components/ui/avatar'
 import { Estrelas } from '@/components/ui/estrelas'
+import { CriticaSpoiler } from '@/components/ui/critica-spoiler'
 import { InteracaoDoItem } from '@/components/feed/interacao-do-item'
 import { formatarNota } from '@/lib/nota'
 import { mediaDosAmigos, rotuloCasouPor, type AvaliacaoDeAmigo } from '@/lib/notas-amigos'
@@ -41,7 +42,7 @@ export function AmigosDaObra({ avaliacoes, rotulo }: { avaliacoes: AvaliacaoDeAm
                 </div>
               )}
             </div>
-            {a.critica && <p className="text-sm break-words whitespace-pre-wrap text-foreground/90">{a.critica}</p>}
+            {a.critica && <CriticaSpoiler texto={a.critica} spoiler={a.criticaSpoiler} />}
             {a.itemId && a.interagivel && (
               <InteracaoDoItem itemId={a.itemId} curti={a.curti} curtidas={a.curtidas} comentarios={a.comentarios} />
             )}

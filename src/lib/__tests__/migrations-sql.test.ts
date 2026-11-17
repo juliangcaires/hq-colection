@@ -29,7 +29,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -2029,6 +2029,162 @@ describe('ranking dos amigos (migration 0023)', () => {
     const sql = readFileSync(path.join(PASTA, '0023_ranking_amigos.sql'), 'utf8')
     expect(sql).toMatch(/revoke all on all functions in schema privado/)
     for (const f of ['ranking_amigos(text, date, date, text, boolean, int, int)', 'ranking_amigos_estado()']) {
+      expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
+      expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
+    }
+  })
+})
+
+describe('spoiler na crítica (migration 0024)', () => {
+  // Dono (Ana, U), amigo (Beto) e desconhecido (Caio). Beto escreve; Ana e o link público leem.
+  const CAIO = '88888888-8888-8888-8888-888888888888'
+  const CHAVE = 'akira|1|manga'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const salvar = async (extra: object, id: string | null = null) =>
+    (await db.query<{ id: string }>(`select item_salvar($1, $2::jsonb, '{}') id`, [id, JSON.stringify({ titulo: 'Akira 1', tipo: 'manga', estado: 'lido', prioridade: 0, obra_chave: CHAVE, ...extra })])).rows[0].id
+  const spoilerDe = async (id: string) => (await db.query<{ s: boolean }>(`select critica_spoiler s from itens where id = $1`, [id])).rows[0].s
+  const obra = async () => (await db.query<Record<string, unknown>>(`select * from obra_amigos($1)`, [CHAVE])).rows
+  const feed = async () => (await db.query<Record<string, unknown>>(`select * from feed_listar()`)).rows
+
+  let itemBeto = ''
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}') on conflict do nothing;
+      delete from compartilhamentos; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos, feed_ativo) values
+        ('${U}', 'ana', '{notas_criticas,lidos}', true), ('${OUTRO}', 'beto', '{notas_criticas,lidos,colecao}', true),
+        ('${CAIO}', 'caio', '{notas_criticas,lidos}', true);
+    `)
+    const id = (await como(OUTRO, () => db.query<{ id: string }>(`select amizade_solicitar('ana') id`))).rows[0].id
+    await db.query(`select amizade_responder($1, true)`, [id])
+  })
+
+  it('a coluna nasce falsa: item e variante sem a chave não viram spoiler', async () => {
+    const id = await salvar({ nota: 4, critica: 'normal' })
+    expect(await spoilerDe(id)).toBe(false)
+    const col = (await db.query<{ is_nullable: string; column_default: string }>(`select is_nullable, column_default from information_schema.columns where table_name = 'itens' and column_name = 'critica_spoiler'`)).rows[0]
+    expect(col.is_nullable).toBe('NO')
+    expect(col.column_default).toBe('false')
+    await admin(`delete from itens where user_id = '${U}'`)
+  })
+
+  it('marcar e desmarcar persiste; chave ausente na edição mantém o valor', async () => {
+    const id = await salvar({ nota: 4, critica: 'o final é triste', critica_spoiler: true })
+    expect(await spoilerDe(id)).toBe(true)
+    await salvar({ nota: 4, critica: 'o final é triste (editada)' }, id) // sem a chave: mantém
+    expect(await spoilerDe(id)).toBe(true)
+    await salvar({ nota: 4, critica: 'o final é triste', critica_spoiler: false }, id)
+    expect(await spoilerDe(id)).toBe(false)
+    await admin(`delete from itens where user_id = '${U}'`)
+  })
+
+  it('variante compartilha o flag com o principal, nos dois sentidos', async () => {
+    const principal = await salvar({ nota: 4, critica: 'x' })
+    const variante = await salvar({ titulo: 'Akira 1 (capa B)', nota: 4, critica: 'x', variante_de: principal })
+    await salvar({ nota: 4, critica: 'x', critica_spoiler: true }, principal)
+    expect(await spoilerDe(variante)).toBe(true)
+    await salvar({ titulo: 'Akira 1 (capa B)', nota: 4, critica: 'x', variante_de: principal, critica_spoiler: false }, variante)
+    expect(await spoilerDe(principal)).toBe(false)
+    // variante nova herda o flag do principal ao vincular
+    await salvar({ nota: 4, critica: 'x', critica_spoiler: true }, principal)
+    const terceira = await salvar({ titulo: 'Akira 1 (capa C)', estado: 'lido', variante_de: principal })
+    expect(await spoilerDe(terceira)).toBe(true)
+    await admin(`delete from itens where user_id = '${U}'`)
+  })
+
+  it('obra_amigos devolve o flag junto com a crítica; sem crítica ou com crítica privada, o flag não sai', async () => {
+    const id = await como(OUTRO, () => salvar({ nota: 5, critica: 'quem morre no fim', critica_spoiler: true }))
+    itemBeto = id
+    let [r] = await obra()
+    expect(r.critica).toBe('quem morre no fim')
+    expect(r.critica_spoiler).toBe(true)
+    await como(OUTRO, () => salvar({ nota: 5, critica: 'quem morre no fim', critica_spoiler: false }, id))
+    ;[r] = await obra()
+    expect(r.critica_spoiler).toBe(false)
+    await como(OUTRO, () => salvar({ nota: 5, critica: 'quem morre no fim', critica_spoiler: true, critica_privada: true }, id))
+    ;[r] = await obra()
+    expect(r.critica).toBeNull()
+    expect(r.critica_spoiler).toBe(false) // crítica privada nunca sai, nem o flag
+    await como(OUTRO, () => salvar({ nota: 5, critica: null, critica_spoiler: true, critica_privada: false }, id))
+    ;[r] = await obra()
+    expect(r.critica).toBeNull()
+    expect(r.critica_spoiler).toBe(false) // spoiler sem crítica não vira cartão vazio
+    await como(OUTRO, () => salvar({ nota: 5, critica: 'quem morre no fim', critica_spoiler: true }, id))
+  })
+
+  it('desconhecido não vê nada (o flag não abre porta)', async () => {
+    await como(CAIO, async () => expect(await obra()).toEqual([]))
+  })
+
+  it('feed: o amigo vê o flag; o dono também (a tela o mostra normal com selo); escopo sem notas tira a crítica e o flag', async () => {
+    const p = (await feed()).find((x) => x.item_id === itemBeto)!
+    expect(p.critica).toBe('quem morre no fim')
+    expect(p.critica_spoiler).toBe(true)
+    expect(p.proprio).toBe(false)
+    const meu = await como(OUTRO, async () => (await feed()).find((x) => x.item_id === itemBeto)!)
+    expect(meu.proprio).toBe(true)
+    expect(meu.critica_spoiler).toBe(true)
+    await admin(`update perfis set escopo_amigos = '{lidos}' where user_id = '${OUTRO}'`)
+    const sem = (await feed()).find((x) => x.item_id === itemBeto)!
+    expect(sem.critica).toBeNull()
+    expect(sem.critica_spoiler).toBe(false)
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos,colecao}' where user_id = '${OUTRO}'`)
+  })
+
+  it('feed: crítica sem spoiler continua devolvendo falso', async () => {
+    await como(OUTRO, () => salvar({ nota: 3, critica: 'gostei', titulo: 'Outro dia', obra_chave: 'outro|1|manga' }))
+    const p = (await feed()).find((x) => x.titulo === 'Outro dia')!
+    expect(p.critica).toBe('gostei')
+    expect(p.critica_spoiler).toBe(false)
+  })
+
+  it('vitrine (amigo e link público): o flag acompanha a crítica; sem notas_criticas ou privada, não sai', async () => {
+    const itensDoBeto = async () => (await db.query<Record<string, unknown>>(`select * from amigo_itens('beto', 'colecao')`)).rows
+    const achar = async () => (await itensDoBeto()).find((x) => x.id === itemBeto)!
+    expect((await achar()).critica_spoiler).toBe(true)
+    expect((await achar()).critica).toBe('quem morre no fim')
+    // link público do Beto
+    const token = (await como(OUTRO, () => db.query<{ t: string }>(`select compartilhamento_gerar('{colecao,notas_criticas}'::text[]) t`))).rows[0].t
+    const doLink = async () => (await db.query<Record<string, unknown>>(`select * from link_itens($1, 'colecao')`, [token])).rows.find((x) => x.id === itemBeto)!
+    expect((await doLink()).critica_spoiler).toBe(true)
+    // privada: some o texto e o flag
+    await admin(`update itens set critica_privada = true where id = '${itemBeto}'`)
+    expect((await doLink()).critica).toBeNull()
+    expect((await doLink()).critica_spoiler).toBe(false)
+    expect((await achar()).critica_spoiler).toBe(false)
+    await admin(`update itens set critica_privada = false where id = '${itemBeto}'`)
+    // link sem notas_criticas
+    const tokenSem = (await como(OUTRO, () => db.query<{ t: string }>(`select compartilhamento_gerar('{colecao}'::text[]) t`))).rows[0].t
+    const semNotas = (await db.query<Record<string, unknown>>(`select * from link_itens($1, 'colecao')`, [tokenSem])).rows.find((x) => x.id === itemBeto)!
+    expect(semNotas.critica).toBeNull()
+    expect(semNotas.critica_spoiler).toBe(false)
+  })
+
+  it('vitrine: crítica sem spoiler continua com o flag falso', async () => {
+    const r = (await db.query<Record<string, unknown>>(`select * from amigo_itens('beto', 'colecao')`)).rows.find((x) => x.titulo === 'Outro dia')!
+    expect(r.critica).toBe('gostei')
+    expect(r.critica_spoiler).toBe(false)
+  })
+
+  it('migration: funções recriadas seguem fechadas para anônimo e a camada interna continua fechada', () => {
+    const sql = readFileSync(path.join(PASTA, '0024_spoiler_na_critica.sql'), 'utf8')
+    expect(sql).toMatch(/revoke all on all functions in schema privado/)
+    for (const f of ['item_salvar(uuid, jsonb, uuid[])', 'obra_amigos(text, text)', 'feed_listar(int, timestamptz)']) {
       expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
       expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
     }

@@ -2,6 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Estrelas } from '@/components/ui/estrelas'
+import { CriticaSpoiler } from '@/components/ui/critica-spoiler'
 import { GradeDaVitrine, ListaDeSeriesDaVitrine } from '@/components/vitrine/grade-da-vitrine'
 import { VerMais } from '@/components/vitrine/ver-mais'
 import { SerieProgress } from '@/components/series/serie-progress'
@@ -133,7 +134,7 @@ export async function PaginaRanking({ supabase, fonte, resumo, limite = 25 }: Ba
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate text-sm font-semibold text-foreground">{item.titulo}</span>
                   {sub && <span className="truncate text-xs text-muted-foreground">{sub}</span>}
-                  {item.critica && <span className="line-clamp-2 text-xs text-muted-foreground">{item.critica}</span>}
+                  {item.critica && <CriticaSpoiler texto={item.critica} spoiler={item.critica_spoiler} textoClassName="line-clamp-2 text-xs text-muted-foreground" />}
                 </div>
                 {item.nota !== null && (
                   <span className="flex shrink-0 flex-col items-end gap-0.5">

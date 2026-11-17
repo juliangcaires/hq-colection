@@ -2,6 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Estrelas } from '@/components/ui/estrelas'
+import { CriticaSpoiler } from '@/components/ui/critica-spoiler'
 import { formatarNota } from '@/lib/nota'
 import { baseDaFonte, rotuloDeVolume, urlDeCapaDaVitrine, type FonteVitrine, type ItemVitrine, type SerieVitrine } from '@/lib/vitrine'
 import { SerieProgress } from '@/components/series/serie-progress'
@@ -50,7 +51,7 @@ export function GradeDaVitrine({
             {item.critica && (
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer text-link">Crítica</summary>
-                <p className="mt-1 whitespace-pre-line">{item.critica}</p>
+                <CriticaSpoiler texto={item.critica} spoiler={item.critica_spoiler} className="mt-1" textoClassName="text-xs" />
               </details>
             )}
             {acao?.(item)}

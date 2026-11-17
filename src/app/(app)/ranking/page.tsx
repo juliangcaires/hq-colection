@@ -14,6 +14,7 @@ import { ScrollRestore } from '@/components/ui/scroll-restore'
 import { cn } from '@/lib/utils'
 import { hrefDoItem } from '@/lib/navegacao-item'
 import { Button } from '@/components/ui/button'
+import { SeloSpoiler } from '@/components/ui/critica-spoiler'
 
 type SearchParams = Record<string, string | undefined>
 
@@ -305,7 +306,12 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="truncate text-sm font-medium">{item.titulo}</span>
                       {subtitulo(item) && <span className="truncate text-xs text-muted-foreground">{subtitulo(item)}</span>}
-                      {item.critica && <span className="line-clamp-2 text-xs text-muted-foreground/90">{item.critica}</span>}
+                      {item.critica && (
+                        <span className="line-clamp-2 text-xs text-muted-foreground/90">
+                          {item.critica_spoiler && <SeloSpoiler className="mr-1.5 align-middle" />}
+                          {item.critica}
+                        </span>
+                      )}
                     </div>
                     <span className="flex shrink-0 flex-col items-end gap-0.5">
                       <span className="font-heading text-base font-extrabold text-warning-text tabular-nums">★ {formatarNota(item.nota)}</span>
