@@ -18,6 +18,7 @@ export type SecaoVitrine = 'colecao' | 'lidos' | 'desejos' | 'ranking' | 'serie'
 export type ResumoVitrine = {
   nome: string
   apelido: string | null
+  avatar_url: string | null
   escopo: SecaoCompartilhavel[]
   colecao: number | null
   lidos: number | null
@@ -78,6 +79,7 @@ export async function carregarResumo(supabase: Cliente, fonte: FonteVitrine): Pr
   return {
     nome: String(r.nome ?? 'Colecionador'),
     apelido: (r.apelido as string | null) ?? null,
+    avatar_url: (r.avatar_url as string | null) ?? null,
     escopo: (r.escopo as SecaoCompartilhavel[]) ?? [],
     colecao: num(r.colecao),
     lidos: num(r.lidos),

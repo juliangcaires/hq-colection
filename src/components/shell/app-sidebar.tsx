@@ -4,7 +4,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { FileUp, Heart, House, Layers, LayoutGrid, Plus, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { estaAtivo, iniciais } from '@/lib/nav'
+import { estaAtivo } from '@/lib/nav'
+import { Avatar } from '@/components/ui/avatar'
+import type { ContaDoUsuario } from './account-sheet'
 import { useQuickAdd } from '@/components/quick-add/quick-add-provider'
 import { Button } from '@/components/ui/button'
 
@@ -40,7 +42,7 @@ function Item({ href, label, Icon, pathname }: (typeof PRINCIPAL)[number] & { pa
   )
 }
 
-export function AppSidebar({ email, signOut }: { email?: string; signOut: () => Promise<void> }) {
+export function AppSidebar({ conta, signOut }: { conta: ContaDoUsuario; signOut: () => Promise<void> }) {
   const pathname = usePathname()
   const { abrir } = useQuickAdd()
 
@@ -65,11 +67,9 @@ export function AppSidebar({ email, signOut }: { email?: string; signOut: () => 
         ))}
       </nav>
       <div className="mt-auto flex items-center gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
-          {iniciais(email)}
-        </span>
+        <Avatar apelido={conta.apelido ?? conta.email} nome={conta.nome} url={conta.avatarUrl} size={40} />
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-xs text-muted-foreground">{email}</span>
+          <span className="truncate text-xs text-muted-foreground">{conta.email}</span>
           <form action={signOut}>
             <button className="h-8 text-left text-sm text-link hover:underline">Sair</button>
           </form>
