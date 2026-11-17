@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useSyncExternalStore, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -30,6 +30,19 @@ export type LinhaDeAmizade = {
   avatar_url: string | null
 }
 
+const CHAVE_AVISO_NOTAS = 'hq:aviso-notas-amigos-dispensado'
+const assinar = (cb: () => void) => {
+  window.addEventListener('storage', cb)
+  return () => window.removeEventListener('storage', cb)
+}
+const lerDispensado = () => {
+  try {
+    return localStorage.getItem(CHAVE_AVISO_NOTAS) === '1'
+  } catch {
+    return false
+  }
+}
+
 const nomeDe = (a: LinhaDeAmizade) => a.nome_exibicao || a.apelido || 'Alguém'
 
 /** Lista de amigos, pedidos, convite por link e escopo que os amigos veem. */
@@ -53,6 +66,9 @@ export function PainelDeAmigos({
   const recebidos = amizades.filter((a) => a.direcao === 'recebida')
   const enviados = amizades.filter((a) => a.direcao === 'enviada')
   const amigos = amizades.filter((a) => a.direcao === 'amigo')
+  const avisoDispensado = useSyncExternalStore(assinar, lerDispensado, () => true)
+  const [dispensadoAgora, setDispensadoAgora] = useState(false)
+  const mostrarAvisoNotas = amigos.length > 0 && !salvo.includes('notas_criticas') && !avisoDispensado && !dispensadoAgora
   const escopoMudou = [...escopo].sort().join() !== [...salvo].sort().join()
 
   function executarAcao(fn: () => Promise<unknown>, sucesso: string) {
@@ -75,6 +91,39 @@ export function PainelDeAmigos({
           <Link href="/configuracoes" className="font-medium underline underline-offset-2">
             Definir meu apelido
           </Link>
+        </div>
+      )}
+
+      {mostrarAvisoNotas && (
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3 text-sm">
+          <span className="min-w-0 flex-1">Seus amigos não veem suas notas. Ligar? (Só nota e crítica pública; crítica privada nunca sai.)</span>
+          <Button
+            className="h-10"
+            disabled={isPending}
+            onClick={() =>
+              executarAcao(async () => {
+                const novo = [...salvo, 'notas_criticas' as const]
+                desembrulhar(await atualizarEscopoDosAmigos(novo))
+                setSalvo(novo)
+                setEscopo((atual) => (atual.includes('notas_criticas') ? atual : [...atual, 'notas_criticas']))
+              }, 'Seus amigos agora veem suas notas')
+            }
+          >
+            Ligar
+          </Button>
+          <Button
+            variant="ghost"
+            className="h-10"
+            disabled={isPending}
+            onClick={() => {
+              try {
+                localStorage.setItem(CHAVE_AVISO_NOTAS, '1')
+              } catch {}
+              setDispensadoAgora(true)
+            }}
+          >
+            Agora não
+          </Button>
         </div>
       )}
 
@@ -196,7 +245,7 @@ export function PainelDeAmigos({
 
       <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-[18px]" aria-label="O que os amigos veem">
         <h2 className="font-heading text-lg font-bold">O que meus amigos veem</h2>
-        <p className="text-sm text-muted-foreground">Vale só para amigos aceitos e é separado do link público. Preço, loja e data de compra nunca aparecem.</p>
+        <p className="text-sm text-muted-foreground">Vale só para amigos aceitos e é separado do link público. Preço, loja e data de compra nunca aparecem. “Notas e críticas” compartilha a nota e a crítica pública; crítica privada nunca sai.</p>
         <SeletorDeSecoes valor={escopo} onChange={setEscopo} disabled={isPending} idBase="amigos" />
         {escopoMudou && (
           <Button

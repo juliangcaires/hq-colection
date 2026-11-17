@@ -5,7 +5,7 @@ export const SECOES_COMPARTILHAVEIS = [
   { valor: 'colecao', rotulo: 'Coleção', descricao: 'O que você tem: título, capa, série e número.' },
   { valor: 'series', rotulo: 'Séries', descricao: 'Cada série com quantos volumes você tem.' },
   { valor: 'lidos', rotulo: 'Lidos', descricao: 'O que você já leu e quando.' },
-  { valor: 'notas_criticas', rotulo: 'Notas e críticas', descricao: 'Suas notas e críticas. Crítica marcada como privada nunca aparece.' },
+  { valor: 'notas_criticas', rotulo: 'Notas e críticas', descricao: 'Compartilha a nota e a crítica pública dos seus itens. Crítica marcada como privada nunca sai.' },
   { valor: 'ranking', rotulo: 'Ranking', descricao: 'Seus lidos melhor avaliados (mostra a nota, não a crítica).' },
   { valor: 'desejos', rotulo: 'Lista de desejos', descricao: 'O que você quer comprar.' },
 ] as const
