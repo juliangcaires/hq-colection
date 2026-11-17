@@ -28,6 +28,25 @@ export function normalizarParaChave(entrada: string): string {
     .join(' ')
 }
 
+/**
+ * Sufixos de edição que não mudam a história ("Berserk Edição de Luxo", "Batman Deluxe"). Aplicados sobre o texto
+ * já normalizado (sem acento, minúsculo, espaços simples) ANTES de tirar o ruído. Omnibus NÃO entra: a numeração
+ * muda. Assumido o risco de juntar edições (decisão do Julian). A mesma lista existe em SQL
+ * (`privado.normalizar_obra`, migration 0022): mudou aqui, mude lá.
+ */
+const SUFIXOS_DE_EDICAO = /(?:^| )(?:edicao de luxo|edicao luxo|deluxe edition|edicao deluxe|deluxe|nova edicao|edicao definitiva|definitive edition)(?= |$)/g
+
+/** Remove os sufixos de edição; se sobrar nada (o nome era só o sufixo), mantém o texto original. */
+export function removerSufixosDeEdicao(textoNormalizado: string): string {
+  const sem = textoNormalizado.replace(SUFIXOS_DE_EDICAO, ' ').replace(/ +/g, ' ').trim()
+  return sem || textoNormalizado
+}
+
+/** `normalizarParaChave` sem os sufixos de edição: base da identidade da OBRA e da SÉRIE (não da edição). */
+function normalizarParaChaveDeObra(entrada: string): string {
+  return normalizarParaChave(removerSufixosDeEdicao(normalizarTexto(entrada.replace(/#/g, ' '))))
+}
+
 export type PartesDaChave = {
   serie: string
   numero: number | null
@@ -57,15 +76,15 @@ export type PartesDaObra = {
  */
 export function chaveObra({ serie, numero, titulo, tipo }: PartesDaObra): string {
   const t = tipo ?? ''
-  const nomeSerie = serie ? normalizarParaChave(serie) : ''
+  const nomeSerie = serie ? normalizarParaChaveDeObra(serie) : ''
   if (nomeSerie) {
     if (numero !== null && Number.isFinite(numero)) return [nomeSerie, String(numero), t].join('|').slice(0, 400)
-    return [nomeSerie, `t:${normalizarParaChave(titulo)}`, t].join('|').slice(0, 400)
+    return [nomeSerie, `t:${normalizarParaChaveDeObra(titulo)}`, t].join('|').slice(0, 400)
   }
-  return [normalizarParaChave(titulo), '', t].join('|').slice(0, 400)
+  return [normalizarParaChaveDeObra(titulo), '', t].join('|').slice(0, 400)
 }
 
 /** Identidade da série entre usuários (`série|tipo`, a mesma de `capas_catalogo.serie_chave`). */
 export function chaveSerie(nome: string, tipo: 'hq' | 'manga' | null): string {
-  return [normalizarParaChave(nome), tipo ?? ''].join('|').slice(0, 400)
+  return [normalizarParaChaveDeObra(nome), tipo ?? ''].join('|').slice(0, 400)
 }

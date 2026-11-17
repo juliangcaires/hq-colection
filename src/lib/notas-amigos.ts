@@ -121,3 +121,37 @@ export function rotuloObraDeAmigo(o: ObraDeAmigo): string {
   const base = o.serieNome ? `${o.serieNome}${vol}${o.titulo && o.titulo !== o.serieNome ? ` — ${o.titulo}` : ''}` : `${o.titulo}${vol}`
   return o.apelido ? `${base} (@${o.apelido})` : base
 }
+
+/**
+ * Quase-casamento: obras de amigos com o MESMO número e tipo da obra do usuário e série parecida (uma contém a
+ * outra, ou ao menos metade das palavras em comum), mas com chave diferente e ainda sem vínculo. Funciona sobre as
+ * chaves (`série|número|tipo`); obra sem número (`t:título`) ou avulsa não sugere nada.
+ */
+export function sugerirQuaseCasamentos(minhaChave: string, candidatos: ObraDeAmigo[], jaVinculadas: string[] = []): ObraDeAmigo[] {
+  const [serie, numero, tipo] = minhaChave.split('|')
+  if (!serie || !numero || numero.startsWith('t:') || !tipo) return []
+  const minhas = new Set(serie.split(' '))
+  const vistos = new Set<string>()
+  return candidatos.filter((c) => {
+    const [cs, cn, ct] = c.obraChave.split('|')
+    if (!cs || cn !== numero || ct !== tipo || c.obraChave === minhaChave || jaVinculadas.includes(c.obraChave)) return false
+    const chaveUnica = `${c.apelido}|${c.obraChave}`
+    if (vistos.has(chaveUnica)) return false
+    const dela = new Set(cs.split(' '))
+    const comuns = [...minhas].filter((p) => dela.has(p)).length
+    const parecida = comuns > 0 && comuns / Math.min(minhas.size, dela.size) >= 0.5 && comuns / Math.max(minhas.size, dela.size) >= 0.5
+    if (parecida) vistos.add(chaveUnica)
+    return parecida
+  })
+}
+
+/** Busca (nos itens que os amigos compartilham) obras parecidas com a do usuário. Usa a RPC de busca da 0020. */
+export async function carregarQuaseCasamentos(supabase: Cliente, minhaChave: string | null, nomeParaBuscar: string, jaVinculadas: string[]): Promise<ObraDeAmigo[]> {
+  if (!minhaChave) return []
+  // A busca é por trecho do nome: usa a palavra mais longa da série (ex.: "Absolute Batman" -> "Absolute").
+  const palavra = nomeParaBuscar.split(/\s+/).filter((p) => p.length >= 3).sort((a, b) => b.length - a.length)[0]
+  if (!palavra) return []
+  const { data, error } = await supabase.rpc('amigos_buscar_obras', { p_termo: palavra })
+  if (error) throw new Error(error.message)
+  return sugerirQuaseCasamentos(minhaChave, ((data ?? []) as Record<string, unknown>[]).map(obraDeAmigo), jaVinculadas)
+}
