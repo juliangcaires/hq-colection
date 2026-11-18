@@ -19,7 +19,8 @@ export const ROTULOS_ORDEM_AMIGOS: Record<OrdemAmigos, string> = {
   recentes: 'Mais recentes',
 }
 
-export const REGRA_DA_ORDEM = 'A ordem considera quantos amigos leram: poucas notas pesam menos, então 1 voto 5★ não passa na frente de 4 votos com média 4,75. A média mostrada é a real.'
+export const REGRA_DA_ORDEM =
+  'A ordem considera quantos amigos leram: poucas notas pesam menos, então 1 voto 5★ não passa na frente de 4 votos com média 4,75. A média mostrada é a real. Em caso de empate, vem primeiro o volume que mais amigos elegeram o melhor da série.'
 
 /** Valor neutro de C quando nenhum amigo avaliou nada; igual ao da migration 0023. */
 export const MEDIA_PADRAO = 3.5
@@ -53,6 +54,11 @@ export function rotuloDeAmigos(n: number): string {
   return `${n} ${n === 1 ? 'amigo' : 'amigos'}`
 }
 
+/** "Melhor da série para 2 amigos" (selo do volume que amigos marcaram, 0030). */
+export function rotuloMelhorParaAmigos(n: number): string {
+  return `Melhor da série para ${rotuloDeAmigos(n)}`
+}
+
 export type AvatarDoRanking = { apelido: string | null; nome: string | null; avatarUrl: string | null }
 
 /** Até 3 avatares e o "+N" dos que ficaram de fora (N conta todos os amigos da linha, não só os avatares recebidos). */
@@ -75,6 +81,10 @@ export type LinhaDoRankingAmigos = {
   /** Média real das notas dos amigos (a sua não entra). */
   media: number
   score: number
+  /** Quantos amigos (entre os que contam na linha) marcaram este volume como o melhor da série (0030). */
+  nMelhor: number
+  /** Você marcou o seu volume desta obra como o melhor da série (só vale se você o leu). */
+  meuMelhor: boolean
   ultimaLeitura: string | null
   avatares: AvatarDoRanking[]
   minhaNota: number | null
@@ -104,6 +114,8 @@ export function linhaDoRankingAmigos(r: Record<string, unknown>): LinhaDoRanking
     soma: Number(r.soma ?? 0),
     media: Number(r.media ?? 0),
     score: Number(r.score ?? 0),
+    nMelhor: Number(r.n_melhor ?? 0),
+    meuMelhor: r.meu_melhor === true,
     ultimaLeitura: txt(r.ultima_leitura),
     avatares: avatares.map((a) => ({ apelido: txt(a.apelido), nome: txt(a.nome_exibicao), avatarUrl: txt(a.avatar_url) })),
     minhaNota: num(r.minha_nota),
