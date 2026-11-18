@@ -18,6 +18,8 @@ import type { EstadoItem, TipoObra, TipoTag } from '@/lib/types'
 import { escaparLike } from '@/lib/like'
 import { lancarErroRpc } from '@/lib/rpc'
 import { gravarChaveDaSerie } from '@/lib/obra-chaves'
+import { progressoDaLinhaDoResumo } from '@/lib/progresso-series'
+import type { ProgressoDaSerie } from '@/lib/progresso-serie'
 
 function dadosDaSerie(p: SerieInput) {
   return {
@@ -517,6 +519,8 @@ export type SerieListada = {
   lida: boolean
   /** Números de volume que faltam (calculados no banco), vazio se não há furos. */
   faltantes: number[]
+  /** "Tenho X de Y" (0027): Y é o total informado ou, sem ele, o maior número conhecido. */
+  progresso: ProgressoDaSerie
 }
 
 export async function listarSeries(query: string): Promise<SerieListada[]> {
@@ -530,8 +534,8 @@ export async function listarSeries(query: string): Promise<SerieListada[]> {
   })
   if (error) throw new Error(error.message)
 
-  return ((data ?? []) as (SerieListada & { tem_numeracao: boolean })[]).map(
-    ({ id, nome, tipo, total_volumes, em_publicacao, completa, lida, faltantes }) => ({
+  return ((data ?? []) as (Omit<SerieListada, 'progresso'> & Record<string, unknown>)[]).map(
+    ({ id, nome, tipo, total_volumes, em_publicacao, completa, lida, faltantes, ...resto }) => ({
       id,
       nome,
       tipo,
@@ -540,6 +544,7 @@ export async function listarSeries(query: string): Promise<SerieListada[]> {
       completa,
       lida: Boolean(lida),
       faltantes: faltantes ?? [],
+      progresso: progressoDaLinhaDoResumo({ total_volumes, ...resto }),
     })
   )
 }

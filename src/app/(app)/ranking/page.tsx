@@ -15,6 +15,9 @@ import { cn } from '@/lib/utils'
 import { hrefDoItem } from '@/lib/navegacao-item'
 import { Button } from '@/components/ui/button'
 import { SeloSpoiler } from '@/components/ui/critica-spoiler'
+import { ProgressoDaSerieBarra } from '@/components/series/progresso-da-serie'
+import { carregarProgressoDasSeries } from '@/lib/progresso-series'
+import type { ProgressoDaSerie } from '@/lib/progresso-serie'
 
 type SearchParams = Record<string, string | undefined>
 
@@ -126,14 +129,22 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
     ])
     // Capa dos SEUS itens que casam com as linhas (RLS: só os seus).
     const meusIds = linhas.map((l) => l.meuItemId).filter((id): id is string => Boolean(id))
-    const { data: meus } = meusIds.length > 0 ? await supabase.from('itens').select('id, capa_url').in('id', meusIds) : { data: [] }
+    const { data: meus } = meusIds.length > 0 ? await supabase.from('itens').select('id, capa_url, serie_id, estado').in('id', meusIds) : { data: [] }
     const capaDosMeus = new Map((meus ?? []).map((m) => [m.id as string, (m.capa_url as string | null) ?? null]))
+    // Progresso da SUA série, só nas linhas em que você tem o volume (desejo não é "tenho"); sem série, sem progresso.
+    const seriesDeQuemTenho = new Set((meus ?? []).filter((m) => m.serie_id && m.estado !== 'desejo').map((m) => m.serie_id as string))
+    const progressoTodas = seriesDeQuemTenho.size > 0 ? await carregarProgressoDasSeries(supabase) : new Map<string, ProgressoDaSerie>()
+    const progressoDosMeus = new Map<string, ProgressoDaSerie>()
+    for (const m of meus ?? []) {
+      const p = m.serie_id && m.estado !== 'desejo' ? progressoTodas.get(m.serie_id as string) : undefined
+      if (p) progressoDosMeus.set(m.id as string, p)
+    }
     return (
       <div className="flex flex-col gap-6">
         <ScrollRestore />
         <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">Ranking</h1>
         <AbasDoRanking aba={aba} tipo={params.tipo} />
-        <RankingAmigos params={params} filtros={filtrosAmigos} linhas={linhas} total={total} limite={limite} estado={estado} capaDosMeus={capaDosMeus} hoje={hoje} />
+        <RankingAmigos params={params} filtros={filtrosAmigos} linhas={linhas} total={total} limite={limite} estado={estado} capaDosMeus={capaDosMeus} progressoDosMeus={progressoDosMeus} hoje={hoje} />
       </div>
     )
   }
@@ -147,6 +158,9 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
   const series = seriesData ?? []
   const capaMap = urlsDeCapas(itens.map((i) => i.capa_url))
   const capa = (i: ItemDoRanking) => capaMap.get(i.capa_url ?? '') ?? null
+  // Todo item do ranking é lido, logo "é de uma série que você tem": mostra o progresso quando há série.
+  const progressoDasSeries = itens.some((i) => i.serie) ? await carregarProgressoDasSeries(supabase) : new Map<string, ProgressoDaSerie>()
+  const progressoDe = (i: ItemDoRanking) => (i.serie ? progressoDasSeries.get(i.serie.id) ?? null : null)
 
   const podio = itens.slice(0, 3)
   const resto = itens.slice(3)
@@ -306,6 +320,7 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="truncate text-sm font-medium">{item.titulo}</span>
                       {subtitulo(item) && <span className="truncate text-xs text-muted-foreground">{subtitulo(item)}</span>}
+                      {progressoDe(item) && <ProgressoDaSerieBarra progresso={progressoDe(item)!} compacto />}
                       {item.critica && (
                         <span className="line-clamp-2 text-xs text-muted-foreground/90">
                           {item.critica_spoiler && <SeloSpoiler className="mr-1.5 align-middle" />}
