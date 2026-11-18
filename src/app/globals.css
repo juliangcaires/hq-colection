@@ -107,6 +107,9 @@ body {
   --danger-soft-text: #f1c1ba;
   --tipo-hq: #8fb4f0;
   --tipo-manga: #d98ae3;
+  /* Melhor da série (0030): dourado legível sobre o fundo escuro. */
+  --melhor-da-serie: #e6b84a;
+  --melhor-da-serie-brilho: rgb(230 184 74 / 0.5);
   --nav-h: 84px;
   --sidebar: #14111d;
   --sidebar-foreground: #f1eef7;
@@ -158,6 +161,9 @@ body {
   --danger-soft-text: #f1c1ba;
   --tipo-hq: #8fb4f0;
   --tipo-manga: #d98ae3;
+  /* Melhor da série (0030): dourado legível sobre o fundo escuro. */
+  --melhor-da-serie: #e6b84a;
+  --melhor-da-serie-brilho: rgb(230 184 74 / 0.5);
   --nav-h: 84px;
   --sidebar: #14111d;
   --sidebar-foreground: #f1eef7;
@@ -178,5 +184,23 @@ body {
   }
   html {
     @apply font-sans;
+  }
+}
+/* Melhor volume da série (0030): borda dourada estática; o brilho só roda se o sistema permitir movimento. */
+.melhor-da-serie {
+  box-shadow: 0 0 0 2px var(--melhor-da-serie);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .melhor-da-serie {
+    animation: melhor-da-serie-brilho 2s ease-in-out infinite;
+  }
+}
+@keyframes melhor-da-serie-brilho {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px var(--melhor-da-serie), 0 0 4px 0 var(--melhor-da-serie-brilho);
+  }
+  50% {
+    box-shadow: 0 0 0 2px var(--melhor-da-serie), 0 0 14px 2px var(--melhor-da-serie-brilho);
   }
 }

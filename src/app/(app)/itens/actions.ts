@@ -699,3 +699,20 @@ async function definirVarianteImpl(itemId: string, principalId: string | null) {
 export async function definirVariante(itemId: string, principalId: string | null) {
   return executar(() => definirVarianteImpl(itemId, principalId))
 }
+
+/** Marca (ou desmarca) o volume como o melhor da série. Trocar de volume desmarca o anterior no banco (0030). */
+async function definirMelhorDaSerieImpl(itemId: string, marcar: boolean) {
+  const item = z.string().uuid().parse(itemId)
+  const supabase = await createClient()
+  const { data: antes } = await supabase.from('itens').select('serie_id').eq('id', item).maybeSingle()
+  const { error } = await supabase.rpc('item_melhor_da_serie_definir', { p_item: item, p_marcar: marcar })
+  if (error) lancarErroRpc(error)
+  revalidatePath(`/item/${item}`)
+  if (antes?.serie_id) revalidatePath(`/serie/${antes.serie_id}`)
+  revalidatePath('/ranking')
+  revalidatePath('/series')
+}
+
+export async function definirMelhorDaSerie(itemId: string, marcar: boolean) {
+  return executar(() => definirMelhorDaSerieImpl(itemId, marcar))
+}

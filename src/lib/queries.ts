@@ -36,6 +36,7 @@ type RawItemRow = {
   lido_em: string | null
   critica_privada: boolean
   critica_spoiler: boolean
+  melhor_da_serie: boolean
   variante_de: string | null
   created_at: string
   updated_at: string
