@@ -30,7 +30,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -2707,5 +2707,425 @@ describe('séries favoritas (migration 0026)', () => {
     await salvar([s[0], s[1]])
     await db.query(`delete from series where id = $1`, [s[1]])
     expect((await meus()).map((x) => x.nome)).toEqual(['Berserk'])
+  })
+})
+
+describe('listas curadas (migration 0028)', () => {
+  // Ana (U) é a dona; Beto (OUTRO) é amigo dela; Caio não é amigo de ninguém.
+  const CAIO = '66666666-6666-6666-6666-666666666666'
+  const DANI = '77777777-7777-7777-7777-777777777777'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const HASH = 'b'.repeat(64)
+  const mkItem = async (titulo: string, opts: { uid?: string; estado?: string; chave?: string | null; capa?: string | null; serie?: string; numero?: number } = {}) => {
+    const uid = opts.uid ?? U
+    const { rows } = await como(uid, () =>
+      db.query<{ id: string }>(
+        `insert into itens(user_id, serie_id, titulo, numero_volume, estado, obra_chave, capa_url) values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+        [uid, opts.serie ?? null, titulo, opts.numero ?? null, opts.estado ?? 'comprado', opts.chave === undefined ? `chave:${titulo}` : opts.chave, opts.capa === undefined ? null : opts.capa]
+      )
+    )
+    return rows[0].id
+  }
+  const criar = async (titulo = 'Minha lista', ordenada = false, tipo: string | null = null) =>
+    (await db.query<{ id: string }>(`select lista_salvar(null, $1, null, $2, $3) id`, [titulo, ordenada, tipo])).rows[0].id
+  const adicionar = async (lista: string, item: string, nota: string | null = null, spoiler = false) =>
+    (await db.query<{ id: string }>(`select lista_item_adicionar($1, $2, $3, $4) id`, [lista, item, nota, spoiler])).rows[0].id
+  const itensDe = async (lista: string) =>
+    (await db.query<Record<string, unknown>>(`select * from lista_itens_listar($1)`, [lista])).rows
+  const visiveis = async () => (await db.query<{ id: string; titulo: string; proprio: boolean }>(`select id, titulo, proprio from listas_listar(null)`)).rows
+  const erro = async (sql: string, params: unknown[] = []) => {
+    try {
+      await db.query(sql, params)
+    } catch (e) {
+      return (e as Error).message
+    }
+    return null
+  }
+  let amizade = ''
+  let serieId = ''
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}'), ('${DANI}') on conflict do nothing;
+      delete from compartilhamentos; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido) values ('${U}', 'ana'), ('${OUTRO}', 'beto'), ('${CAIO}', 'caio'), ('${DANI}', 'dani');
+    `)
+    amizade = (await como(OUTRO, () => db.query<{ id: string }>(`select amizade_solicitar('ana') id`))).rows[0].id
+    await db.query(`select amizade_responder($1, true)`, [amizade])
+    serieId = (await db.query<{ id: string }>(`insert into series(user_id, nome, tipo) values ($1, 'Batman Ano Um', 'hq') returning id`, [U])).rows[0].id
+  })
+
+  it('cria, edita e apaga a lista; só o dono mexe', async () => {
+    const id = await criar('Ordem de leitura', true, 'ordem_leitura')
+    expect((await visiveis()).map((l) => l.titulo)).toContain('Ordem de leitura')
+    await db.query(`select lista_salvar($1, 'Ordem de leitura de Batman', 'Do começo', true, 'arco')`, [id])
+    const { rows: [l] } = await db.query<{ titulo: string; descricao: string; tipo: string }>(`select titulo, descricao, tipo from listas where id = $1`, [id])
+    expect(l).toEqual({ titulo: 'Ordem de leitura de Batman', descricao: 'Do começo', tipo: 'arco' })
+    // outra pessoa (mesmo amiga) não edita nem apaga
+    await como(OUTRO, async () => {
+      expect(await erro(`select lista_salvar($1, 'Invadida', null, false, null)`, [id])).toContain('lista_nao_encontrada')
+      expect(await erro(`select lista_apagar($1)`, [id])).toContain('lista_nao_encontrada')
+    })
+    await db.query(`select lista_apagar($1)`, [id])
+    expect((await visiveis()).map((x) => x.id)).not.toContain(id)
+  })
+
+  it('valida título, descrição e tipo, e limita a 50 listas por pessoa', async () => {
+    expect(await erro(`select lista_salvar(null, '   ', null, false, null)`)).toContain('lista_titulo_invalido')
+    expect(await erro(`select lista_salvar(null, $1, null, false, null)`, ['x'.repeat(81)])).toContain('lista_titulo_invalido')
+    expect(await erro(`select lista_salvar(null, 'A', $1, false, null)`, ['x'.repeat(501)])).toContain('lista_descricao_longa')
+    expect(await erro(`select lista_salvar(null, 'A', null, false, 'publica')`)).toContain('lista_tipo_invalido')
+    await admin(`delete from listas where user_id = '${CAIO}'`)
+    await como(CAIO, async () => {
+      for (let k = 0; k < 50; k++) await db.query(`select lista_salvar(null, $1, null, false, null)`, [`L${k}`])
+      expect(await erro(`select lista_salvar(null, 'L50', null, false, null)`)).toContain('lista_limite')
+    })
+    await admin(`delete from listas where user_id = '${CAIO}'`)
+  })
+
+  it('o item guarda uma referência estável: chave, título, série, número, tipo e capa, copiados do item do dono', async () => {
+    const lista = await criar('Referências')
+    const item = await mkItem('Batman: Ano Um #1', { chave: 'batman-ano-um:1', serie: serieId, numero: 1, capa: `${U}/arquivo.jpg` })
+    const id = await adicionar(lista, item)
+    const [r] = await itensDe(lista)
+    expect(r).toMatchObject({ id, posicao: 1, obra_chave: 'batman-ano-um:1', titulo: 'Batman: Ano Um #1', serie_nome: 'Batman Ano Um', tipo: 'hq', capa: 'arquivo.jpg' })
+    expect(Number(r.numero_volume)).toBe(1)
+    // apagar ou renomear o item da coleção não mexe na lista
+    await db.query(`update itens set titulo = 'Outro nome', capa_url = null where id = $1`, [item])
+    await db.query(`delete from itens where id = $1`, [item])
+    const [depois] = await itensDe(lista)
+    expect(depois).toMatchObject({ titulo: 'Batman: Ano Um #1', obra_chave: 'batman-ano-um:1', capa: 'arquivo.jpg' })
+  })
+
+  it('só item da própria coleção; repetido, lista cheia e nota longa são recusados', async () => {
+    const lista = await criar('Regras de item')
+    const meu = await mkItem('Meu', { chave: 'meu:1' })
+    const alheio = await mkItem('Alheio', { uid: OUTRO, chave: 'alheio:1' })
+    expect(await erro(`select lista_item_adicionar($1, $2, null, false)`, [lista, alheio])).toContain('item_nao_encontrado')
+    expect(await erro(`select lista_item_adicionar($1, gen_random_uuid(), null, false)`, [lista])).toContain('item_nao_encontrado')
+    await adicionar(lista, meu)
+    expect(await erro(`select lista_item_adicionar($1, $2, null, false)`, [lista, meu])).toContain('lista_item_repetido')
+    const outro = await mkItem('Outro', { chave: 'outro:1' })
+    expect(await erro(`select lista_item_adicionar($1, $2, $3, false)`, [lista, outro, 'x'.repeat(301)])).toContain('lista_nota_longa')
+    // lista de outra pessoa
+    await como(OUTRO, async () => {
+      expect(await erro(`select lista_item_adicionar($1, $2, null, false)`, [lista, alheio])).toContain('lista_nao_encontrada')
+    })
+    // limite de 200 itens
+    const cheia = await criar('Cheia')
+    await admin(`insert into lista_itens(lista_id, posicao, obra_chave, titulo) select '${cheia}', g, 'x:' || g, 'T' || g from generate_series(1, 200) g`)
+    expect(await erro(`select lista_item_adicionar($1, $2, null, false)`, [cheia, outro])).toContain('lista_cheia')
+  })
+
+  it('reordena, remove (fechando o buraco) e recusa ordem que não é a da lista', async () => {
+    const lista = await criar('Ordem', true)
+    const ids: string[] = []
+    for (const t of ['A', 'B', 'C']) ids.push(await adicionar(lista, await mkItem(`Ord ${t}`, { chave: `ord:${t}` })))
+    expect((await itensDe(lista)).map((r) => r.titulo)).toEqual(['Ord A', 'Ord B', 'Ord C'])
+    await db.query(`select lista_itens_reordenar($1, $2::uuid[])`, [lista, [ids[2], ids[0], ids[1]]])
+    expect((await itensDe(lista)).map((r) => r.titulo)).toEqual(['Ord C', 'Ord A', 'Ord B'])
+    expect(await erro(`select lista_itens_reordenar($1, $2::uuid[])`, [lista, [ids[0], ids[1]]])).toContain('lista_ordem_invalida')
+    expect(await erro(`select lista_itens_reordenar($1, $2::uuid[])`, [lista, [ids[0], ids[0], ids[1]]])).toContain('lista_ordem_invalida')
+    expect(await erro(`select lista_itens_reordenar($1, $2::uuid[])`, [lista, [ids[0], ids[1], '00000000-0000-0000-0000-000000000001']])).toContain('lista_ordem_invalida')
+    await como(OUTRO, async () => {
+      expect(await erro(`select lista_itens_reordenar($1, $2::uuid[])`, [lista, ids])).toContain('lista_nao_encontrada')
+      expect(await erro(`select lista_item_remover($1)`, [ids[0]])).toContain('lista_item_nao_encontrado')
+    })
+    await db.query(`select lista_item_remover($1)`, [ids[2]])
+    expect((await itensDe(lista)).map((r) => [r.titulo, r.posicao])).toEqual([['Ord A', 1], ['Ord B', 2]])
+    const novo = await adicionar(lista, await mkItem('Ord D', { chave: 'ord:D' }))
+    expect((await itensDe(lista)).map((r) => r.posicao)).toEqual([1, 2, 3])
+    expect((await itensDe(lista))[2].id).toBe(novo)
+  })
+
+  it('nota e spoiler do item: editáveis; spoiler sem nota não existe', async () => {
+    const lista = await criar('Notas')
+    const id = await adicionar(lista, await mkItem('Com nota', { chave: 'nota:1' }), 'Melhor do arco', true)
+    expect(await itensDe(lista)).toMatchObject([{ nota: 'Melhor do arco', spoiler: true }])
+    await db.query(`select lista_item_editar($1, '  ', true)`, [id])
+    expect(await itensDe(lista)).toMatchObject([{ nota: null, spoiler: false }])
+    await db.query(`select lista_item_editar($1, 'Voltei atrás', false)`, [id])
+    expect(await itensDe(lista)).toMatchObject([{ nota: 'Voltei atrás', spoiler: false }])
+    await como(OUTRO, async () => {
+      expect(await erro(`select lista_item_editar($1, 'invadido', false)`, [id])).toContain('lista_item_nao_encontrado')
+    })
+  })
+
+  describe('visibilidade (RLS e amizade)', () => {
+    let lista = ''
+    let itemCapa = ''
+    beforeAll(async () => {
+      lista = await criar('Só para amigos', true)
+      const item = await mkItem('Privada', { chave: 'priv:1', capa: `${U}/privada.png`, estado: 'lido' })
+      itemCapa = await adicionar(lista, item, 'Comentário', true)
+      await adicionar(lista, await mkItem('Pública', { chave: 'pub:1', capa: `pub/${HASH}.jpg` }))
+    })
+
+    it('o dono vê pela tabela (RLS) e pelas funções', async () => {
+      expect((await db.query(`select id from listas where id = $1`, [lista])).rows).toHaveLength(1)
+      expect((await db.query(`select id from lista_itens where lista_id = $1`, [lista])).rows).toHaveLength(2)
+      expect((await db.query(`select * from lista_detalhe($1)`, [lista])).rows).toHaveLength(1)
+    })
+
+    it('amigo aceito vê pelas funções, mas não lê nem escreve as tabelas direto', async () => {
+      await como(OUTRO, async () => {
+        expect((await visiveis()).map((l) => l.id)).toContain(lista)
+        expect((await db.query<{ proprio: boolean }>(`select proprio from lista_detalhe($1)`, [lista])).rows[0].proprio).toBe(false)
+        expect(await itensDe(lista)).toHaveLength(2)
+        expect((await db.query(`select id from listas where id = $1`, [lista])).rows).toEqual([])
+        expect((await db.query(`select id from lista_itens where lista_id = $1`, [lista])).rows).toEqual([])
+        expect(await erro(`insert into listas(user_id, titulo) values ($1, 'x')`, [OUTRO])).not.toBeNull()
+        await db.query(`update listas set titulo = 'hack' where id = $1`, [lista])
+        await db.query(`update lista_itens set capa = 'outro/arquivo.jpg' where lista_id = $1`, [lista])
+      })
+      const { rows: [l] } = await db.query<{ titulo: string }>(`select titulo from listas where id = $1`, [lista])
+      expect(l.titulo).toBe('Só para amigos')
+      expect((await db.query(`select id from lista_itens where lista_id = $1 and capa like 'outro/%'`, [lista])).rows).toEqual([])
+    })
+
+    it('o dono também não escreve direto: título, capa e posição só mudam pelas funções', async () => {
+      expect(await erro(`insert into lista_itens(lista_id, posicao, titulo, capa) values ($1, 99, 'x', '${OUTRO}/alheia.jpg')`, [lista])).not.toBeNull()
+      await db.query(`update lista_itens set capa = '${OUTRO}/alheia.jpg' where lista_id = $1`, [lista])
+      expect((await db.query(`select id from lista_itens where lista_id = $1 and capa like '${OUTRO}/%'`, [lista])).rows).toEqual([])
+    })
+
+    it('quem não é amigo (e quem só pediu) não vê nada, nem a lista, nem a capa, nem comenta ou curte', async () => {
+      await como(CAIO, async () => {
+        expect((await visiveis()).map((l) => l.id)).not.toContain(lista)
+        expect((await db.query(`select * from lista_detalhe($1)`, [lista])).rows).toEqual([])
+        expect(await itensDe(lista)).toEqual([])
+        expect((await db.query(`select lista_item_capa($1) c`, [itemCapa])).rows[0]).toEqual({ c: null })
+        expect(await erro(`select lista_curtir($1)`, [lista])).toContain('lista_nao_encontrada')
+        expect(await erro(`select lista_comentar($1, 'oi')`, [lista])).toContain('lista_nao_encontrada')
+        expect((await db.query(`select * from lista_comentarios_listar($1)`, [lista])).rows).toEqual([])
+      })
+      // pedido pendente não vale
+      await como(DANI, async () => {
+        await db.query(`select amizade_solicitar('ana')`)
+      })
+      await como(DANI, async () => expect((await visiveis()).map((l) => l.id)).not.toContain(lista))
+    })
+
+    it('amizade desfeita corta na hora (itens, capa, curtir e comentar) e volta ao refazer', async () => {
+      await como(OUTRO, async () => {
+        await db.query(`select lista_curtir($1)`, [lista])
+        await db.query(`select lista_comentar($1, 'Boa lista')`, [lista])
+      })
+      await db.query(`select amizade_desfazer($1)`, [amizade])
+      await como(OUTRO, async () => {
+        expect((await visiveis()).map((l) => l.id)).not.toContain(lista)
+        expect(await itensDe(lista)).toEqual([])
+        expect((await db.query(`select * from lista_detalhe($1)`, [lista])).rows).toEqual([])
+        expect((await db.query(`select lista_item_capa($1) c`, [itemCapa])).rows[0]).toEqual({ c: null })
+        expect(await erro(`select lista_curtir($1)`, [lista])).toContain('lista_nao_encontrada')
+        expect(await erro(`select lista_comentar($1, 'ainda aqui?')`, [lista])).toContain('lista_nao_encontrada')
+      })
+      amizade = (await como(OUTRO, () => db.query<{ id: string }>(`select amizade_solicitar('ana') id`))).rows[0].id
+      await db.query(`select amizade_responder($1, true)`, [amizade])
+      await como(OUTRO, async () => expect((await visiveis()).map((l) => l.id)).toContain(lista))
+    })
+
+    it('capa: a do catálogo sai como pub/..., a privada só como nome do arquivo e só o banco autoriza o caminho', async () => {
+      await como(OUTRO, async () => {
+        const itens = await itensDe(lista)
+        expect(itens.map((i) => i.capa)).toEqual(['privada.png', `pub/${HASH}.jpg`])
+        expect(JSON.stringify(itens)).not.toContain(U)
+        const { rows: [c] } = await db.query<{ c: string }>(`select lista_item_capa($1) c`, [itemCapa])
+        expect(c.c).toBe(`${U}/privada.png`)
+        const [pub] = (await db.query<{ id: string }>(`select id from lista_itens where false`)).rows
+        expect(pub).toBeUndefined()
+        const l = (await db.query<{ capa: string | null }>(`select capa from listas_listar(null) where id = $1`, [lista])).rows[0]
+        expect(l.capa).toBe('privada.png')
+      })
+    })
+
+    it('anônimo não executa nenhuma função e não lê as tabelas', async () => {
+      await db.query(`set role anon`)
+      try {
+        for (const sql of [
+          `select * from listas_listar(null)`,
+          `select * from lista_detalhe('${lista}')`,
+          `select * from lista_itens_listar('${lista}')`,
+          `select lista_item_capa('${itemCapa}')`,
+          `select lista_curtir('${lista}')`,
+          `select lista_comentar('${lista}', 'oi')`,
+          `select * from listas`,
+          `select * from lista_itens`,
+          `select * from lista_curtidas`,
+          `select * from lista_comentarios`,
+        ]) {
+          expect(await erro(sql), sql).toMatch(/permission denied/)
+        }
+      } finally {
+        await db.query(`set role authenticated`)
+      }
+    })
+
+    it('"tenho" e "li": usam a chave da obra do visitante (e o vínculo manual), sem olhar desejo nem a coleção do dono', async () => {
+      const lista2 = await criar('Tenho e li')
+      for (const [t, ch] of [['Tenho lido', 'tl:1'], ['Tenho comprado', 'tl:2'], ['So desejo', 'tl:3'], ['Nao tenho', 'tl:4'], ['Por vinculo', 'tl:5']] as const) {
+        await adicionar(lista2, await mkItem(`Dono ${t}`, { chave: ch }))
+      }
+      await como(OUTRO, async () => {
+        await mkItem('Beto lido', { uid: OUTRO, chave: 'tl:1', estado: 'lido' })
+        await mkItem('Beto comprado', { uid: OUTRO, chave: 'tl:2', estado: 'comprado' })
+        await mkItem('Beto desejo', { uid: OUTRO, chave: 'tl:3', estado: 'desejo' })
+        await mkItem('Beto vinculado', { uid: OUTRO, chave: 'beto:proprio', estado: 'lido' })
+      })
+      await admin(`insert into obra_equivalencias(user_id, obra_chave, obra_chave_amigo) values ('${OUTRO}', 'beto:proprio', 'tl:5')`)
+      await como(OUTRO, async () => {
+        const r = Object.fromEntries((await itensDe(lista2)).map((i) => [i.titulo, [i.tenho, i.li]]))
+        expect(r).toEqual({
+          'Dono Tenho lido': [true, true],
+          'Dono Tenho comprado': [true, false],
+          'Dono So desejo': [false, false],
+          'Dono Nao tenho': [false, false],
+          'Dono Por vinculo': [true, true],
+        })
+      })
+      // Para o dono, a conta é dele mesmo (os itens que ele adicionou existem na coleção dele).
+      expect((await itensDe(lista2)).every((i) => i.tenho === true)).toBe(true)
+    })
+
+    it('item sem chave nunca casa (não vira "tenho" por engano)', async () => {
+      const lista3 = await criar('Sem chave')
+      await adicionar(lista3, await mkItem('Sem chave', { chave: null }))
+      await como(OUTRO, async () => {
+        await mkItem('Beto sem chave', { uid: OUTRO, chave: null })
+        expect(await itensDe(lista3)).toMatchObject([{ tenho: false, li: false }])
+      })
+    })
+  })
+
+  describe('curtir e comentar', () => {
+    let lista = ''
+    beforeAll(async () => {
+      lista = await criar('Conversa')
+    })
+
+    it('curtir é idempotente, conta, e descurtir desfaz', async () => {
+      await como(OUTRO, async () => {
+        await db.query(`select lista_curtir($1)`, [lista])
+        await db.query(`select lista_curtir($1)`, [lista])
+        expect((await db.query<{ curtidas: number; curti: boolean }>(`select curtidas, curti from lista_detalhe($1)`, [lista])).rows[0]).toEqual({ curtidas: 1, curti: true })
+      })
+      expect((await db.query<{ curtidas: number; curti: boolean }>(`select curtidas, curti from lista_detalhe($1)`, [lista])).rows[0]).toEqual({ curtidas: 1, curti: false })
+      await como(OUTRO, async () => {
+        await db.query(`select lista_descurtir($1)`, [lista])
+        expect((await db.query<{ curtidas: number }>(`select curtidas from lista_detalhe($1)`, [lista])).rows[0].curtidas).toBe(0)
+      })
+    })
+
+    it('comentários: valida texto, lista com autor, e só autor ou dono apagam', async () => {
+      await como(OUTRO, async () => {
+        expect(await erro(`select lista_comentar($1, '   ')`, [lista])).toContain('comentario_vazio')
+        expect(await erro(`select lista_comentar($1, $2)`, [lista, 'x'.repeat(501)])).toContain('comentario_longo')
+        await db.query(`select lista_comentar($1, '  Ótima lista  ')`, [lista])
+      })
+      const lidos = (await db.query<{ id: string; texto: string; meu: boolean; pode_apagar: boolean; apelido: string }>(`select * from lista_comentarios_listar($1)`, [lista])).rows
+      expect(lidos).toHaveLength(1)
+      expect(lidos[0]).toMatchObject({ texto: 'Ótima lista', meu: false, pode_apagar: true, apelido: 'beto' })
+      expect((await db.query<{ comentarios: number }>(`select comentarios from lista_detalhe($1)`, [lista])).rows[0].comentarios).toBe(1)
+      await admin(`insert into amizades(solicitante, destinatario, status) values ('${DANI}', '${U}', 'aceita') on conflict (least(solicitante, destinatario), greatest(solicitante, destinatario)) do update set status = 'aceita'`)
+      await como(DANI, async () => {
+        const dani = (await db.query<{ id: string }>(`select lista_comentar($1, 'Eu também') id`, [lista])).rows[0].id
+        expect(await erro(`select lista_apagar_comentario($1)`, [lidos[0].id])).toContain('comentario_nao_encontrado')
+        await db.query(`select lista_apagar_comentario($1)`, [dani])
+      })
+      await como(OUTRO, async () => {
+        await db.query(`select lista_apagar_comentario($1)`, [lidos[0].id])
+      })
+      expect((await db.query(`select * from lista_comentarios_listar($1)`, [lista])).rows).toEqual([])
+    })
+
+    it('o dono apaga comentário de qualquer um na lista dele', async () => {
+      await como(OUTRO, async () => db.query(`select lista_comentar($1, 'Apague-me')`, [lista]))
+      const [c] = (await db.query<{ id: string }>(`select id from lista_comentarios_listar($1)`, [lista])).rows
+      await db.query(`select lista_apagar_comentario($1)`, [c.id])
+      expect((await db.query(`select * from lista_comentarios_listar($1)`, [lista])).rows).toEqual([])
+    })
+
+    it('o amigo A não descobre o amigo B pelo comentário (só vê quem é dono, ele mesmo ou amigo dele)', async () => {
+      // Dani e Beto são amigos da Ana, mas não entre si.
+      await como(DANI, async () => db.query(`select lista_comentar($1, 'Sou a Dani')`, [lista]))
+      await como(OUTRO, async () => {
+        expect((await db.query(`select * from lista_comentarios_listar($1)`, [lista])).rows).toEqual([])
+        expect((await db.query<{ comentarios: number }>(`select comentarios from lista_detalhe($1)`, [lista])).rows[0].comentarios).toBe(0)
+      })
+      expect((await db.query(`select * from lista_comentarios_listar($1)`, [lista])).rows).toHaveLength(1)
+      await admin(`delete from lista_comentarios where lista_id = '${lista}'`)
+    })
+
+    it('limite de taxa no banco: 10 comentários por minuto por pessoa', async () => {
+      await admin(`delete from lista_comentarios where user_id = '${OUTRO}'`)
+      await como(OUTRO, async () => {
+        for (let k = 0; k < 10; k++) await db.query(`select lista_comentar($1, $2)`, [lista, `c${k}`])
+        expect(await erro(`select lista_comentar($1, 'o 11º')`, [lista])).toContain('comentario_rapido')
+      })
+      await admin(`delete from lista_comentarios where user_id = '${OUTRO}'`)
+    })
+
+    it('apagar a lista leva junto itens, curtidas e comentários', async () => {
+      const l = await criar('Efêmera')
+      await adicionar(l, await mkItem('Efêmero', { chave: 'efemero:1' }))
+      await como(OUTRO, async () => {
+        await db.query(`select lista_curtir($1)`, [l])
+        await db.query(`select lista_comentar($1, 'tchau')`, [l])
+      })
+      await db.query(`select lista_apagar($1)`, [l])
+      await admin(`select 1`)
+      const { rows } = await db.query<{ n: number }>(`select (select count(*) from lista_itens where lista_id = '${l}')::int + (select count(*) from lista_curtidas where lista_id = '${l}')::int + (select count(*) from lista_comentarios where lista_id = '${l}')::int as n`)
+      expect(rows[0].n).toBe(0)
+    })
+  })
+
+  it('listas_listar filtra por apelido do dono e traz contagens, capa e quantidade de itens', async () => {
+    const mini = await criar('Mini')
+    await adicionar(mini, await mkItem('Mini 1', { chave: 'mini:1', capa: `pub/${HASH}.jpg` }))
+    await como(OUTRO, async () => {
+      const so = (await db.query<{ id: string; qtd: number; capa: string; apelido: string }>(`select id, qtd, capa, apelido from listas_listar('ANA')`)).rows
+      expect(so.every((l) => l.apelido === 'ana')).toBe(true)
+      expect(so.find((l) => l.id === mini)).toMatchObject({ qtd: 1, capa: `pub/${HASH}.jpg` })
+      expect((await db.query(`select * from listas_listar('caio')`)).rows).toEqual([])
+    })
+  })
+
+  it('o link público não tem lista: nenhuma função link_* nem a vitrine toca as tabelas de listas', () => {
+    const anteriores = [
+      '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0017_capa_variante', '0019_notas_entre_amigos', '0024_spoiler_na_critica', '0026_favoritos_series',
+    ].map((f) => readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
+    expect(anteriores.some((s) => /lista_itens|lista_curtidas|listas_listar/.test(s))).toBe(false)
+    const sql = readFileSync(path.join(PASTA, '0028_listas_curadas.sql'), 'utf8')
+    expect(sql).not.toMatch(/\blink_[a-z_]+\(/)
+    expect(sql).not.toMatch(/compartilhamentos/)
+  })
+
+  it('migration: tabelas com RLS, sem política de escrita, e as funções fechadas para anônimo', () => {
+    const sql = readFileSync(path.join(PASTA, '0028_listas_curadas.sql'), 'utf8')
+    for (const t of ['listas', 'lista_itens', 'lista_curtidas', 'lista_comentarios']) expect(sql).toContain(`alter table ${t} enable row level security;`)
+    expect(sql).not.toMatch(/create policy [^;]+ for (insert|update|delete|all)/)
+    expect(sql).toMatch(/revoke all on all functions in schema privado/)
+    expect(sql).toContain('grant select on listas, lista_itens to authenticated;')
+    const funcoes = [...sql.matchAll(/^create or replace function (lista[a-z_]*)\(([^)]*)\)/gm)].map((m) => `${m[1]}(${m[2].split(',').map((p) => p.trim().split(/\s+/)[1]).filter(Boolean).join(', ')})`)
+    expect(funcoes.length).toBe(15)
+    for (const f of funcoes) {
+      expect(sql, f).toContain(`revoke all on function ${f} from public, anon;`)
+      expect(sql, f).toContain(`grant execute on function ${f} to authenticated;`)
+    }
   })
 })

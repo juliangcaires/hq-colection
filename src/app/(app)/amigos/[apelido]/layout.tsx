@@ -25,7 +25,10 @@ export default async function LayoutDoAmigo({ children, params }: { children: Re
             {resumo.apelido && <p className="text-sm text-muted-foreground">@{resumo.apelido}</p>}
           </div>
         </div>
-        <VitrineNav base={`/amigos/${resumo.apelido ?? apelido}`} escopo={resumo.escopo} extras={[{ href: `/amigos/${resumo.apelido ?? apelido}/comparar`, rotulo: 'Comparar' }]} />
+        <VitrineNav base={`/amigos/${resumo.apelido ?? apelido}`} escopo={resumo.escopo} extras={[
+            { href: `${base}/listas`, rotulo: 'Listas' },
+            { href: `${base}/comparar`, rotulo: 'Comparar' },
+          ]} />
       </header>
       <FaixaFavoritos favoritos={favoritos} hrefDaSerie={(id) => `${base}/serie/${id}`} />
       {children}
