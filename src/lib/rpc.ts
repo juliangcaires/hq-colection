@@ -36,6 +36,17 @@ export function lancarErroRpc(error: { message: string }): never {
   if (m === 'leitura_em_variante') throw new ErroDeNegocio('As leituras ficam no volume normal; esta é uma variante dele.')
   if (m === 'favoritos_limite') throw new ErroDeNegocio('Você pode ter no máximo 4 séries favoritas. Tire uma para escolher outra.')
   if (m === 'favoritos_repetido') throw new ErroDeNegocio('Essa série já está entre os seus favoritos.')
+  if (m === 'lista_nao_encontrada') throw new ErroDeNegocio('Lista não encontrada.')
+  if (m === 'lista_item_nao_encontrado') throw new ErroDeNegocio('Item da lista não encontrado.')
+  if (m === 'lista_titulo_invalido') throw new ErroDeNegocio('O título da lista precisa ter de 1 a 80 caracteres.')
+  if (m === 'lista_descricao_longa') throw new ErroDeNegocio('A descrição passa de 500 caracteres.')
+  if (m === 'lista_tipo_invalido') throw new ErroDeNegocio('Tipo de lista inválido.')
+  if (m === 'lista_nota_longa') throw new ErroDeNegocio('O comentário do item passa de 300 caracteres.')
+  if (m === 'lista_limite') throw new ErroDeNegocio('Você chegou ao limite de 50 listas. Apague alguma para criar outra.')
+  if (m === 'lista_cheia') throw new ErroDeNegocio('Esta lista já tem 200 itens.')
+  if (m === 'lista_item_repetido') throw new ErroDeNegocio('Esta obra já está na lista.')
+  if (m === 'lista_ordem_invalida') throw new ErroDeNegocio('A ordem mudou enquanto você editava. Recarregue a lista e tente de novo.')
+  if (m === 'comentario_rapido') throw new ErroDeNegocio('Você está comentando rápido demais. Espere um minuto.')
   if (m === 'critica_longa') throw new ErroDeNegocio('A crítica passa de 2000 caracteres.')
   if (m.startsWith('volumes_repetidos:')) {
     const numeros = m
