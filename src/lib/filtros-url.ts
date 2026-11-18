@@ -60,3 +60,8 @@ export function lerLimiteRanking(valor: string | undefined): number {
 export function lerTipoDaUrl(valor: string | undefined) {
   return tipoObra.safeParse(valor).data
 }
+
+/** `?agrupar=serie` liga o modo agrupado de Desejos; qualquer outro valor vale a grade. */
+export function lerAgruparPorSerie(valor: string | undefined): boolean {
+  return valor === 'serie'
+}
