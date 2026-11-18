@@ -26,6 +26,7 @@ import {
 } from '@/app/(app)/series/actions'
 import type { TipoObra } from '@/lib/types'
 import { desembrulhar } from '@/lib/resultado'
+import { ProgressoDaSerieBarra } from '@/components/series/progresso-da-serie'
 
 type SerieRow = SerieListada
 
@@ -156,7 +157,6 @@ export function SeriesManager({ initialSeries }: { initialSeries: SerieRow[] }) 
               <span className="truncate text-sm font-semibold text-foreground">{s.nome}</span>
               <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <TipoBadge tipo={s.tipo} />
-                {s.total_volumes ? `${s.total_volumes} volumes` : null}
                 {!s.em_publicacao && <Badge variant="secondary">encerrada</Badge>}
                 {s.completa && <Badge variant="sucesso">completa</Badge>}
                 {s.lida && <Badge variant="sucesso">lida</Badge>}
@@ -166,6 +166,7 @@ export function SeriesManager({ initialSeries }: { initialSeries: SerieRow[] }) 
                   </span>
                 )}
               </span>
+              <ProgressoDaSerieBarra progresso={s.progresso} className="mt-1" />
             </Link>
             <Button
               variant="ghost"

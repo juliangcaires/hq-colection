@@ -12,6 +12,8 @@ import { BuscarCapasFaltantes } from '@/components/series/buscar-capas-faltantes
 import { CriarVolumesDialog } from '@/components/series/criar-volumes-dialog'
 import { TipoBadge } from '@/components/ui/tipo-badge'
 import { SerieProgress } from '@/components/series/serie-progress'
+import { ProgressoDaSerieBarra } from '@/components/series/progresso-da-serie'
+import { calcularProgressoDaSerie } from '@/lib/progresso-serie'
 import { AvaliarSerie } from '@/components/series/avaliar-serie'
 import { MarcarSerieLidaDialog } from '@/components/series/marcar-serie-lida-dialog'
 import { VolumesGrid } from '@/components/series/volumes-grid'
@@ -66,7 +68,7 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
   // média: tudo abaixo usa `principais`. `estante` é o que aparece como "exemplares".
   const principais = itens.filter((i) => !i.variante_de)
   const variantes = itens.filter((i) => i.variante_de && i.estado !== 'desejo').length
-  const possuidos = principais.filter((i) => i.estado !== 'desejo').length
+  const progresso = calcularProgressoDaSerie(itens, serie.total_volumes)
   const desejados = itens.filter((i) => i.estado === 'desejo').length
   const lidos = principais.filter((i) => i.estado === 'lido').length
   const notasAvaliadas = principais
@@ -108,14 +110,19 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
           <h1 className="font-heading text-[28px] leading-tight font-extrabold tracking-tight text-foreground lg:text-[44px]">
             {serie.nome}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {/* Só os adquiridos contam aqui, senão a conta não fecha com os furos:
-                um volume só desejado apareceria ao mesmo tempo como tido e faltante. */}
-            {possuidos} volume(ns) na coleção
-            {serie.total_volumes ? ` de ${serie.total_volumes}` : ''}
-            {desejados > 0 ? ` · ${desejados} na lista de desejos` : ''}
-            {variantes > 0 ? ` · ${variantes} ${variantes === 1 ? 'variante' : 'variantes'} (contam na estante, não no progresso)` : ''}
-          </p>
+          {(desejados > 0 || variantes > 0) && (
+            <p className="text-sm text-muted-foreground">
+              {/* O "tenho X de Y" fica na barra logo abaixo. Só os adquiridos contam lá, senão a conta não fecha
+                  com os furos: um volume só desejado apareceria ao mesmo tempo como tido e faltante. */}
+              {[
+                desejados > 0 ? `${desejados} na lista de desejos` : null,
+                variantes > 0 ? `${variantes} ${variantes === 1 ? 'variante' : 'variantes'} (contam na estante, não no progresso)` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
+          <ProgressoDaSerieBarra progresso={progresso} />
           <SerieProgress lidos={lidos} naFila={naFila} faltando={volumesFaltantes.length} />
         </div>
       </div>

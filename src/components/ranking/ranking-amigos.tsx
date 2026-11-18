@@ -7,6 +7,8 @@ import { CarregarMais } from '@/components/itens/carregar-mais'
 import { formatarNota } from '@/lib/nota'
 import { cn } from '@/lib/utils'
 import { hrefDoItem } from '@/lib/navegacao-item'
+import { ProgressoDaSerieBarra } from '@/components/series/progresso-da-serie'
+import type { ProgressoDaSerie } from '@/lib/progresso-serie'
 import { RANKING_POR_PAGINA } from '@/lib/filtros-url'
 import { urlsDeCapas } from '@/lib/supabase/capas'
 import {
@@ -128,6 +130,7 @@ export function RankingAmigos({
   limite,
   estado,
   capaDosMeus,
+  progressoDosMeus,
   hoje,
 }: {
   params: SearchParams
@@ -138,6 +141,8 @@ export function RankingAmigos({
   estado: EstadoDosAmigos
   /** `itens.capa_url` dos seus itens que casam com as linhas, por id do item. */
   capaDosMeus: Map<string, string | null>
+  /** Progresso da SUA série, por id do seu item: só existe quando a linha é um volume que você tem e ele é de uma série. */
+  progressoDosMeus: Map<string, ProgressoDaSerie>
   hoje: Date
 }) {
   const { tipo } = filtros
@@ -264,6 +269,9 @@ export function RankingAmigos({
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="truncate text-sm font-medium">{l.titulo}</span>
                       {subtitulo(l) && <span className="truncate text-xs text-muted-foreground">{subtitulo(l)}</span>}
+                      {l.meuItemId && progressoDosMeus.get(l.meuItemId) && (
+                        <ProgressoDaSerieBarra progresso={progressoDosMeus.get(l.meuItemId)!} compacto />
+                      )}
                       <Avatares l={l} />
                     </div>
                     <Placar l={l} />
