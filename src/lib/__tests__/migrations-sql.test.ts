@@ -29,7 +29,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -2448,4 +2448,215 @@ describe('releitura e diário (migration 0025)', () => {
     const uid = (await db.query<{ u: string }>(`select auth.uid()::text u`)).rows[0].u
     await db.query(`insert into leituras(item_id, user_id, lido_em) values ($1, $2, '2026-11-12')`, [id, uid])
   }
+})
+
+describe('séries favoritas (migration 0026)', () => {
+  // Ana (U) é a dona; Beto (OUTRO) é amigo dela; Caio não é amigo de ninguém.
+  const CAIO = '66666666-6666-6666-6666-666666666666'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const HASH = 'a'.repeat(64)
+  const mkSerie = async (nome: string, opts: { estado?: string; capa?: string | null; uid?: string } = {}) => {
+    const uid = opts.uid ?? U
+    const { rows } = await db.query<{ id: string }>(`insert into series(user_id, nome, tipo) values ($1, $2, 'hq') returning id`, [uid, nome])
+    if (opts.estado !== 'nenhum') {
+      await db.query(`insert into itens(user_id, serie_id, titulo, numero_volume, estado, capa_url) values ($1, $2, $3, 1, $4, $5)`, [
+        uid,
+        rows[0].id,
+        `${nome} 1`,
+        opts.estado ?? 'comprado',
+        opts.capa === undefined ? `pub/${HASH}.jpg` : opts.capa,
+      ])
+    }
+    return rows[0].id
+  }
+  const salvar = (ids: string[]) => db.query(`select favoritos_series_salvar($1::uuid[])`, [ids])
+  const meus = async () => (await db.query<{ nome: string; posicao: number }>(`select nome, posicao from favoritos_series_meus()`)).rows
+  const doAmigo = async (apelido: string) =>
+    (await db.query<{ id: string; nome: string; capa: string | null; posicao: number }>(`select * from amigo_favoritos_series($1)`, [apelido])).rows
+  let s: string[] = []
+  let amizade = ''
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}') on conflict do nothing;
+      delete from compartilhamentos; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos) values
+        ('${U}', 'ana', '{series,colecao}'), ('${OUTRO}', 'beto', '{series}'), ('${CAIO}', 'caio', '{series}');
+    `)
+    amizade = (await como(OUTRO, () => db.query<{ id: string }>(`select amizade_solicitar('ana') id`))).rows[0].id
+    await db.query(`select amizade_responder($1, true)`, [amizade])
+    for (const nome of ['Berserk', 'Akira', 'Monster', 'Vagabond', 'Dragon Ball', 'Sem Volumes']) {
+      s.push(await mkSerie(nome, nome === 'Sem Volumes' ? { estado: 'nenhum' } : {}))
+    }
+  })
+
+  it('sem favoritos: nada aparece, para o dono nem para o amigo', async () => {
+    expect(await meus()).toEqual([])
+    await como(OUTRO, async () => expect(await doAmigo('ana')).toEqual([]))
+  })
+
+  it('escolhe, ordena e o amigo vê na mesma ordem, com o nome e a capa da vitrine', async () => {
+    await salvar([s[2], s[0], s[1]])
+    expect(await meus()).toEqual([
+      { nome: 'Monster', posicao: 1 },
+      { nome: 'Berserk', posicao: 2 },
+      { nome: 'Akira', posicao: 3 },
+    ])
+    await como(OUTRO, async () => {
+      const f = await doAmigo('ana')
+      expect(f.map((x) => x.nome)).toEqual(['Monster', 'Berserk', 'Akira'])
+      expect(f.map((x) => x.posicao)).toEqual([1, 2, 3])
+      expect(f[0].capa).toBe(`pub/${HASH}.jpg`)
+    })
+  })
+
+  it('reordenar e remover regrava a lista inteira numa operação só', async () => {
+    await salvar([s[1], s[2], s[0]])
+    expect((await meus()).map((x) => x.nome)).toEqual(['Akira', 'Monster', 'Berserk'])
+    await salvar([s[0]])
+    expect(await meus()).toEqual([{ nome: 'Berserk', posicao: 1 }])
+    await salvar([])
+    expect(await meus()).toEqual([])
+  })
+
+  it('o limite de 4 vale no banco: função, posição 5 e posição repetida são recusadas', async () => {
+    await expect(salvar([s[0], s[1], s[2], s[3], s[4]])).rejects.toThrow('favoritos_limite')
+    expect(await meus()).toEqual([])
+    await salvar([s[0], s[1], s[2], s[3]])
+    expect(await meus()).toHaveLength(4)
+    // Inserção direta (RLS do dono): uma quinta série não cabe em nenhuma posição.
+    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) values ($1, $2, 5)`, [U, s[4]])).rejects.toThrow()
+    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) values ($1, $2, 4)`, [U, s[4]])).rejects.toThrow()
+    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) values ($1, $2, 0)`, [U, s[4]])).rejects.toThrow()
+    expect(await meus()).toHaveLength(4)
+  })
+
+  it('a mesma série não entra duas vezes', async () => {
+    await expect(salvar([s[0], s[0]])).rejects.toThrow('favoritos_repetido')
+    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) select $1, serie_id, 1 from favoritos_series where user_id = $1 limit 1`, [U])).rejects.toThrow()
+  })
+
+  it('trocar a ordem por update direto funciona (a posição é conferida no fim do comando)', async () => {
+    await salvar([s[0], s[1]])
+    await db.query(`update favoritos_series set posicao = case posicao when 1 then 2 else 1 end where user_id = $1`, [U])
+    expect((await meus()).map((x) => x.nome)).toEqual(['Akira', 'Berserk'])
+  })
+
+  it('só séries da própria coleção: de outra pessoa ou inexistente é recusado', async () => {
+    const doBeto = await como(OUTRO, () => mkSerieComo(OUTRO, 'Do Beto'))
+    await expect(salvar([doBeto])).rejects.toThrow('serie_nao_encontrada')
+    await expect(salvar(['33333333-3333-3333-3333-333333333333'])).rejects.toThrow('serie_nao_encontrada')
+    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) values ($1, $2, 4)`, [U, doBeto])).rejects.toThrow('serie_nao_encontrada')
+    // Nem pondo o user_id do Beto: a RLS do dono barra.
+    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) values ($1, $2, 4)`, [OUTRO, doBeto])).rejects.toThrow()
+    expect((await meus()).map((x) => x.nome)).toEqual(['Akira', 'Berserk'])
+  })
+  const mkSerieComo = (uid: string, nome: string) => mkSerie(nome, { uid })
+
+  it('RLS do dono: ninguém lê nem altera os favoritos de outra pessoa pela tabela', async () => {
+    await como(OUTRO, async () => {
+      expect((await db.query(`select * from favoritos_series`)).rows).toHaveLength(0)
+      expect((await meus())).toEqual([])
+      await db.query(`delete from favoritos_series`)
+      await db.query(`update favoritos_series set posicao = 3`)
+    })
+    expect(await meus()).toHaveLength(2)
+    // O Beto salvando a lista dele não mexe na da Ana.
+    await como(OUTRO, async () => {
+      const b = await mkSerieComo(OUTRO, 'Outra do Beto')
+      await salvar([b])
+      expect((await meus()).map((x) => x.nome)).toEqual(['Outra do Beto'])
+    })
+    expect((await meus()).map((x) => x.nome)).toEqual(['Akira', 'Berserk'])
+  })
+
+  it('quem não é amigo (e quem só pediu) não vê; sem login também não', async () => {
+    await como(CAIO, async () => expect(await doAmigo('ana')).toEqual([]))
+    await como(CAIO, async () => {
+      await db.query(`select amizade_solicitar('ana')`)
+      expect(await doAmigo('ana')).toEqual([])
+    })
+    await admin(`delete from amizades where solicitante = '${CAIO}'`)
+    await db.query(`select set_config('app.uid','',false)`)
+    expect(await doAmigo('ana')).toEqual([])
+    await db.query(`select set_config('app.uid','${U}',false)`)
+    // A amizade vale nos dois sentidos: a Ana vê o que o Beto escolheu; a Caio, nada.
+    expect((await doAmigo('beto')).map((x) => x.nome)).toEqual(['Outra do Beto'])
+    await como(CAIO, async () => expect(await doAmigo('beto')).toEqual([]))
+  })
+
+  it('amizade desfeita: o acesso some na hora e volta se refizerem; os favoritos ficam guardados', async () => {
+    await db.query(`select amizade_desfazer($1)`, [amizade])
+    await como(OUTRO, async () => expect(await doAmigo('ana')).toEqual([]))
+    expect(await meus()).toHaveLength(2)
+    amizade = (await como(OUTRO, () => db.query<{ id: string }>(`select amizade_solicitar('ana') id`))).rows[0].id
+    await db.query(`select amizade_responder($1, true)`, [amizade])
+    await como(OUTRO, async () => expect((await doAmigo('ana')).map((x) => x.nome)).toEqual(['Akira', 'Berserk']))
+  })
+
+  it('o amigo só vê com a seção "séries" liberada; sem ela, vazio', async () => {
+    await admin(`update perfis set escopo_amigos = '{colecao,lidos}' where user_id = '${U}'`)
+    await como(OUTRO, async () => expect(await doAmigo('ana')).toEqual([]))
+    await admin(`update perfis set escopo_amigos = '{series}' where user_id = '${U}'`)
+    await como(OUTRO, async () => expect(await doAmigo('ana')).toHaveLength(2))
+  })
+
+  it('série só com desejos some para o amigo, mas o dono continua vendo; capa privada sai sem a pasta do dono', async () => {
+    const soDesejo = await mkSerie('Só Desejo', { estado: 'desejo' })
+    const privada = await mkSerie('Capa Privada', { capa: `${U}/11111111-2222-3333-4444-555555555555-1700000000000.jpg` })
+    await salvar([soDesejo, privada])
+    expect((await meus()).map((x) => x.nome)).toEqual(['Só Desejo', 'Capa Privada'])
+    await como(OUTRO, async () => {
+      const f = await doAmigo('ana')
+      expect(f.map((x) => x.nome)).toEqual(['Capa Privada'])
+      expect(f[0].capa).toBe('11111111-2222-3333-4444-555555555555-1700000000000.jpg')
+      expect(f[0].capa).not.toContain(U)
+    })
+  })
+
+  it('série sem nenhum volume possuído (só criada) não aparece para o amigo', async () => {
+    await salvar([s[5], s[0]])
+    await como(OUTRO, async () => expect((await doAmigo('ana')).map((x) => x.nome)).toEqual(['Berserk']))
+  })
+
+  it('só nome, tipo e capa saem: nota e crítica da série nunca vazam', async () => {
+    await db.query(`update series set nota = 5, critica = 'segredo', critica_privada = true where id = $1`, [s[0]])
+    await como(OUTRO, async () => {
+      const { rows } = await db.query<Record<string, unknown>>(`select * from amigo_favoritos_series('ana')`)
+      expect(Object.keys(rows[0]).sort()).toEqual(['capa', 'id', 'nome', 'posicao', 'tipo'])
+      expect(JSON.stringify(rows)).not.toContain('segredo')
+    })
+  })
+
+  it('candidatas: só as minhas séries com volume possuído, em ordem alfabética, com a capa completa', async () => {
+    const { rows } = await db.query<{ nome: string; capa: string | null }>(`select nome, capa from favoritos_series_candidatas()`)
+    const nomes = rows.map((r) => r.nome)
+    expect(nomes).toEqual([...nomes].sort((a, b) => a.localeCompare(b, 'pt', { sensitivity: 'base' })))
+    expect(nomes).toContain('Berserk')
+    expect(nomes).not.toContain('Sem Volumes')
+    expect(nomes).not.toContain('Só Desejo')
+    expect(nomes).not.toContain('Do Beto')
+    expect(rows.find((r) => r.nome === 'Capa Privada')?.capa).toBe(`${U}/11111111-2222-3333-4444-555555555555-1700000000000.jpg`)
+  })
+
+  it('apagar a série tira dos favoritos', async () => {
+    await salvar([s[0], s[1]])
+    await db.query(`delete from series where id = $1`, [s[1]])
+    expect((await meus()).map((x) => x.nome)).toEqual(['Berserk'])
+  })
 })

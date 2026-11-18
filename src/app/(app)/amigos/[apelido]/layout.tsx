@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { lerAmigo } from './dados'
+import { lerAmigo, lerFavoritosDoAmigo } from './dados'
+import { FaixaFavoritos } from '@/components/favoritos/faixa-favoritos'
 import { Avatar } from '@/components/ui/avatar'
 import { VitrineNav } from '@/components/vitrine/vitrine-nav'
 
@@ -8,6 +9,8 @@ export default async function LayoutDoAmigo({ children, params }: { children: Re
   const { apelido } = await params
   const resumo = await lerAmigo(apelido)
   if (!resumo) notFound()
+  const favoritos = await lerFavoritosDoAmigo(apelido)
+  const base = `/amigos/${resumo.apelido ?? apelido}`
 
   return (
     <div className="flex flex-col gap-5">
@@ -24,6 +27,7 @@ export default async function LayoutDoAmigo({ children, params }: { children: Re
         </div>
         <VitrineNav base={`/amigos/${resumo.apelido ?? apelido}`} escopo={resumo.escopo} extras={[{ href: `/amigos/${resumo.apelido ?? apelido}/comparar`, rotulo: 'Comparar' }]} />
       </header>
+      <FaixaFavoritos favoritos={favoritos} hrefDaSerie={(id) => `${base}/serie/${id}`} />
       {children}
     </div>
   )
