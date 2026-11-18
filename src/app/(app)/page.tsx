@@ -8,6 +8,7 @@ import { StatTile } from '@/components/ui/stat-tile'
 import { TipoBadge } from '@/components/ui/tipo-badge'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
+import { anoCandidatoAoDestaque } from '@/lib/estatisticas'
 import { cn } from '@/lib/utils'
 
 // Faixas de capas em UMA linha, sem rolagem: 4 capas no celular, 6 no tablet (sm), 8 no desktop largo (xl).
@@ -46,6 +47,9 @@ function textoFuros(faltantes: number[]): string {
 
 export default async function Home() {
   const supabase = await createClient()
+  const hoje = hojeIso(FUSO_DO_APP)
+  // Em dezembro (ano corrente) e janeiro (ano anterior) o início lembra, sem alarde, do "Seu ano em HQ".
+  const anoDoDestaque = anoCandidatoAoDestaque(hoje)
 
   const [
     { count: totalDesejos },
@@ -57,6 +61,7 @@ export default async function Home() {
     filaDeLeitura,
     seriesComFuros,
     { count: emprestimosAtrasados },
+    { count: leiturasDoAnoEmDestaque },
   ] = await Promise.all([
     supabase.from('itens').select('id', { count: 'exact', head: true }).eq('estado', 'desejo'),
     supabase.from('itens').select('id', { count: 'exact', head: true }).eq('estado', 'comprado'),
@@ -67,7 +72,10 @@ export default async function Home() {
     listarUltimosItens(supabase, 8),
     listarFilaDeLeitura(supabase, 8),
     listarSeriesComFuros(supabase, 5),
-    supabase.from('emprestimos').select('id', { count: 'exact', head: true }).is('devolvido_em', null).lt('devolver_ate', hojeIso(FUSO_DO_APP)),
+    supabase.from('emprestimos').select('id', { count: 'exact', head: true }).is('devolvido_em', null).lt('devolver_ate', hoje),
+    anoDoDestaque === null
+      ? Promise.resolve({ count: 0 })
+      : supabase.from('leituras').select('id', { count: 'exact', head: true }).gte('lido_em', `${anoDoDestaque}-01-01`).lte('lido_em', `${anoDoDestaque}-12-31`),
   ])
 
   const naEstante = (totalComprados ?? 0) + (totalLidos ?? 0)
@@ -87,6 +95,13 @@ export default async function Home() {
             {emprestimosAtrasados} {emprestimosAtrasados === 1 ? 'empréstimo atrasado' : 'empréstimos atrasados'}
           </span>
           <span className="shrink-0 font-medium underline underline-offset-2">Ver</span>
+        </Link>
+      )}
+
+      {anoDoDestaque !== null && (leiturasDoAnoEmDestaque ?? 0) > 0 && (
+        <Link href={`/estatisticas/ano?ano=${anoDoDestaque}`} className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-2 text-sm text-foreground">
+          <span>Seu {anoDoDestaque} em HQ está pronto</span>
+          <span className="shrink-0 font-medium text-link underline underline-offset-2">Ver</span>
         </Link>
       )}
 

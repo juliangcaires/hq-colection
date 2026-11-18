@@ -1,13 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { BookMarked, ChevronRight, FileUp, LogOut, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
+import { BarChart3, BookMarked, ChevronRight, FileUp, LogOut, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
 import { Sheet, SheetClose, SheetContent, SheetTitle } from '@/components/ui/sheet'
 
 const LINKS = [
   { href: '/ranking', label: 'Ranking', desc: 'Os melhores avaliados', Icon: Trophy, cor: 'bg-warning/15 text-warning-text' },
   { href: '/diario', label: 'Diário', desc: 'Suas leituras, mês a mês', Icon: BookMarked, cor: 'bg-success/15 text-success-text' },
+  { href: '/estatisticas', label: 'Estatísticas', desc: 'Seus números e o ano em HQ', Icon: BarChart3, cor: 'bg-primary/15 text-link' },
   { href: '/amigos', label: 'Amigos', desc: 'Coleções dos seus amigos', Icon: Users, cor: 'bg-primary/15 text-link' },
   { href: '/emprestimos', label: 'Empréstimos', desc: 'O que está com outras pessoas', Icon: HandHelping, cor: 'bg-warning/15 text-warning-text' },
   { href: '/tags', label: 'Tags', desc: 'Editoras, personagens, autores…', Icon: Tags, cor: 'bg-chart-5/15 text-chart-5' },
