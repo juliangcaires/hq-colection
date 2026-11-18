@@ -29,7 +29,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -2189,4 +2189,263 @@ describe('spoiler na crítica (migration 0024)', () => {
       expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
     }
   })
+})
+
+describe('releitura e diário (migration 0025)', () => {
+  // Ana (U) é a dona; Beto (OUTRO) é amigo dela; Caio não é amigo de ninguém.
+  const CAIO = '77777777-7777-7777-7777-777777777777'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const salvar = async (extra: object, id: string | null = null) =>
+    (await db.query<{ id: string }>(`select item_salvar($1, $2::jsonb, '{}') id`, [id, JSON.stringify({ titulo: 'Berserk 1', tipo: 'manga', estado: 'lido', prioridade: 0, ...extra })])).rows[0].id
+  const leituras = async (item: string) =>
+    (await db.query<{ id: string; lido_em: string; releitura: boolean }>(`select id, lido_em::text, releitura from leituras where item_id = $1 order by lido_em, criado_em, id`, [item])).rows
+  const datas = async (item: string) => (await leituras(item)).map((l) => l.lido_em)
+  const lidoEm = async (item: string) => (await db.query<{ d: string | null }>(`select lido_em::text d from itens where id = $1`, [item])).rows[0].d
+  const adicionar = async (item: string, data: string) =>
+    (await db.query<{ id: string }>(`insert into leituras(item_id, user_id, lido_em) values ($1, $2, $3) returning id`, [item, U, data])).rows[0].id
+  const feed = async () => (await db.query<Record<string, unknown>>(`select *, lido_em::text as lido_txt from feed_listar()`)).rows
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}') on conflict do nothing;
+      delete from compartilhamentos; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos, feed_ativo) values
+        ('${U}', 'ana', '{notas_criticas,lidos}', true), ('${OUTRO}', 'beto', '{notas_criticas,lidos}', true),
+        ('${CAIO}', 'caio', '{notas_criticas,lidos}', true);
+    `)
+    const id = (await como(OUTRO, () => db.query<{ id: string }>(`select amizade_solicitar('ana') id`))).rows[0].id
+    await db.query(`select amizade_responder($1, true)`, [id])
+  })
+
+  it('backfill: copia o lido_em de cada item lido com data, sem duplicar variante nem inventar data', async () => {
+    // Recria o estado "antes da 0025": itens lidos sem nenhuma leitura, e roda o mesmo INSERT do backfill.
+    await admin(`
+      alter table itens disable trigger trg_itens_leituras;
+      alter table itens disable trigger trg_itens_lido_em;
+      insert into itens(id, user_id, titulo, estado, lido_em) values
+        ('a0000000-0000-0000-0000-000000000001', '${U}', 'Velho 1', 'lido', '2025-03-10'),
+        ('a0000000-0000-0000-0000-000000000002', '${U}', 'Velho sem data', 'lido', null),
+        ('a0000000-0000-0000-0000-000000000003', '${U}', 'So comprado', 'comprado', null);
+      insert into itens(id, user_id, titulo, estado, lido_em, variante_de) values
+        ('a0000000-0000-0000-0000-000000000004', '${U}', 'Velho 1 luxo', 'lido', '2025-03-10', 'a0000000-0000-0000-0000-000000000001');
+      alter table itens enable trigger trg_itens_leituras;
+      alter table itens enable trigger trg_itens_lido_em;
+      insert into leituras (item_id, user_id, lido_em, criado_em)
+      select i.id, i.user_id, i.lido_em, coalesce(i.lido_marcado_em, i.updated_at, now())
+        from itens i
+       where i.estado = 'lido' and i.lido_em is not null
+         and i.id::text like 'a0000000%'
+         and (i.variante_de is null
+              or not exists (select 1 from itens p where p.id = i.variante_de and p.estado <> 'desejo'));
+    `)
+    expect(await datas('a0000000-0000-0000-0000-000000000001')).toEqual(['2025-03-10'])
+    expect(await datas('a0000000-0000-0000-0000-000000000002')).toEqual([])
+    expect(await datas('a0000000-0000-0000-0000-000000000003')).toEqual([])
+    expect(await datas('a0000000-0000-0000-0000-000000000004')).toEqual([])
+    // O texto do backfill na migration é o que acabou de rodar (mesma regra).
+    const sql = readFileSync(path.join(PASTA, '0025_releitura_e_diario.sql'), 'utf8')
+    expect(sql).toMatch(/insert into leituras \(item_id, user_id, lido_em, criado_em\)\s+select i\.id, i\.user_id, i\.lido_em/)
+    expect((await db.query(`select 1 from leituras where releitura`)).rows).toHaveLength(0)
+  })
+
+  it('marcar como lido (item_salvar) cria a leitura com a data; sem data usa hoje; sair de lido apaga', async () => {
+    const id = await salvar({ lido_em: '2026-01-05' })
+    expect(await datas(id)).toEqual(['2026-01-05'])
+    expect((await leituras(id))[0].releitura).toBe(false)
+    const sp = await salvar({ titulo: 'Hoje', lido_em: null })
+    const hoje = (await db.query<{ d: string }>(`select (now() at time zone 'America/Sao_Paulo')::date::text d`)).rows[0].d
+    expect(await datas(sp)).toEqual([hoje])
+    await salvar({ estado: 'comprado' }, id)
+    expect(await datas(id)).toEqual([])
+    expect(await lidoEm(id)).toBeNull()
+  })
+
+  it('editar o lido_em do item muda só a leitura mais recente', async () => {
+    const id = await salvar({ titulo: 'Edita', lido_em: '2026-02-01' })
+    await adicionar(id, '2026-06-01')
+    expect(await lidoEm(id)).toBe('2026-06-01')
+    await salvar({ titulo: 'Edita', lido_em: '2026-07-15' }, id)
+    expect(await datas(id)).toEqual(['2026-02-01', '2026-07-15'])
+    expect(await lidoEm(id)).toBe('2026-07-15')
+  })
+
+  it('itens.lido_em segue a leitura mais recente: adicionar, editar e remover', async () => {
+    const id = await salvar({ titulo: 'Segue', lido_em: '2026-03-01' })
+    const nova = await adicionar(id, '2026-09-01')
+    expect(await lidoEm(id)).toBe('2026-09-01')
+    // uma leitura antiga não muda a mais recente
+    await adicionar(id, '2026-01-01')
+    expect(await lidoEm(id)).toBe('2026-09-01')
+    await db.query(`update leituras set lido_em = '2026-04-01' where id = $1`, [nova])
+    expect(await lidoEm(id)).toBe('2026-04-01')
+    await db.query(`delete from leituras where id = $1`, [nova])
+    expect(await lidoEm(id)).toBe('2026-03-01')
+    // apagar todas deixa o item lido, sem data
+    await db.query(`delete from leituras where item_id = $1`, [id])
+    expect(await lidoEm(id)).toBeNull()
+    expect((await db.query<{ estado: string }>(`select estado from itens where id = $1`, [id])).rows[0].estado).toBe('lido')
+  })
+
+  it('releitura: a primeira leitura não é releitura, as seguintes são', async () => {
+    const id = await salvar({ titulo: 'Rele', lido_em: '2026-01-10' })
+    await adicionar(id, '2026-05-10')
+    await adicionar(id, '2026-08-10')
+    expect((await leituras(id)).map((l) => l.releitura)).toEqual([false, true, true])
+  })
+
+  it('variante: não tem leitura própria, herda a data do principal e vincular apaga as dela', async () => {
+    const principal = await salvar({ titulo: 'Principal', lido_em: '2026-02-02' })
+    const variante = await salvar({ titulo: 'Principal luxo', lido_em: '2026-02-02', variante_de: principal })
+    expect(await datas(variante)).toEqual([])
+    await adicionar(principal, '2026-10-10')
+    expect(await lidoEm(principal)).toBe('2026-10-10')
+    expect(await lidoEm(variante)).toBe('2026-10-10')
+    await expect(adicionar(variante, '2026-11-01')).rejects.toThrow('leitura_em_variante')
+    // item que tinha leituras e vira variante perde as dele
+    const solto = await salvar({ titulo: 'Solto', lido_em: '2026-03-03' })
+    expect(await datas(solto)).toEqual(['2026-03-03'])
+    await salvar({ titulo: 'Solto', lido_em: '2026-03-03', variante_de: principal }, solto)
+    expect(await datas(solto)).toEqual([])
+  })
+
+  it('só item lido e do próprio usuário recebe leitura', async () => {
+    const comprado = await salvar({ titulo: 'Comprado', estado: 'comprado' })
+    await expect(adicionar(comprado, '2026-01-01')).rejects.toThrow('item_nao_lido')
+    await expect(adicionar('12345678-1234-1234-1234-123456789012', '2026-01-01')).rejects.toThrow('item_nao_encontrado')
+  })
+
+  it('RLS: cada pessoa vê e mexe só nas próprias leituras', async () => {
+    const id = await salvar({ titulo: 'Privada', lido_em: '2026-04-04' })
+    const antes = await datas(id)
+    expect(antes).toEqual(['2026-04-04'])
+    await como(OUTRO, async () => {
+      expect(await datas(id)).toEqual([])
+      // não consegue ler, editar, apagar nem criar leitura em item alheio
+      expect((await db.query(`update leituras set lido_em = '2000-01-01' where item_id = $1 returning id`, [id])).rows).toHaveLength(0)
+      expect((await db.query(`delete from leituras where item_id = $1 returning id`, [id])).rows).toHaveLength(0)
+      await expect(db.query(`insert into leituras(item_id, user_id, lido_em) values ($1, $2, '2026-04-05')`, [id, OUTRO])).rejects.toThrow('item_nao_encontrado')
+      await expect(db.query(`insert into leituras(item_id, user_id, lido_em) values ($1, $2, '2026-04-05')`, [id, U])).rejects.toThrow()
+    })
+    expect(await datas(id)).toEqual(['2026-04-04'])
+  })
+
+  it('apagar o item apaga as leituras; anônimo não lê a tabela', async () => {
+    const id = await salvar({ titulo: 'Some', lido_em: '2026-04-04' })
+    await db.query(`delete from itens where id = $1`, [id])
+    expect((await db.query(`select 1 from leituras where item_id = $1`, [id])).rows).toHaveLength(0)
+    await admin(`select 1`)
+    expect((await db.query<{ p: boolean }>(`select has_table_privilege('anon', 'leituras', 'select') p`)).rows[0].p).toBe(false)
+  })
+
+  it('feed: a releitura vira "releu" para o amigo, uma vez por leitura, e a primeira continua "leu"', async () => {
+    const id = await como(OUTRO, () => salvar({ titulo: 'Vinland 1', lido_em: '2026-05-01', nota: 4.5, critica: 'ótimo' }))
+    const post = () => feed().then((r) => r.filter((x) => x.item_id === id))
+    expect((await post()).map((p) => p.releitura)).toEqual([false])
+    const rel = await como(OUTRO, async () => (await db.query<{ id: string }>(`insert into leituras(item_id, user_id, lido_em) values ($1, $2, '2026-11-10') returning id`, [id, OUTRO])).rows[0].id)
+    const posts = await post()
+    expect(posts).toHaveLength(2)
+    const releu = posts.find((p) => p.releitura)!
+    expect(releu.leitura_id).toBe(rel)
+    expect(releu.lido_txt).toBe('2026-11-10')
+    expect(releu.nota).toBe('4.5')
+    expect(releu.critica).toBe('ótimo')
+    expect(releu.proprio).toBe(false)
+    expect(posts.find((p) => !p.releitura)!.leitura_id).toBeNull()
+    // editar a data da leitura não cria outro post
+    await como(OUTRO, () => db.query(`update leituras set lido_em = '2026-11-11' where id = $1`, [rel]))
+    expect(await post()).toHaveLength(2)
+    expect((await post()).find((p) => p.releitura)!.lido_txt).toBe('2026-11-11')
+    // o dono também vê os dois
+    expect((await como(OUTRO, post)).filter((p) => p.proprio)).toHaveLength(2)
+    // remover a leitura tira o post
+    await como(OUTRO, () => db.query(`delete from leituras where id = $1`, [rel]))
+    expect((await post()).map((p) => p.releitura)).toEqual([false])
+  })
+
+  it('feed: respeita interruptor, amizade, item oculto, escopo, privada e spoiler', async () => {
+    const id = await como(OUTRO, () => salvar({ titulo: 'Monster 1', lido_em: '2026-05-01', nota: 5, critica: 'fim', critica_spoiler: true }))
+    await como(OUTRO, () => adicionar2(id))
+    const releu = async (uid: string) => (await como(uid, feed)).filter((x) => x.item_id === id && x.releitura)
+    expect(await releu(U)).toHaveLength(1)
+    expect((await releu(U))[0].critica_spoiler).toBe(true)
+    // desconhecido não vê
+    expect(await releu(CAIO)).toHaveLength(0)
+    // interruptor desligado
+    await admin(`update perfis set feed_ativo = false where user_id = '${OUTRO}'`)
+    expect(await releu(U)).toHaveLength(0)
+    await admin(`update perfis set feed_ativo = true where user_id = '${OUTRO}'`)
+    expect(await releu(U)).toHaveLength(1)
+    // sem notas_criticas no escopo: nada de nota/crítica, mas o post existe
+    await admin(`update perfis set escopo_amigos = '{lidos}' where user_id = '${OUTRO}'`)
+    const sem = (await releu(U))[0]
+    expect(sem.nota).toBeNull()
+    expect(sem.critica).toBeNull()
+    expect(sem.critica_spoiler).toBe(false)
+    await admin(`update perfis set escopo_amigos = '{notas_criticas,lidos}' where user_id = '${OUTRO}'`)
+    // crítica privada
+    await admin(`update itens set critica_privada = true where id = '${id}'`)
+    expect((await releu(U))[0].critica).toBeNull()
+    await admin(`update itens set critica_privada = false where id = '${id}'`)
+    // item oculto no feed some junto com o "releu"
+    await como(OUTRO, () => db.query(`select feed_ocultar($1, true)`, [id]))
+    expect(await releu(U)).toHaveLength(0)
+    await como(OUTRO, () => db.query(`select feed_ocultar($1, false)`, [id]))
+    expect(await releu(U)).toHaveLength(1)
+    // desfazer a amizade corta
+    await admin(`update amizades set status = 'pendente'`)
+    expect(await releu(U)).toHaveLength(0)
+    await admin(`update amizades set status = 'aceita'`)
+  })
+
+  it('feed: releitura de um volume lido há mais de 90 dias aparece e dá para curtir; leitura antiga não vira post', async () => {
+    const id = await como(OUTRO, () => salvar({ titulo: 'Antigo', lido_em: '2025-01-01' }))
+    await admin(`update itens set lido_marcado_em = now() - interval '200 days' where id = '${id}'`)
+    expect((await feed()).filter((x) => x.item_id === id)).toHaveLength(0)
+    await expect(db.query(`select feed_curtir($1)`, [id])).rejects.toThrow('item_nao_encontrado')
+    await como(OUTRO, () => adicionar2(id))
+    expect((await feed()).filter((x) => x.item_id === id)).toHaveLength(1)
+    await db.query(`select feed_curtir($1)`, [id])
+    // uma releitura registrada há 100 dias já saiu do feed
+    await admin(`update leituras set criado_em = now() - interval '100 days' where item_id = '${id}' and releitura`)
+    expect((await feed()).filter((x) => x.item_id === id)).toHaveLength(0)
+  })
+
+  it('ranking dos amigos: o filtro de período olha a leitura mais recente (a releitura move o volume de período)', async () => {
+    const id = await como(OUTRO, () => salvar({ titulo: 'Rank Rele', obra_chave: 'rank-rele|1|manga', nota: 4, lido_em: '2025-03-01' }))
+    const rank = async (desde: string, ate: string) =>
+      (await db.query<{ titulo: string }>(`select titulo from ranking_amigos(null, $1::date, $2::date)`, [desde, ate])).rows.map((r) => r.titulo)
+    expect(await rank('2025-01-01', '2025-12-31')).toContain('Rank Rele')
+    expect(await rank('2026-01-01', '2026-12-31')).not.toContain('Rank Rele')
+    await como(OUTRO, () => db.query(`insert into leituras(item_id, user_id, lido_em) values ($1, $2, '2026-06-01')`, [id, OUTRO]))
+    expect(await rank('2026-01-01', '2026-12-31')).toContain('Rank Rele')
+    expect(await rank('2025-01-01', '2025-12-31')).not.toContain('Rank Rele')
+  })
+
+  it('migration: feed_listar segue fechada para anônimo, a tabela tem RLS e a camada interna continua fechada', () => {
+    const sql = readFileSync(path.join(PASTA, '0025_releitura_e_diario.sql'), 'utf8')
+    expect(sql).toMatch(/alter table leituras enable row level security/)
+    expect(sql).toMatch(/revoke all on all functions in schema privado/)
+    expect(sql).toContain('revoke all on function feed_listar(int, timestamptz) from public, anon;')
+    expect(sql).toContain('grant execute on function feed_listar(int, timestamptz) to authenticated;')
+  })
+
+  async function adicionar2(id: string) {
+    const uid = (await db.query<{ u: string }>(`select auth.uid()::text u`)).rows[0].u
+    await db.query(`insert into leituras(item_id, user_id, lido_em) values ($1, $2, '2026-11-12')`, [id, uid])
+  }
 })
