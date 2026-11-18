@@ -169,3 +169,24 @@ async function apagarArquivoAntigo(supabase: Awaited<ReturnType<typeof createCli
   const { error } = await supabase.storage.from(BUCKET_AVATARES).remove([antigo])
   if (error) console.error('[avatar] não removeu arquivo antigo', antigo, error.message)
 }
+
+const favoritosSchema = z.array(z.string().uuid()).max(4, 'Você pode ter no máximo 4 séries favoritas. Tire uma para escolher outra.')
+
+/** Grava a lista inteira dos favoritos (até 4), na ordem recebida; o banco confere dono, limite e repetidas. */
+async function salvarFavoritosSeriesImpl(ids: string[]) {
+  const lista = favoritosSchema.parse(ids)
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new ErroDeNegocio('Não autenticado')
+
+  const { error } = await supabase.rpc('favoritos_series_salvar', { p_series: lista })
+  if (error) lancarErroRpc(error)
+  revalidatePath('/configuracoes')
+  revalidatePath('/amigos', 'layout')
+}
+
+export async function salvarFavoritosSeries(ids: string[]) {
+  return executar(() => salvarFavoritosSeriesImpl(ids))
+}
