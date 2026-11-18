@@ -52,6 +52,8 @@ export type LinhaDoRanking = {
   numero_volume: number | null
   serie_id: string | null
   serie_nome: string | null
+  /** Melhor volume da série (0030): só desempata notas iguais, na ordem `nota`. */
+  melhor_da_serie: boolean
   /** Tags do item e da série (ids). */
   tagIds: string[]
 }
@@ -112,7 +114,8 @@ export function ordenarRanking(linhas: LinhaDoRanking[], ordem: OrdemRanking): L
       )
     })
   }
-  return copia.sort((a, b) => b.nota - a.nota || desempate(a, b))
+  // Nota primeiro (uma nota maior nunca fica atrás); entre notas iguais, o marcado como melhor da série vem antes.
+  return copia.sort((a, b) => b.nota - a.nota || Number(b.melhor_da_serie) - Number(a.melhor_da_serie) || desempate(a, b))
 }
 
 export type BarraDoHistograma = { nota: number; quantidade: number }

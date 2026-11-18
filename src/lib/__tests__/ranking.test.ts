@@ -12,7 +12,7 @@ import {
 
 const base = (o: Partial<LinhaDoRanking>): LinhaDoRanking => ({
   id: 'a', titulo: 'A', nota: 3, critica: null, lido_em: null, updated_at: '2026-01-01T00:00:00Z',
-  numero_volume: null, serie_id: null, serie_nome: null, tagIds: [], ...o,
+  numero_volume: null, serie_id: null, serie_nome: null, melhor_da_serie: false, tagIds: [], ...o,
 })
 const filtros = (o: Partial<FiltrosRanking> = {}): FiltrosRanking => ({ ordem: 'nota', comCritica: false, ...o })
 const hoje = new Date(2026, 10, 17)
@@ -63,6 +63,24 @@ describe('ordenarRanking', () => {
       'nota'
     )
     expect(r.map((l) => l.id)).toEqual(['b', 'c', 'a'])
+  })
+  it('melhor da série desempata só entre notas iguais, antes da leitura mais recente', () => {
+    const linhas = [
+      base({ id: 'a', nota: 4, lido_em: '2026-06-01' }),
+      base({ id: 'm', nota: 4, lido_em: '2024-01-01', melhor_da_serie: true }),
+      base({ id: 'alta', nota: 4.5, lido_em: '2020-01-01' }),
+      base({ id: 'baixa', nota: 3.5, lido_em: '2026-06-01', melhor_da_serie: true }),
+    ]
+    // nota maior nunca fica atrás da marca; entre os dois 4, o marcado vem primeiro mesmo com leitura mais antiga
+    expect(ordenarRanking(linhas, 'nota').map((l) => l.id)).toEqual(['alta', 'm', 'a', 'baixa'])
+  })
+  it('melhor da série não muda as ordens leitura e série', () => {
+    const linhas = [
+      base({ id: 'a', nota: 4, lido_em: '2026-06-01', serie_nome: 'Berserk', numero_volume: 2 }),
+      base({ id: 'm', nota: 4, lido_em: '2024-01-01', serie_nome: 'Berserk', numero_volume: 1, melhor_da_serie: true }),
+    ]
+    expect(ordenarRanking(linhas, 'leitura').map((l) => l.id)).toEqual(['a', 'm'])
+    expect(ordenarRanking(linhas, 'serie').map((l) => l.id)).toEqual(['m', 'a'])
   })
   it('leitura: recente primeiro, sem data no fim', () => {
     const r = ordenarRanking(

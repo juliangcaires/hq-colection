@@ -12,6 +12,7 @@ import { CarregarMais } from '@/components/itens/carregar-mais'
 import { Estrelas } from '@/components/ui/estrelas'
 import { formatarNota } from '@/lib/nota'
 import { ScrollRestore } from '@/components/ui/scroll-restore'
+import { SeloMelhor } from '@/components/ui/selo-melhor'
 import { cn } from '@/lib/utils'
 import { hrefDoItem } from '@/lib/navegacao-item'
 import { Button } from '@/components/ui/button'
@@ -22,7 +23,7 @@ import type { ProgressoDaSerie } from '@/lib/progresso-serie'
 
 type SearchParams = Record<string, string | undefined>
 
-function Capa({ item, capaUrl, className }: { item: ItemDoRanking; capaUrl: string | null; className?: string }) {
+function Capa({ item, capaUrl, className, seloPequeno }: { item: ItemDoRanking; capaUrl: string | null; className?: string; seloPequeno?: boolean }) {
   return (
     <div className={cn('relative aspect-[2/3] overflow-hidden rounded-lg bg-surface-2 ring-1 ring-white/10', className)}>
       {capaUrl ? (
@@ -30,6 +31,7 @@ function Capa({ item, capaUrl, className }: { item: ItemDoRanking; capaUrl: stri
       ) : (
         <div className="flex h-full items-end p-1.5 font-heading text-xs leading-tight font-extrabold">{item.titulo}</div>
       )}
+      {item.melhor_da_serie && <SeloMelhor className={cn('left-auto right-1.5', seloPequeno && 'top-0.5 right-0.5 size-4')} />}
     </div>
   )
 }
@@ -298,7 +300,7 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
                     <span className="w-7 shrink-0 text-center font-heading text-lg font-extrabold text-muted-foreground tabular-nums">
                       {i + 4}
                     </span>
-                    <Capa item={item} capaUrl={capa(item)} className="w-[52px] shrink-0" />
+                    <Capa item={item} capaUrl={capa(item)} className="w-[52px] shrink-0" seloPequeno />
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="truncate text-sm font-medium">{item.titulo}</span>
                       {subtitulo(item) && <span className="truncate text-xs text-muted-foreground">{subtitulo(item)}</span>}
