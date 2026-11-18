@@ -6,6 +6,7 @@ import { urlsDeCapas } from '@/lib/supabase/capas'
 import { lerLimiteRanking, RANKING_POR_PAGINA } from '@/lib/filtros-url'
 import { lerFiltrosRanking, type BarraDoHistograma } from '@/lib/ranking'
 import { carregarEstadoDosAmigos, carregarRankingAmigos, lerFiltrosAmigos } from '@/lib/ranking-amigos'
+import { FiltroDeTipo } from '@/components/ranking/filtro-de-tipo'
 import { RankingAmigos } from '@/components/ranking/ranking-amigos'
 import { CarregarMais } from '@/components/itens/carregar-mais'
 import { Estrelas } from '@/components/ui/estrelas'
@@ -20,12 +21,6 @@ import { carregarProgressoDasSeries } from '@/lib/progresso-series'
 import type { ProgressoDaSerie } from '@/lib/progresso-serie'
 
 type SearchParams = Record<string, string | undefined>
-
-const TIPOS = [
-  { valor: undefined, label: 'Todos' },
-  { valor: 'hq', label: 'HQ' },
-  { valor: 'manga', label: 'Mangá' },
-] as const
 
 function Capa({ item, capaUrl, className }: { item: ItemDoRanking; capaUrl: string | null; className?: string }) {
   return (
@@ -143,7 +138,10 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
       <div className="flex flex-col gap-6">
         <ScrollRestore />
         <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">Ranking</h1>
-        <AbasDoRanking aba={aba} tipo={params.tipo} />
+        <div className="flex flex-wrap items-center gap-3">
+          <AbasDoRanking aba={aba} tipo={params.tipo} />
+          <FiltroDeTipo aba={aba} params={params} tipo={filtrosAmigos.tipo} />
+        </div>
         <RankingAmigos params={params} filtros={filtrosAmigos} linhas={linhas} total={total} limite={limite} estado={estado} capaDosMeus={capaDosMeus} progressoDosMeus={progressoDosMeus} hoje={hoje} />
       </div>
     )
@@ -172,28 +170,12 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
       <ScrollRestore />
       <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">Ranking</h1>
 
-      <AbasDoRanking aba={aba} tipo={params.tipo} />
-
-      <>
-      <div role="group" aria-label="Tipo" className="flex w-full max-w-64 gap-1 rounded-xl border border-border bg-card p-1">
-        {TIPOS.map((t) => {
-          const ativo = tipo === t.valor
-          return (
-            <Link
-              key={t.label}
-              href={href(params, { tipo: t.valor })}
-              aria-current={ativo ? 'true' : undefined}
-              className={cn(
-                'flex h-10 flex-1 items-center justify-center rounded-lg text-sm text-muted-foreground transition-colors hover:text-foreground',
-                ativo && 'bg-primary font-semibold text-primary-foreground hover:text-primary-foreground'
-              )}
-            >
-              {t.label}
-            </Link>
-          )
-        })}
+      <div className="flex flex-wrap items-center gap-3">
+        <AbasDoRanking aba={aba} tipo={params.tipo} />
+        <FiltroDeTipo aba={aba} params={params} tipo={tipo} />
       </div>
 
+      <>
       <form method="get" action="/ranking" className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-card p-3 sm:grid-cols-3 lg:grid-cols-6">
         {tipo && <input type="hidden" name="tipo" value={tipo} />}
         {filtros.nota !== undefined && <input type="hidden" name="nota" value={filtros.nota} />}

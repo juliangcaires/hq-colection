@@ -26,12 +26,6 @@ import {
 
 type SearchParams = Record<string, string | undefined>
 
-const TIPOS = [
-  { valor: undefined, label: 'Todos' },
-  { valor: 'hq', label: 'HQ' },
-  { valor: 'manga', label: 'Mangá' },
-] as const
-
 /** Link para /ranking?aba=amigos mantendo os filtros, trocando/removendo `mudar` e zerando a paginação. */
 function href(params: SearchParams, mudar: Record<string, string | undefined>) {
   const q = new URLSearchParams()
@@ -166,25 +160,6 @@ export function RankingAmigos({
 
   return (
     <>
-      <div role="group" aria-label="Tipo" className="flex w-full max-w-64 gap-1 rounded-xl border border-border bg-card p-1">
-        {TIPOS.map((t) => {
-          const ativo = tipo === t.valor
-          return (
-            <Link
-              key={t.label}
-              href={href(params, { tipo: t.valor })}
-              aria-current={ativo ? 'true' : undefined}
-              className={cn(
-                'flex h-10 flex-1 items-center justify-center rounded-lg text-sm text-muted-foreground transition-colors hover:text-foreground',
-                ativo && 'bg-primary font-semibold text-primary-foreground hover:text-primary-foreground'
-              )}
-            >
-              {t.label}
-            </Link>
-          )
-        })}
-      </div>
-
       <form method="get" action="/ranking" className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-card p-3 sm:grid-cols-4">
         <input type="hidden" name="aba" value="amigos" />
         {tipo && <input type="hidden" name="tipo" value={tipo} />}
