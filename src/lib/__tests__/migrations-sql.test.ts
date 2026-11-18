@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { chaveObra, chaveSerie } from '@/lib/texto'
 import { calcularVolumesFaltantes, serieEstaCompleta, serieEstaLida } from '@/lib/volumes'
+import { calcularProgressoDaSerie, progressoDeContagens } from '@/lib/progresso-serie'
 
 /**
  * Roda as migrations num PostgreSQL em memória (PGlite) com stubs mínimos de `auth` e `storage`.
@@ -29,7 +30,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -81,6 +82,54 @@ describe('series_com_resumo', () => {
     const { rows } = await db.query<{ nome: string }>(`select nome from series_com_resumo('%Paridade 14%')`)
     expect(rows.length).toBeGreaterThan(0)
     expect(rows.every((r) => r.nome.includes('Paridade 14'))).toBe(true)
+  })
+})
+
+describe('series_com_resumo: progresso (0027)', () => {
+  it('tenho/lidos/maximo_conhecido batem com calcularProgressoDaSerie (variante, número repetido, sem número)', async () => {
+    const divergentes: unknown[] = []
+    for (let k = 0; k < 150; k++) {
+      const total = [null, null, 0, 3, 8, 12][rnd(6)]
+      const { rows } = await db.query<{ id: string }>(
+        `insert into series(user_id,nome,tipo,total_volumes,tem_numeracao) values ($1,$2,'hq',$3,false) returning id`,
+        [U, `Progresso ${k}`, total]
+      )
+      const volumes: { numero_volume: number | null; estado: (typeof ESTADOS)[number]; variante_de: string | null }[] = []
+      for (let j = 0; j < rnd(10); j++) {
+        const numero_volume = [null, 1, 2, 3, 3, 4, 5, 7, 1.5, 0, 20][rnd(11)]
+        const estado = ESTADOS[rnd(3)]
+        const ehVariante = volumes.length > 0 && Math.random() < 0.25
+        const principal = volumes.find((x) => x.variante_de === null)
+        const { rows: ins } = await db.query<{ id: string }>(
+          `insert into itens(user_id,serie_id,titulo,numero_volume,estado,variante_de) values ($1,$2,'t',$3,$4,$5) returning id`,
+          [U, rows[0].id, numero_volume, estado, null]
+        )
+        if (ehVariante && principal) {
+          // variante aponta para um volume que já existe na série (o gatilho exige o mesmo dono).
+          const { rows: alvo } = await db.query<{ id: string }>(`select id from itens where serie_id = $1 and variante_de is null and id <> $2 limit 1`, [rows[0].id, ins[0].id])
+          if (alvo[0]) {
+            await db.query(`update itens set variante_de = $1 where id = $2`, [alvo[0].id, ins[0].id])
+            volumes.push({ numero_volume, estado, variante_de: alvo[0].id })
+            continue
+          }
+        }
+        volumes.push({ numero_volume, estado, variante_de: null })
+      }
+      const { rows: r } = await db.query<{ tenho: number; lidos_n: number; maximo_conhecido: number | null }>(
+        `select tenho, lidos_n, maximo_conhecido from series_com_resumo(null) where id = $1`,
+        [rows[0].id]
+      )
+      const p = calcularProgressoDaSerie(volumes, total)
+      const sql = progressoDeContagens({ tenho: r[0].tenho, lidos: r[0].lidos_n, totalDeclarado: total, maximoConhecido: r[0].maximo_conhecido })
+      if (JSON.stringify(sql) !== JSON.stringify(p)) divergentes.push({ total, volumes, sql, ts: p })
+    }
+    expect(divergentes).toEqual([])
+  }, 120_000)
+
+  it('série sem volumes: tenho 0, lidos 0 e nenhum total inventado', async () => {
+    const { rows: [s] } = await db.query<{ id: string }>(`insert into series(user_id,nome,tipo) values ($1,'Vazia R8','hq') returning id`, [U])
+    const { rows: [r] } = await db.query<Record<string, unknown>>(`select tenho, lidos_n, maximo_conhecido from series_com_resumo(null) where id = $1`, [s.id])
+    expect(r).toEqual({ tenho: 0, lidos_n: 0, maximo_conhecido: null })
   })
 })
 
