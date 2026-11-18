@@ -7,6 +7,7 @@ import { formatarNota } from '@/lib/nota'
 import { baseDaFonte, rotuloDeVolume, urlDeCapaDaVitrine, type FonteVitrine, type ItemVitrine, type SerieVitrine } from '@/lib/vitrine'
 import { SerieProgress } from '@/components/series/serie-progress'
 import { cn } from '@/lib/utils'
+import { SeloMelhor } from '@/components/ui/selo-melhor'
 
 /** Grade de capas de uma coleção alheia (somente leitura). */
 export function GradeDaVitrine({
@@ -29,7 +30,7 @@ export function GradeDaVitrine({
         const sub = [item.serie_nome, rotuloDeVolume(item.numero_volume)].filter(Boolean).join(' ')
         return (
           <li key={item.id} className="flex flex-col gap-1.5">
-            <div className={cn('relative aspect-[2/3] overflow-hidden rounded-lg bg-card ring-1 ring-white/10', item.estado === 'desejo' && 'border-2 border-dashed border-warning')}>
+            <div className={cn('relative aspect-[2/3] overflow-hidden rounded-lg bg-card ring-1 ring-white/10', item.estado === 'desejo' && 'border-2 border-dashed border-warning', item.melhor_da_serie && 'melhor-da-serie')}>
               {capa ? (
                 <Image unoptimized src={capa} alt={item.titulo} fill sizes="(max-width: 640px) 45vw, 160px" className="object-cover" />
               ) : (
@@ -37,6 +38,7 @@ export function GradeDaVitrine({
                   <span className="font-heading text-sm leading-[1.05] font-extrabold text-foreground">{item.titulo}</span>
                 </div>
               )}
+              {item.melhor_da_serie && <SeloMelhor className="left-auto right-1.5" />}
               {item.estado === 'lido' && <Badge className="absolute top-1.5 left-1.5 bg-read text-primary-foreground">Lido</Badge>}
             </div>
             <p className="line-clamp-2 text-sm leading-tight font-medium text-foreground">{item.titulo}</p>
