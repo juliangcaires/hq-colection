@@ -103,6 +103,25 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------------------------
+-- Séries que dá para escolher: as minhas com ao menos um volume possuído (o que o amigo conseguiria ver).
+-- ---------------------------------------------------------------------------------------------
+create or replace function favoritos_series_candidatas()
+returns table (id uuid, nome text, tipo tipo_obra, capa text)
+language sql
+stable
+set search_path = public
+as $$
+  select s.id, s.nome, s.tipo,
+         (select i.capa_url from itens i
+           where i.serie_id = s.id and i.estado <> 'desejo' and i.capa_url is not null
+           order by i.variante_de nulls first, i.numero_volume nulls last, i.id limit 1) as capa
+    from series s
+   where s.user_id = auth.uid()
+     and exists (select 1 from itens i where i.serie_id = s.id and i.estado <> 'desejo')
+   order by lower(s.nome), s.id
+$$;
+
+-- ---------------------------------------------------------------------------------------------
 -- Os favoritos de um amigo. Sem amizade aceita, sem a seção "séries" no escopo ou sem favoritos: vazio.
 -- ---------------------------------------------------------------------------------------------
 create or replace function amigo_favoritos_series(p_apelido text)
@@ -132,9 +151,11 @@ revoke all on all functions in schema privado from public, anon, authenticated;
 
 revoke all on function favoritos_series_salvar(uuid[]) from public, anon;
 revoke all on function favoritos_series_meus() from public, anon;
+revoke all on function favoritos_series_candidatas() from public, anon;
 revoke all on function amigo_favoritos_series(text) from public, anon;
 grant execute on function favoritos_series_salvar(uuid[]) to authenticated;
 grant execute on function favoritos_series_meus() to authenticated;
+grant execute on function favoritos_series_candidatas() to authenticated;
 grant execute on function amigo_favoritos_series(text) to authenticated;
 
 commit;

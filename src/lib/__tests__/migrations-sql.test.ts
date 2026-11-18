@@ -2643,6 +2643,17 @@ describe('séries favoritas (migration 0026)', () => {
     })
   })
 
+  it('candidatas: só as minhas séries com volume possuído, em ordem alfabética, com a capa completa', async () => {
+    const { rows } = await db.query<{ nome: string; capa: string | null }>(`select nome, capa from favoritos_series_candidatas()`)
+    const nomes = rows.map((r) => r.nome)
+    expect(nomes).toEqual([...nomes].sort((a, b) => a.localeCompare(b, 'pt', { sensitivity: 'base' })))
+    expect(nomes).toContain('Berserk')
+    expect(nomes).not.toContain('Sem Volumes')
+    expect(nomes).not.toContain('Só Desejo')
+    expect(nomes).not.toContain('Do Beto')
+    expect(rows.find((r) => r.nome === 'Capa Privada')?.capa).toBe(`${U}/11111111-2222-3333-4444-555555555555-1700000000000.jpg`)
+  })
+
   it('apagar a série tira dos favoritos', async () => {
     await salvar([s[0], s[1]])
     await db.query(`delete from series where id = $1`, [s[1]])
