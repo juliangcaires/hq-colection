@@ -58,6 +58,14 @@ describe('chamadas', () => {
   })
 })
 
+describe('spoiler na crítica (0024)', () => {
+  const linha = { id: 'i1', titulo: 'T', serie_id: null, serie_nome: null, numero_volume: 1, tipo: 'hq', estado: 'lido', capa: null, nota: 4, critica: 'o final', lido_em: null, isbn13: null, reservado: false, reservado_por_mim: false, total: 1 }
+  it('o flag da vitrine vem do banco; ausente ou nulo vira falso', async () => {
+    const r = await carregarItens(fake([{ ...linha, critica_spoiler: true }, { ...linha, id: 'i2', critica_spoiler: false }, { ...linha, id: 'i3' }, { ...linha, id: 'i4', critica_spoiler: null }]).cliente, link, 'colecao')
+    expect(r.itens.map((i) => i.critica_spoiler)).toEqual([true, false, false, false])
+  })
+})
+
 describe('apoio', () => {
   it('base e rótulo de volume', () => {
     expect(baseDaFonte(amigo)).toBe('/amigos/maria_hq')

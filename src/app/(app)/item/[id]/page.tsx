@@ -106,7 +106,7 @@ export default async function ItemPage({
       {/* key: depois de salvar (ou de adquirir / marcar como lido) o formulário recomeça dos valores do banco, sem
           remontar quando só a capa muda (busca/upload de capa não pode apagar edição em andamento). */}
       <ItemForm
-        key={JSON.stringify([item.id, item.updated_at, item.estado, item.nota, item.critica, item.lido_em, item.titulo, item.preco, item.loja, item.data_aquisicao, item.prioridade])}
+        key={JSON.stringify([item.id, item.updated_at, item.estado, item.nota, item.critica, item.critica_spoiler, item.critica_privada, item.lido_em, item.titulo, item.preco, item.loja, item.data_aquisicao, item.prioridade])}
         item={item} capaUrl={capaUrl}
         series={seriesData ?? []}
         origem={origem}

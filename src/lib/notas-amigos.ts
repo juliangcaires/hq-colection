@@ -16,6 +16,8 @@ export type AvaliacaoDeAmigo = {
   avatarUrl: string | null
   nota: number | null
   critica: string | null
+  /** A crítica é spoiler: o leitor vê um cartão recolhido (0024). Só vem verdadeiro junto com a crítica. */
+  criticaSpoiler: boolean
   lidoEm: string | null
   /** 'isbn' = mesmo ISBN; 'nome' = mesmo nome e volume; 'manual' = vínculo feito por quem está vendo (0020). */
   casouPor: 'isbn' | 'nome' | 'manual' | null
@@ -69,6 +71,7 @@ export async function carregarObraAmigos(supabase: Cliente, obraChave: string | 
     avatarUrl: (r.avatar_url as string | null) ?? null,
     nota: num(r.nota),
     critica: (r.critica as string | null) ?? null,
+    criticaSpoiler: r.critica_spoiler === true,
     lidoEm: (r.lido_em as string | null) ?? null,
     casouPor: casouPorDe(r.casou_por),
     interagivel: r.interagivel === true,
@@ -89,6 +92,7 @@ export async function carregarSerieAmigos(supabase: Cliente, serieChave: string 
     avatarUrl: (r.avatar_url as string | null) ?? null,
     nota: num(r.nota),
     critica: (r.critica as string | null) ?? null,
+    criticaSpoiler: false,
     lidoEm: null,
     casouPor: null,
     interagivel: false,

@@ -59,6 +59,7 @@ function dadosDoItem(p: ItemInput) {
     critica: p.critica || null,
     lido_em: p.estado === 'lido' ? p.lido_em || null : null,
     critica_privada: p.critica_privada,
+    critica_spoiler: p.critica_spoiler,
     // Chave só quando informada: no banco, ausente mantém o vínculo atual (formulários que não conhecem variante).
     ...(p.variante_de !== undefined && { variante_de: p.variante_de || null }),
   }

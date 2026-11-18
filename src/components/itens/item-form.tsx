@@ -78,6 +78,7 @@ export function ItemForm({
   const [critica, setCritica] = useState(item?.critica ?? '')
   const [lidoEm, setLidoEm] = useState(item?.lido_em ?? '')
   const [criticaPrivada, setCriticaPrivada] = useState(item?.critica_privada ?? false)
+  const [criticaSpoiler, setCriticaSpoiler] = useState(item?.critica_spoiler ?? false)
   const [tagsPorTipo, setTagsPorTipo] = useState<Record<TipoTag, TagLite[]>>(() =>
     agruparTagsPorTipo(
       (item?.tagsItem ?? []).map((t) => t.id),
@@ -103,7 +104,7 @@ export function ItemForm({
   // o item salvo muda (key), então o baseline acompanha o que foi salvo.
   const idsTags = (m: Record<TipoTag, TagLite[]>) => Object.values(m).flatMap((ts) => ts.map((t) => t.id).sort())
   const valoresAtuais = JSON.stringify([
-    titulo, serieId, numeroVolume, tipo, isbn, estado, prioridade, preco, loja, dataAquisicao, nota, critica, lidoEm, criticaPrivada,
+    titulo, serieId, numeroVolume, tipo, isbn, estado, prioridade, preco, loja, dataAquisicao, nota, critica, lidoEm, criticaPrivada, criticaSpoiler,
     idsTags(tagsPorTipo),
   ])
   const [valoresIniciais] = useState(valoresAtuais)
@@ -124,6 +125,7 @@ export function ItemForm({
     setCritica(item.critica ?? '')
     setLidoEm(item.lido_em ?? '')
     setCriticaPrivada(item.critica_privada ?? false)
+    setCriticaSpoiler(item.critica_spoiler ?? false)
     setTagsPorTipo(agruparTagsPorTipo(item.tagsItem.map((t) => t.id), item.tagsItem))
   }
 
@@ -157,6 +159,7 @@ export function ItemForm({
           critica: critica || null,
           lido_em: estado === 'lido' ? lidoEm || null : null,
           critica_privada: criticaPrivada,
+          critica_spoiler: criticaSpoiler,
           tagIds: Object.values(tagsPorTipo).flatMap((tags) => tags.map((t) => t.id)),
         }
         if (item) {
@@ -658,6 +661,13 @@ export function ItemForm({
                 <Checkbox checked={criticaPrivada} onCheckedChange={(v) => setCriticaPrivada(v === true)} />
                 Crítica privada (não aparece em link nem para amigos)
               </label>
+              <div className="flex flex-col gap-0.5">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox checked={criticaSpoiler} onCheckedChange={(v) => setCriticaSpoiler(v === true)} />
+                  Contém spoiler
+                </label>
+                <p className="pl-6 text-xs text-muted-foreground">Quem vê sua crítica encontra um cartão fechado e abre se quiser. Para você, ela aparece normal.</p>
+              </div>
             </section>
           )}
 

@@ -38,6 +38,8 @@ export type ItemVitrine = {
   capa: string | null
   nota: number | null
   critica: string | null
+  /** A crítica é spoiler (0024): o visitante vê um cartão recolhido. */
+  critica_spoiler: boolean
   lido_em: string | null
   isbn13: string | null
   reservado: boolean
@@ -116,6 +118,7 @@ export async function carregarItens(
       capa: (l.capa as string | null) ?? null,
       nota: num(l.nota),
       critica: (l.critica as string | null) ?? null,
+      critica_spoiler: l.critica_spoiler === true,
       lido_em: (l.lido_em as string | null) ?? null,
       isbn13: (l.isbn13 as string | null) ?? null,
       reservado: l.reservado === true,

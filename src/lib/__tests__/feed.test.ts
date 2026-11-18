@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { frasesDoResumo, tempoRelativo, tituloDoPost, urlDeCapaDoFeed } from '@/lib/feed'
+import { describe, expect, it, vi } from 'vitest'
+import { carregarFeed, frasesDoResumo, tempoRelativo, tituloDoPost, urlDeCapaDoFeed } from '@/lib/feed'
 
 describe('tituloDoPost', () => {
   const base = { serieNome: 'Berserk', titulo: 'Berserk 3', numeroVolume: 3, qtd: 1 }
@@ -42,5 +42,14 @@ describe('frasesDoResumo', () => {
   it('"sua semana: N lidos" e, havendo amigos, quantos leram', () => {
     expect(frasesDoResumo({ meusLidos: 1, amigos: 0, lidosAmigos: 0, destaque: null })).toEqual(['Sua semana: 1 volume lido.'])
     expect(frasesDoResumo({ meusLidos: 4, amigos: 2, lidosAmigos: 7, destaque: null })).toEqual(['Sua semana: 4 volumes lidos.', '2 amigos leram 7 volumes.'])
+  })
+})
+
+describe('spoiler na crítica (0024)', () => {
+  const linha = { item_id: 'a', titulo: 'T', tipo: 'hq', marcado_em: '2026-11-17T12:00:00Z', critica: 'o final' }
+  it('o feed repassa o flag; ausente ou nulo vira falso', async () => {
+    const rpc = vi.fn(async () => ({ data: [{ ...linha, critica_spoiler: true }, { ...linha, item_id: 'b', critica_spoiler: false }, { ...linha, item_id: 'c' }, { ...linha, item_id: 'd', critica_spoiler: null }], error: null }))
+    const posts = await carregarFeed({ rpc } as never)
+    expect(posts.map((p) => p.criticaSpoiler)).toEqual([true, false, false, false])
   })
 })

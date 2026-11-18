@@ -29,6 +29,8 @@ export type PostDoFeed = {
   capa: string | null
   nota: number | null
   critica: string | null
+  /** A crítica é spoiler (0024): quem não é o autor vê um cartão recolhido. */
+  criticaSpoiler: boolean
   lidoEm: string | null
   marcadoEm: string
   /** Quantos volumes do mesmo dia e da mesma série entraram neste post. */
@@ -74,6 +76,7 @@ export async function carregarFeed(supabase: Cliente, antes: string | null = nul
     capa: (r.capa as string | null) ?? null,
     nota: num(r.nota),
     critica: (r.critica as string | null) ?? null,
+    criticaSpoiler: r.critica_spoiler === true,
     lidoEm: (r.lido_em as string | null) ?? null,
     marcadoEm: String(r.marcado_em),
     qtd: Number(r.qtd ?? 1),
