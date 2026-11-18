@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { FileUp, Heart, House, Newspaper, Layers, LayoutGrid, Plus, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
+import { BookMarked, FileUp, Heart, House, Newspaper, Layers, LayoutGrid, Plus, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { estaAtivo } from '@/lib/nav'
 import { Avatar } from '@/components/ui/avatar'
@@ -17,6 +17,7 @@ const PRINCIPAL = [
   { href: '/series', label: 'Séries', Icon: Layers },
   { href: '/desejos', label: 'Desejos', Icon: Heart },
   { href: '/ranking', label: 'Ranking', Icon: Trophy },
+  { href: '/diario', label: 'Diário', Icon: BookMarked },
 ]
 const SECUNDARIA = [
   { href: '/amigos', label: 'Amigos', Icon: Users },

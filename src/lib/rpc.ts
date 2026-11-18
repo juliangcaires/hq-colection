@@ -32,6 +32,8 @@ export function lancarErroRpc(error: { message: string }): never {
   if (m === 'comentario_vazio') throw new ErroDeNegocio('Escreva alguma coisa para comentar.')
   if (m === 'comentario_longo') throw new ErroDeNegocio('O comentário passa de 500 caracteres.')
   if (m === 'comentario_nao_encontrado') throw new ErroDeNegocio('Comentário não encontrado.')
+  if (m === 'item_nao_lido') throw new ErroDeNegocio('Só dá para registrar leitura de um volume marcado como lido.')
+  if (m === 'leitura_em_variante') throw new ErroDeNegocio('As leituras ficam no volume normal; esta é uma variante dele.')
   if (m === 'critica_longa') throw new ErroDeNegocio('A crítica passa de 2000 caracteres.')
   if (m.startsWith('volumes_repetidos:')) {
     const numeros = m

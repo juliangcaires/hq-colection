@@ -38,6 +38,10 @@ export type PostDoFeed = {
   curtidas: number
   curti: boolean
   comentarios: number
+  /** Post de releitura (0025): "releu X" em vez de "leu X". */
+  releitura: boolean
+  /** Leitura que originou o post de releitura; null no post de primeira leitura. */
+  leituraId: string | null
 }
 
 export type ComentarioDoFeed = {
@@ -83,6 +87,8 @@ export async function carregarFeed(supabase: Cliente, antes: string | null = nul
     curtidas: Number(r.curtidas ?? 0),
     curti: r.curti === true,
     comentarios: Number(r.comentarios ?? 0),
+    releitura: r.releitura === true,
+    leituraId: (r.leitura_id as string | null) ?? null,
   }))
 }
 
@@ -115,6 +121,11 @@ export async function carregarResumoSemanal(supabase: Cliente): Promise<ResumoSe
       ? { titulo: String(d.titulo), numeroVolume: num(d.numero_volume), serie: (d.serie as string | null) ?? null, apelido: (d.apelido as string | null) ?? null, nota: Number(d.nota) }
       : null,
   }
+}
+
+/** Chave estável de um post: um volume pode ter o "leu" e vários "releu" (um por leitura). */
+export function chaveDoPost(post: Pick<PostDoFeed, 'itemId' | 'leituraId'>): string {
+  return post.leituraId ? `${post.itemId}:${post.leituraId}` : post.itemId
 }
 
 /** Capa de um post: catálogo público direto do bucket; privada pela rota autorizada pelo banco. */

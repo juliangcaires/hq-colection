@@ -42,6 +42,8 @@ import { descreverFalhaProvedor, type CandidatoCapa, type ResultadoProvedor } fr
 import { desembrulhar } from '@/lib/resultado'
 import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
 import { hrefDoItem, rotuloDaOrigem } from '@/lib/navegacao-item'
+import { LeiturasDoItem } from '@/components/itens/leituras-do-item'
+import type { LeituraDoItem } from '@/lib/leituras'
 
 type SerieOpcao = { id: string; nome: string }
 
@@ -52,6 +54,8 @@ export function ItemForm({
   origem = null,
   volumeAnteriorId = null,
   volumeProximoId = null,
+  leituras = null,
+  hoje = '',
 }: {
   item: ItemComRelacoes
   capaUrl: string | null
@@ -60,6 +64,10 @@ export function ItemForm({
   origem?: string | null
   volumeAnteriorId?: string | null
   volumeProximoId?: string | null
+  /** Leituras do volume (0025); null = não carregadas. Com elas, a data de leitura se edita na seção "Leituras". */
+  leituras?: LeituraDoItem[] | null
+  /** Hoje (AAAA-MM-DD) no fuso do app: data padrão e limite de "Reli". */
+  hoje?: string
 }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -99,6 +107,8 @@ export function ItemForm({
   const [compraAberto, setCompraAberto] = useState(false)
 
   const tagsHerdadas = item?.tagsSerie ?? []
+  // Item que já era lido e tem as leituras carregadas: as datas vivem na seção "Leituras" (o `lido_em` segue a mais recente).
+  const usaLeituras = leituras !== null && item.estado === 'lido' && estado === 'lido'
 
   // "Alterado" = qualquer campo diferente do que veio do banco. A página remonta o formulário quando
   // o item salvo muda (key), então o baseline acompanha o que foi salvo.
@@ -638,15 +648,17 @@ export function ItemForm({
                   </span>
                 </div>
               </div>
-              <Campo rotulo="Lido em" id="lido-em">
-                <Input
-                  className={campoClasse}
-                  id="lido-em"
-                  type="date"
-                  value={lidoEm}
-                  onChange={(e) => setLidoEm(e.target.value)}
-                />
-              </Campo>
+              {!usaLeituras && (
+                <Campo rotulo="Lido em" id="lido-em">
+                  <Input
+                    className={campoClasse}
+                    id="lido-em"
+                    type="date"
+                    value={lidoEm}
+                    onChange={(e) => setLidoEm(e.target.value)}
+                  />
+                </Campo>
+              )}
               <Campo rotulo="Crítica" id="critica">
                 <Textarea
                   className="rounded-xl bg-surface-2 px-3.5 py-3 text-[15px] leading-[1.55]"
@@ -670,6 +682,8 @@ export function ItemForm({
               </div>
             </section>
           )}
+
+          {usaLeituras && <LeiturasDoItem itemId={item.id} leituras={leituras} hoje={hoje} />}
 
           {/* Tags */}
           <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-[18px]">
