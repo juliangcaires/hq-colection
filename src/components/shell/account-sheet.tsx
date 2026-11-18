@@ -13,7 +13,7 @@ const LINKS = [
   { href: '/listas', label: 'Listas', desc: 'Listas curadas, minhas e dos amigos', Icon: ListChecks, cor: 'bg-chart-5/15 text-chart-5' },
   { href: '/emprestimos', label: 'Empréstimos', desc: 'O que está com outras pessoas', Icon: HandHelping, cor: 'bg-warning/15 text-warning-text' },
   { href: '/tags', label: 'Tags', desc: 'Editoras, personagens, autores…', Icon: Tags, cor: 'bg-chart-5/15 text-chart-5' },
-  { href: '/importar', label: 'Importar CSV', desc: 'Traga sua planilha', Icon: FileUp, cor: 'bg-success/15 text-success-text' },
+  { href: '/importar', label: 'Importar e exportar', desc: 'Planilha da coleção', Icon: FileUp, cor: 'bg-success/15 text-success-text' },
   { href: '/configuracoes', label: 'Configurações', desc: 'Capas compartilhadas e mais', Icon: Settings, cor: 'bg-primary/15 text-link' },
 ]
 

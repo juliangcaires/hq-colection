@@ -25,7 +25,7 @@ const SECUNDARIA = [
   { href: '/listas', label: 'Listas', Icon: ListChecks },
   { href: '/emprestimos', label: 'Empréstimos', Icon: HandHelping },
   { href: '/tags', label: 'Tags', Icon: Tags },
-  { href: '/importar', label: 'Importar CSV', Icon: FileUp },
+  { href: '/importar', label: 'Importar e exportar', Icon: FileUp },
   { href: '/configuracoes', label: 'Configurações', Icon: Settings },
 ]
 
