@@ -7,6 +7,8 @@ describe('origemValida', () => {
     expect(origemValida('/serie/abc')).toBe('/serie/abc')
     expect(origemValida('/')).toBe('/')
     expect(origemValida('/desejos?estado=desejo')).toBe('/desejos?estado=desejo')
+    expect(origemValida('/diario?ano=2026')).toBe('/diario?ano=2026')
+    expect(rotuloDaOrigem('/diario?ano=2026')).toBe('Diário')
   })
   it('rejeita externo e malformado', () => {
     for (const v of ['https://evil.com', '//evil.com', '/\\evil.com', 'javascript:alert(1)', 'colecao', '', '/x/y', '/colecao\n', undefined, ['/colecao']]) {

@@ -40,7 +40,7 @@ export function PostDoFeed({ post, onOcultar }: { post: PostDoFeed; onOcultar?: 
         <Avatar apelido={post.apelido} nome={post.nome} url={post.avatarUrl} size={40} />
         <div className="flex min-w-0 flex-1 flex-col">
           <p className="truncate text-sm text-foreground">
-            <span className="font-semibold">{post.proprio ? 'Você' : nome}</span> {post.proprio ? 'leu' : 'leu'}
+            <span className="font-semibold">{post.proprio ? 'Você' : nome}</span> {post.releitura ? 'releu' : 'leu'}
           </p>
           <p className="text-xs text-muted-foreground">
             {!post.proprio && post.apelido ? `@${post.apelido} · ` : ''}

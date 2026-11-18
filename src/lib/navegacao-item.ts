@@ -9,6 +9,7 @@ const ROTULOS_ORIGEM: Record<string, string> = {
   colecao: 'Coleção',
   desejos: 'Desejos',
   ranking: 'Ranking',
+  diario: 'Diário',
   amigos: 'Amigos',
   serie: 'Série',
   series: 'Séries',

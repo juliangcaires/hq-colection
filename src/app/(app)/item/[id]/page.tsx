@@ -14,6 +14,7 @@ import { carregarEquivalencias, carregarObraAmigos, carregarQuaseCasamentos } fr
 import { VinculoDeObra } from '@/components/amigos/vinculo-de-obra'
 import { completarChaves } from '@/lib/obra-chaves'
 import { origemValida, vizinhosDeVolume } from '@/lib/navegacao-item'
+import { carregarLeituras } from '@/lib/leituras'
 
 export default async function ItemPage({
   params,
@@ -84,6 +85,9 @@ export default async function ItemPage({
     ? []
     : await carregarQuaseCasamentos(supabase, chaveRow?.obra_chave ?? null, item.serie?.nome ?? item.titulo, vinculos.map((v) => v.obraChave)).catch(() => [])
 
+  // Leituras (0025): só do item lido. Falha aqui só some com a seção (o formulário volta a mostrar "Lido em").
+  const leituras = item.estado === 'lido' ? await carregarLeituras(supabase, id).catch(() => null) : null
+
   const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
   const vizinhos = vizinhosDeVolume(irmaos ?? [], item.id, item.numero_volume)
 
@@ -112,6 +116,8 @@ export default async function ItemPage({
         origem={origem}
         volumeAnteriorId={vizinhos.anterior?.id ?? null}
         volumeProximoId={vizinhos.proximo?.id ?? null}
+        leituras={leituras}
+        hoje={hojeIso(FUSO_DO_APP)}
       />
     </div>
   )

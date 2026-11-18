@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { carregarFeed, frasesDoResumo, tempoRelativo, tituloDoPost, urlDeCapaDoFeed } from '@/lib/feed'
+import { carregarFeed, chaveDoPost, frasesDoResumo, tempoRelativo, tituloDoPost, urlDeCapaDoFeed } from '@/lib/feed'
 
 describe('tituloDoPost', () => {
   const base = { serieNome: 'Berserk', titulo: 'Berserk 3', numeroVolume: 3, qtd: 1 }
@@ -51,5 +51,22 @@ describe('spoiler na crítica (0024)', () => {
     const rpc = vi.fn(async () => ({ data: [{ ...linha, critica_spoiler: true }, { ...linha, item_id: 'b', critica_spoiler: false }, { ...linha, item_id: 'c' }, { ...linha, item_id: 'd', critica_spoiler: null }], error: null }))
     const posts = await carregarFeed({ rpc } as never)
     expect(posts.map((p) => p.criticaSpoiler)).toEqual([true, false, false, false])
+  })
+})
+
+describe('releitura no feed (0025)', () => {
+  const linha = { item_id: 'a', titulo: 'T', tipo: 'hq', marcado_em: '2026-11-17T12:00:00Z' }
+  it('o feed repassa releitura e a leitura de origem; ausente vira "leu"', async () => {
+    const rpc = vi.fn(async () => ({
+      data: [{ ...linha, releitura: true, leitura_id: 'l1' }, { ...linha, releitura: false, leitura_id: null }, { ...linha, item_id: 'b' }],
+      error: null,
+    }))
+    const posts = await carregarFeed({ rpc } as never)
+    expect(posts.map((p) => [p.releitura, p.leituraId])).toEqual([[true, 'l1'], [false, null], [false, null]])
+  })
+  it('um volume pode ter o "leu" e vários "releu": a chave de cada post é diferente', () => {
+    expect(chaveDoPost({ itemId: 'a', leituraId: null })).toBe('a')
+    expect(chaveDoPost({ itemId: 'a', leituraId: 'l1' })).toBe('a:l1')
+    expect(chaveDoPost({ itemId: 'a', leituraId: 'l2' })).not.toBe(chaveDoPost({ itemId: 'a', leituraId: 'l1' }))
   })
 })
