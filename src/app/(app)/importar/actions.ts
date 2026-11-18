@@ -14,6 +14,7 @@ import {
   type LinhaClassificada,
 } from '@/lib/importar-itens'
 import { aplicarCapaDeApi } from '@/lib/capa-catalogo'
+import { gravarChaveDoItem } from '@/lib/obra-chaves'
 import {
   buscarCapaPorIsbn,
   buscarCapaPorMemoria,
@@ -177,6 +178,10 @@ async function importarCsvImpl(rowsBrutas: unknown[], primeiraLinha: number): Pr
               continue
             }
             throw new Error(error.message)
+          }
+          // A chave da obra (0019) vem de série + número + título + tipo; o `completarChaves` só preenche chave vazia.
+          if (campos.titulo !== undefined || campos.numero_volume !== undefined || campos.tipo !== undefined) {
+            await gravarChaveDoItem(supabase, c.item.id)
           }
         }
         for (const t of tagsNovas) {
