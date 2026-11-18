@@ -2537,7 +2537,7 @@ describe('séries favoritas (migration 0026)', () => {
   const meus = async () => (await db.query<{ nome: string; posicao: number }>(`select nome, posicao from favoritos_series_meus()`)).rows
   const doAmigo = async (apelido: string) =>
     (await db.query<{ id: string; nome: string; capa: string | null; posicao: number }>(`select * from amigo_favoritos_series($1)`, [apelido])).rows
-  let s: string[] = []
+  const s: string[] = []
   let amizade = ''
 
   beforeAll(async () => {
