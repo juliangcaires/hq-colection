@@ -30,13 +30,16 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
     insert into auth.users values ('${U}'), ('${OUTRO}');
     grant usage on schema public, auth to authenticated;
     grant all on all tables in schema public to authenticated;
+    -- O grant em bloco acima devolveria o UPDATE da tabela inteira; reaplica o privilégio de coluna da 0029.
+    revoke update on leituras from authenticated;
+    grant update (lido_em) on leituras to authenticated;
     grant execute on all functions in schema public to authenticated;
     grant execute on function auth.uid() to authenticated;
     select set_config('app.uid','${U}',false);
@@ -2470,7 +2473,11 @@ describe('releitura e diário (migration 0025)', () => {
     expect((await feed()).filter((x) => x.item_id === id)).toHaveLength(1)
     await db.query(`select feed_curtir($1)`, [id])
     // uma releitura registrada há 100 dias já saiu do feed
-    await admin(`update leituras set criado_em = now() - interval '100 days' where item_id = '${id}' and releitura`)
+    await admin(`
+      alter table leituras disable trigger trg_leituras_imutaveis;
+      update leituras set criado_em = now() - interval '100 days' where item_id = '${id}' and releitura;
+      alter table leituras enable trigger trg_leituras_imutaveis;
+    `)
     expect((await feed()).filter((x) => x.item_id === id)).toHaveLength(0)
   })
 
@@ -3127,5 +3134,132 @@ describe('listas curadas (migration 0028)', () => {
       expect(sql, f).toContain(`revoke all on function ${f} from public, anon;`)
       expect(sql, f).toContain(`grant execute on function ${f} to authenticated;`)
     }
+  })
+})
+
+describe('leituras: blindar update e criado_em (migration 0029)', () => {
+  // Ana (U) é a dona das leituras; Beto (OUTRO) é amigo dela e dono do item "alheio".
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const salvar = async (extra: object) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'Blindagem 1', tipo: 'manga', estado: 'lido', prioridade: 0, ...extra })])).rows[0].id
+  const leitura = async (id: string) =>
+    (await db.query<{ item_id: string; user_id: string; lido_em: string; releitura: boolean; criado_em: string }>(`select item_id, user_id, lido_em::text, releitura, criado_em::text from leituras where id = $1`, [id])).rows[0]
+  const feed = async () => (await db.query<Record<string, unknown>>(`select * from feed_listar()`)).rows
+
+  let itemAna: string
+  let itemBeto: string
+  let leituraAna: string
+
+  beforeAll(async () => {
+    await admin(`
+      delete from compartilhamentos; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos, feed_ativo) values
+        ('${U}', 'ana', '{notas_criticas,lidos}', true), ('${OUTRO}', 'beto', '{notas_criticas,lidos}', true);
+    `)
+    const id = (await como(OUTRO, () => db.query<{ id: string }>(`select amizade_solicitar('ana') id`))).rows[0].id
+    await db.query(`select amizade_responder($1, true)`, [id])
+    itemAna = await salvar({ titulo: 'Da Ana', lido_em: '2026-03-01' })
+    itemBeto = await como(OUTRO, () => salvar({ titulo: 'Do Beto', lido_em: '2026-03-02', nota: 4 }))
+    leituraAna = (await db.query<{ id: string }>(`select id from leituras where item_id = $1`, [itemAna])).rows[0].id
+  })
+
+  it('update de item_id para o item de um amigo é rejeitado (privilégio e gatilho)', async () => {
+    await expect(db.query(`update leituras set item_id = $1 where id = $2`, [itemBeto, leituraAna])).rejects.toThrow()
+    expect((await leitura(leituraAna)).item_id).toBe(itemAna)
+    // sem o privilégio de coluna, o gatilho ainda segura (superusuário, por exemplo)
+    await db.query(`reset role`)
+    try {
+      await expect(db.query(`update leituras set item_id = $1 where id = $2`, [itemBeto, leituraAna])).rejects.toThrow('leitura_imutavel')
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+    expect((await leitura(leituraAna)).item_id).toBe(itemAna)
+  })
+
+  it('update de releitura, criado_em, user_id e id é rejeitado (privilégio e gatilho)', async () => {
+    const antes = await leitura(leituraAna)
+    for (const set of [`releitura = true`, `criado_em = now() + interval '30 days'`, `user_id = '${OUTRO}'`, `id = gen_random_uuid()`]) {
+      await expect(db.query(`update leituras set ${set} where id = $1`, [leituraAna]), set).rejects.toThrow()
+      await db.query(`reset role`)
+      try {
+        await expect(db.query(`update leituras set ${set} where id = $1`, [leituraAna]), set).rejects.toThrow('leitura_imutavel')
+      } finally {
+        await db.query(`set role authenticated`)
+      }
+    }
+    expect(await leitura(leituraAna)).toEqual(antes)
+    // o privilégio de coluna: só lido_em
+    const cols = (await db.query<{ c: string; p: boolean }>(
+      `select column_name c, has_column_privilege('authenticated', 'leituras', column_name, 'update') p from information_schema.columns where table_name = 'leituras'`,
+    )).rows
+    expect(cols.filter((x) => x.p).map((x) => x.c)).toEqual(['lido_em'])
+  })
+
+  it('update de lido_em continua funcionando e sincroniza itens.lido_em', async () => {
+    await db.query(`update leituras set lido_em = '2026-04-10' where id = $1`, [leituraAna])
+    expect((await leitura(leituraAna)).lido_em).toBe('2026-04-10')
+    expect((await db.query<{ d: string }>(`select lido_em::text d from itens where id = $1`, [itemAna])).rows[0].d).toBe('2026-04-10')
+    // e a edição do lido_em pelo item (gatilho da 0025) também passa pelo gatilho novo
+    await db.query(`select item_salvar($1, $2::jsonb, '{}')`, [itemAna, JSON.stringify({ titulo: 'Da Ana', tipo: 'manga', estado: 'lido', prioridade: 0, lido_em: '2026-04-11' })])
+    expect((await leitura(leituraAna)).lido_em).toBe('2026-04-11')
+  })
+
+  it('insert ignora o criado_em do cliente e grava now()', async () => {
+    const futuro = '2099-01-01T00:00:00Z'
+    const id = (await db.query<{ id: string }>(`insert into leituras(item_id, user_id, lido_em, criado_em, releitura) values ($1, $2, '2026-05-01', $3, false) returning id`, [itemAna, U, futuro])).rows[0].id
+    const l = await leitura(id)
+    expect(new Date(l.criado_em).getFullYear()).toBeLessThan(2099)
+    expect(l.releitura).toBe(true)
+    const dif = (await db.query<{ s: number }>(`select abs(extract(epoch from (now() - criado_em)))::float s from leituras where id = $1`, [id])).rows[0].s
+    expect(dif).toBeLessThan(5)
+    // o mesmo vale para o passado
+    const id2 = (await db.query<{ id: string }>(`insert into leituras(item_id, user_id, lido_em, criado_em) values ($1, $2, '2026-05-02', '2000-01-01') returning id`, [itemAna, U])).rows[0].id
+    expect(new Date((await leitura(id2)).criado_em).getFullYear()).toBeGreaterThanOrEqual(2026)
+  })
+
+  it('feed_listar não mostra "releu" quando o dono da leitura não é o dono do item', async () => {
+    const releu = async (item: string) => (await feed()).filter((x) => x.item_id === item && x.releitura)
+    // leitura legítima do Beto no item dele: aparece para a Ana
+    await como(OUTRO, () => db.query(`insert into leituras(item_id, user_id, lido_em) values ($1, $2, '2026-06-01')`, [itemBeto, OUTRO]))
+    expect(await releu(itemBeto)).toHaveLength(1)
+    // forja (feita fora das regras, como superusuário): leitura da Ana apontando para o item do Beto
+    await admin(`
+      alter table leituras disable trigger trg_leituras_validar;
+      alter table leituras disable trigger trg_leituras_imutaveis;
+      insert into leituras(item_id, user_id, lido_em, releitura, criado_em) values ('${itemBeto}', '${U}', '2026-06-02', true, now());
+      alter table leituras enable trigger trg_leituras_validar;
+      alter table leituras enable trigger trg_leituras_imutaveis;
+    `)
+    expect((await db.query<{ n: number }>(`select count(*)::int n from leituras where item_id = $1 and releitura and user_id = auth.uid()`, [itemBeto])).rows[0].n).toBe(1)
+    expect(await releu(itemBeto)).toHaveLength(1)
+    // para os amigos da Ana, nada de "Ana releu" o item do Beto
+    expect((await como(OUTRO, feed)).filter((x) => x.item_id === itemBeto && x.releitura && x.dono_id === U)).toHaveLength(0)
+  })
+
+  it('migration: revoga o update da tabela, libera só lido_em e recria feed_listar sem mudar o retorno', () => {
+    const sql = readFileSync(path.join(PASTA, '0029_leituras_blindar_update.sql'), 'utf8')
+    expect(sql).toContain('revoke update on leituras from authenticated;')
+    expect(sql).toContain('grant update (lido_em) on leituras to authenticated;')
+    expect(sql).toContain('new.criado_em := now();')
+    expect(sql).toMatch(/and l\.releitura\s+and l\.user_id = i\.user_id/)
+    expect(sql).toContain('grant execute on function feed_listar(int, timestamptz) to authenticated;')
+    // nenhuma migration anterior foi tocada: a 0025 continua com a policy original e sem o gatilho novo
+    const m25 = readFileSync(path.join(PASTA, '0025_releitura_e_diario.sql'), 'utf8')
+    expect(m25).not.toContain('leituras_imutaveis')
   })
 })
