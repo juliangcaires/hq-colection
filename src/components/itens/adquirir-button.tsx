@@ -10,6 +10,7 @@ import { marcarAdquiriEmLote } from '@/app/(app)/itens/actions'
 import { desembrulhar } from '@/lib/resultado'
 import { numeroInvalido, parseNumeroPtBr } from '@/lib/numeros'
 import { hojeIso } from '@/lib/datas'
+import { cn } from '@/lib/utils'
 
 /**
  * Marca aquisição de um item ou de vários — é o mesmo diálogo porque os campos
@@ -107,16 +108,28 @@ export function AdquirirDialog({
   )
 }
 
-/** Botão de linha da lista de desejos: abre o diálogo para um único item. */
-export function AdquirirButton({ itemId, titulo }: { itemId: string; titulo: string }) {
+/**
+ * Botão "Adquiri" de um desejo: abre o diálogo para um único item. `className` ajusta o tamanho
+ * (a grade usa largura total; o modo agrupado, uma altura menor).
+ */
+export function AdquirirButton({
+  itemId,
+  titulo,
+  className,
+}: {
+  itemId: string
+  titulo: string
+  className?: string
+}) {
   const [open, setOpen] = useState(false)
 
   return (
     <>
       <Button
         variant="outline"
+        aria-label={`Marcar ${titulo} como adquirido`}
         onClick={() => setOpen(true)}
-        className="h-11 border-success/60 px-4 text-success-text hover:text-success-text"
+        className={cn('h-11 border-success/60 px-4 text-success-text hover:text-success-text', className)}
       >
         Adquiri
       </Button>
