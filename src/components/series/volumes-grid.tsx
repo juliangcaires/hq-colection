@@ -193,7 +193,7 @@ export function VolumesGrid({
           const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
 
           if (!selecionando) {
-            return <ItemCard key={item.id} item={item} capaUrl={capaUrl} de={de} />
+            return <ItemCard key={item.id} item={item} capaUrl={capaUrl} de={de} melhor={item.melhor_da_serie} />
           }
 
           const marcado = selecionados.has(item.id)
@@ -215,7 +215,7 @@ export function VolumesGrid({
             >
               {/* Reaproveita o card como está; pointer-events-none neutraliza o <Link> interno. */}
               <div className="pointer-events-none">
-                <ItemCard item={item} capaUrl={capaUrl} de={de} />
+                <ItemCard item={item} capaUrl={capaUrl} de={de} melhor={item.melhor_da_serie} />
               </div>
               <span
                 aria-hidden

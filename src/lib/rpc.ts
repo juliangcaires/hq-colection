@@ -47,6 +47,11 @@ export function lancarErroRpc(error: { message: string }): never {
   if (m === 'lista_item_repetido') throw new ErroDeNegocio('Esta obra já está na lista.')
   if (m === 'lista_ordem_invalida') throw new ErroDeNegocio('A ordem mudou enquanto você editava. Recarregue a lista e tente de novo.')
   if (m === 'comentario_rapido') throw new ErroDeNegocio('Você está comentando rápido demais. Espere um minuto.')
+  if (m === 'melhor_exige_lido') throw new ErroDeNegocio('Só dá para marcar como melhor da série um volume que você já leu.')
+  if (m === 'melhor_exige_serie') throw new ErroDeNegocio('O volume precisa estar em uma série para ser o melhor dela.')
+  if (m === 'melhor_em_variante') throw new ErroDeNegocio('A marca de melhor da série fica no volume normal; esta é uma variante dele.')
+  if (m === 'melhor_exige_dois_lidos') throw new ErroDeNegocio('A série precisa ter ao menos 2 volumes lidos para escolher o melhor.')
+  if (m === 'nao_autenticado') throw new ErroDeNegocio('Entre na sua conta para continuar.')
   if (m === 'critica_longa') throw new ErroDeNegocio('A crítica passa de 2000 caracteres.')
   if (m.startsWith('volumes_repetidos:')) {
     const numeros = m

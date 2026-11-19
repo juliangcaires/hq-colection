@@ -3,12 +3,13 @@ import Link from 'next/link'
 import type { ItemDeLista } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 import { hrefDoItem } from '@/lib/navegacao-item'
+import { SeloMelhor } from '@/components/ui/selo-melhor'
 
 const SELO =
   'absolute top-1.5 right-1.5 rounded-[4px] px-1.5 py-0.5 text-[10px] font-bold tracking-wide uppercase text-primary-foreground'
 
-/** `de`: página onde o card aparece; o item usa para o botão Voltar. */
-export function ItemCard({ item, capaUrl, de }: { item: ItemDeLista; capaUrl: string | null; de?: string }) {
+/** `de`: página onde o card aparece; o item usa para o botão Voltar. `melhor`: volume marcado como melhor da série (0030). */
+export function ItemCard({ item, capaUrl, de, melhor = false }: { item: ItemDeLista; capaUrl: string | null; de?: string; melhor?: boolean }) {
   const isDesejo = item.estado === 'desejo'
   const isLido = item.estado === 'lido'
   const mostrarNumero = Boolean(item.serie?.tem_numeracao) && item.numero_volume !== null
@@ -18,7 +19,8 @@ export function ItemCard({ item, capaUrl, de }: { item: ItemDeLista; capaUrl: st
       <div
         className={cn(
           'relative aspect-[2/3] overflow-hidden rounded-lg bg-card ring-1 ring-white/10 transition-shadow group-hover:ring-primary/40',
-          isDesejo && 'border-2 border-dashed border-warning opacity-60'
+          isDesejo && 'border-2 border-dashed border-warning opacity-60',
+          melhor && 'melhor-da-serie'
         )}
       >
         {capaUrl ? (
@@ -37,6 +39,7 @@ export function ItemCard({ item, capaUrl, de }: { item: ItemDeLista; capaUrl: st
             </span>
           </div>
         )}
+        {melhor && <SeloMelhor />}
         {isLido && <span className={cn(SELO, 'bg-read')}>Lido</span>}
         {isDesejo && <span className={cn(SELO, 'bg-warning')}>Desejo</span>}
         {item.variante_de && (

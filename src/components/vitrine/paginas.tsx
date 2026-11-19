@@ -3,6 +3,7 @@ import Link from 'next/link'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Estrelas } from '@/components/ui/estrelas'
 import { CriticaSpoiler } from '@/components/ui/critica-spoiler'
+import { SeloMelhor } from '@/components/ui/selo-melhor'
 import { GradeDaVitrine, ListaDeSeriesDaVitrine } from '@/components/vitrine/grade-da-vitrine'
 import { VerMais } from '@/components/vitrine/ver-mais'
 import { SerieProgress } from '@/components/series/serie-progress'
@@ -130,6 +131,7 @@ export async function PaginaRanking({ supabase, fonte, resumo, limite = 25 }: Ba
                 <span className="w-7 shrink-0 text-center font-heading text-lg font-extrabold text-muted-foreground tabular-nums">{i + 1}</span>
                 <div className="relative aspect-[2/3] w-11 shrink-0 overflow-hidden rounded bg-surface-2 ring-1 ring-white/10">
                   {capa && <Image unoptimized src={capa} alt="" fill sizes="44px" className="object-cover" />}
+                  {item.melhor_da_serie && <SeloMelhor className="top-0.5 left-0.5 size-4" />}
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate text-sm font-semibold text-foreground">{item.titulo}</span>

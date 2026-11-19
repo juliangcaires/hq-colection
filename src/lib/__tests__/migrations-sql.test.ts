@@ -30,7 +30,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -3261,5 +3261,282 @@ describe('leituras: blindar update e criado_em (migration 0029)', () => {
     // nenhuma migration anterior foi tocada: a 0025 continua com a policy original e sem o gatilho novo
     const m25 = readFileSync(path.join(PASTA, '0025_releitura_e_diario.sql'), 'utf8')
     expect(m25).not.toContain('leituras_imutaveis')
+  })
+})
+
+describe('melhor volume da série (migration 0030)', () => {
+  // Ana (U) é a dona/visitante; Beto (OUTRO), Carla, Edu são amigos com escopo de notas; Gui é amigo SEM `notas_criticas`.
+  const ID = (n: number) => `${String(n).repeat(8)}-${String(n).repeat(4)}-${String(n).repeat(4)}-${String(n).repeat(4)}-${String(n).repeat(12)}`
+  const BETO = OUTRO
+  const CARLA = ID(2)
+  const EDU = ID(3)
+  const GUI = ID(5)
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const salvar = async (extra: object) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'x', tipo: 'hq', estado: 'lido', prioridade: 0, ...extra })])).rows[0].id
+  const serieDe = async (nome: string) =>
+    (await db.query<{ id: string }>(`insert into series(user_id, nome, tipo) values (auth.uid(), $1, 'hq') returning id`, [nome])).rows[0].id
+  const marcar = (item: string, marcar = true) => db.query(`select item_melhor_da_serie_definir($1, $2)`, [item, marcar])
+  const marca = async (id: string) => (await db.query<{ m: boolean }>(`select melhor_da_serie m from itens where id = $1`, [id])).rows[0].m
+  const erro = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+      return null
+    } catch (e) {
+      return (e as Error).message
+    }
+  }
+  /** Série da Ana com `n` volumes lidos (1..n). */
+  const serieComLidos = async (nome: string, n: number) => {
+    const serie = await serieDe(nome)
+    const ids: string[] = []
+    for (let k = 1; k <= n; k++) ids.push(await salvar({ titulo: `${nome} ${k}`, serie_id: serie, numero_volume: k }))
+    return { serie, ids }
+  }
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CARLA}'), ('${EDU}'), ('${GUI}') on conflict do nothing;
+      delete from obra_equivalencias; delete from compartilhamentos; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos) values
+        ('${U}', 'ana', '{notas_criticas,lidos,colecao,series,ranking}'),
+        ('${BETO}', 'beto', '{notas_criticas,lidos,colecao,series,ranking}'),
+        ('${CARLA}', 'carla', '{notas_criticas,lidos,colecao,series,ranking}'),
+        ('${EDU}', 'edu', '{notas_criticas,lidos,colecao,series,ranking}'),
+        ('${GUI}', 'gui', '{lidos,colecao,series,ranking}');
+    `)
+    for (const uid of [BETO, CARLA, EDU, GUI]) {
+      const id = await como(uid, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id)
+      await db.query(`select amizade_responder($1, true)`, [id])
+    }
+  })
+
+  it('1. marca com 2 lidos; com 1 lido recusa', async () => {
+    const { ids } = await serieComLidos('Marca 1', 2)
+    await marcar(ids[0])
+    expect(await marca(ids[0])).toBe(true)
+    const sozinha = await serieComLidos('Marca 1 sozinha', 1)
+    expect(await erro(() => marcar(sozinha.ids[0]))).toContain('melhor_exige_dois_lidos')
+    expect(await marca(sozinha.ids[0])).toBe(false)
+  })
+
+  it('2. recusa não lido, sem série e variante', async () => {
+    const { serie, ids } = await serieComLidos('Marca 2', 2)
+    const comprado = await salvar({ titulo: 'Marca 2 c', serie_id: serie, numero_volume: 3, estado: 'comprado' })
+    const desejo = await salvar({ titulo: 'Marca 2 d', serie_id: serie, numero_volume: 4, estado: 'desejo' })
+    const semSerie = await salvar({ titulo: 'Marca 2 solto' })
+    const variante = await salvar({ titulo: 'Marca 2 v', serie_id: serie, numero_volume: 1, variante_de: ids[0] })
+    expect(await erro(() => marcar(comprado))).toContain('melhor_exige_lido')
+    expect(await erro(() => marcar(desejo))).toContain('melhor_exige_lido')
+    expect(await erro(() => marcar(semSerie))).toContain('melhor_exige_serie')
+    expect(await erro(() => marcar(variante))).toContain('melhor_em_variante')
+  })
+
+  it('3. marcar outro desmarca o anterior; o índice único recusa dois por update direto', async () => {
+    const { ids } = await serieComLidos('Marca 3', 3)
+    await marcar(ids[0])
+    await marcar(ids[1])
+    expect([await marca(ids[0]), await marca(ids[1]), await marca(ids[2])]).toEqual([false, true, false])
+    // marcar o que já está marcado é idempotente
+    await marcar(ids[1])
+    expect(await marca(ids[1])).toBe(true)
+    // update direto deixaria dois marcados: o índice único barra
+    expect(await erro(() => db.query(`update itens set melhor_da_serie = true where id = $1`, [ids[2]]))).toMatch(/itens_melhor_da_serie_unico|duplicate key|unique/i)
+    // desmarcar
+    await marcar(ids[1], false)
+    expect(await marca(ids[1])).toBe(false)
+  })
+
+  it('4. lido sem nota pode ser marcado; apagar a nota mantém a marca', async () => {
+    const { ids } = await serieComLidos('Marca 4', 2)
+    expect((await db.query<{ nota: string | null }>(`select nota from itens where id = $1`, [ids[0]])).rows[0].nota).toBeNull()
+    await marcar(ids[0])
+    expect(await marca(ids[0])).toBe(true)
+    await db.query(`update itens set nota = 4.5 where id = $1`, [ids[0]])
+    await db.query(`update itens set nota = null where id = $1`, [ids[0]])
+    expect(await marca(ids[0])).toBe(true)
+  })
+
+  it('5. a marca cai ao sair de lido, mudar de série, virar variante ou a série ficar com 1 lido', async () => {
+    // sair de lido
+    let s = await serieComLidos('Cai 1', 3)
+    await marcar(s.ids[0])
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [s.ids[0]])
+    expect(await marca(s.ids[0])).toBe(false)
+    // mudar de série (inclusive para nulo)
+    s = await serieComLidos('Cai 2', 3)
+    const outra = await serieDe('Cai 2 destino')
+    await marcar(s.ids[0])
+    await db.query(`update itens set serie_id = $1 where id = $2`, [outra, s.ids[0]])
+    expect(await marca(s.ids[0])).toBe(false)
+    await marcar(s.ids[1])
+    await db.query(`update itens set serie_id = null where id = $1`, [s.ids[1]])
+    expect(await marca(s.ids[1])).toBe(false)
+    // virar variante
+    s = await serieComLidos('Cai 3', 3)
+    await marcar(s.ids[1])
+    await db.query(`select item_definir_variante($1, $2)`, [s.ids[1], s.ids[0]])
+    expect(await marca(s.ids[1])).toBe(false)
+    // a série ficou com 1 lido: o outro volume sai de lido
+    s = await serieComLidos('Cai 4', 2)
+    await marcar(s.ids[0])
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [s.ids[1]])
+    expect(await marca(s.ids[0])).toBe(false)
+    // ... ou é apagado
+    s = await serieComLidos('Cai 5', 2)
+    await marcar(s.ids[0])
+    await db.query(`delete from itens where id = $1`, [s.ids[1]])
+    expect(await marca(s.ids[0])).toBe(false)
+    // com 3 lidos, sair um deles NÃO derruba a marca de outro
+    s = await serieComLidos('Cai 6', 3)
+    await marcar(s.ids[0])
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [s.ids[2]])
+    expect(await marca(s.ids[0])).toBe(true)
+  })
+
+  it('5b. a sincronização de variantes (cascata) também derruba a marca quando o principal sai de lido', async () => {
+    const { serie, ids } = await serieComLidos('Cai 7', 2)
+    const variante = await salvar({ titulo: 'Cai 7 v', serie_id: serie, numero_volume: 1, variante_de: ids[0] })
+    await marcar(ids[0])
+    expect(await marca(ids[0])).toBe(true)
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [variante])
+    expect((await db.query<{ estado: string }>(`select estado from itens where id = $1`, [ids[0]])).rows[0].estado).toBe('comprado')
+    expect(await marca(ids[0])).toBe(false)
+  })
+
+  it('6. INSERT com melhor_da_serie = true grava false', async () => {
+    const { serie } = await serieComLidos('Insert', 2)
+    const { rows } = await db.query<{ melhor_da_serie: boolean }>(
+      `insert into itens(user_id, serie_id, titulo, numero_volume, estado, melhor_da_serie) values (auth.uid(), $1, 'ins', 9, 'lido', true) returning melhor_da_serie`,
+      [serie]
+    )
+    expect(rows[0].melhor_da_serie).toBe(false)
+  })
+
+  it('7. outro usuário não marca item alheio; sem login recusa', async () => {
+    const { ids } = await serieComLidos('Alheio', 2)
+    expect(await como(BETO, () => erro(() => marcar(ids[0])))).toContain('item_nao_encontrado')
+    expect(await marca(ids[0])).toBe(false)
+    await db.query(`select set_config('app.uid','',false)`)
+    expect(await erro(() => marcar(ids[0]))).toContain('nao_autenticado')
+    await db.query(`select set_config('app.uid','${U}',false)`)
+  })
+
+  describe('vitrine e rankings', () => {
+    const doBeto = (secao: string, serie: string | null = null) =>
+      db.query<Record<string, unknown>>(`select * from amigo_itens('beto', $1, $2)`, [secao, serie]).then((r) => r.rows)
+    const doLink = (token: string, secao: string, serie: string | null = null) =>
+      db.query<Record<string, unknown>>(`select * from link_itens($1, $2, $3)`, [token, secao, serie]).then((r) => r.rows)
+    const escopoDoBeto = (escopo: string) => admin(`update perfis set escopo_amigos = '${escopo}' where user_id = '${BETO}'`)
+    let serieBeto: string
+    let p: string
+    let q: string
+
+    beforeAll(async () => {
+      await como(BETO, async () => {
+        serieBeto = await serieDe('Vitrine')
+        // P é mais antigo que Q: sem a marca, a ordem do ranking é Q, P (created_at desc).
+        p = await salvar({ titulo: 'Vit P', serie_id: serieBeto, numero_volume: 1, nota: 4 })
+        q = await salvar({ titulo: 'Vit Q', serie_id: serieBeto, numero_volume: 2, nota: 4 })
+        await marcar(p)
+      })
+      await admin(`update itens set created_at = now() - interval '2 days' where id = '${p}'; update itens set created_at = now() - interval '1 day' where id = '${q}';`)
+    })
+
+    it('8. amigo vê a marca só com notas_criticas + lidos; o link público nunca vê', async () => {
+      const marcaDe = (linhas: Record<string, unknown>[], id: string) => linhas.find((x) => x.id === id)?.melhor_da_serie
+      expect(marcaDe(await doBeto('serie', serieBeto), p)).toBe(true)
+      expect(marcaDe(await doBeto('serie', serieBeto), q)).toBe(false)
+      expect(marcaDe(await doBeto('ranking'), p)).toBe(true)
+      await escopoDoBeto('{lidos,colecao,series,ranking}')
+      expect(marcaDe(await doBeto('serie', serieBeto), p)).toBe(false)
+      expect(marcaDe(await doBeto('ranking'), p)).toBe(false)
+      await escopoDoBeto('{notas_criticas,colecao,series,ranking}')
+      expect(marcaDe(await doBeto('serie', serieBeto), p)).toBe(false)
+      await escopoDoBeto('{notas_criticas,lidos,colecao,series,ranking}')
+      expect(marcaDe(await doBeto('serie', serieBeto), p)).toBe(true)
+      // link com todos os escopos: nunca
+      const token = (await como(BETO, () => db.query<{ t: string }>(`select compartilhamento_gerar('{colecao,lidos,notas_criticas,series,ranking}'::text[]) t`))).rows[0].t
+      expect(marcaDe(await doLink(token, 'serie', serieBeto), p)).toBe(false)
+      expect(marcaDe(await doLink(token, 'ranking'), p)).toBe(false)
+    })
+
+    it('10. no ranking, notas iguais: o marcado vem primeiro para o amigo; no link a ordem antiga continua', async () => {
+      const ordem = (linhas: Record<string, unknown>[]) => linhas.map((x) => x.id).filter((id) => id === p || id === q)
+      expect(ordem(await doBeto('ranking'))).toEqual([p, q])
+      const token = (await como(BETO, () => db.query<{ t: string }>(`select compartilhamento_gerar('{colecao,lidos,notas_criticas,series,ranking}'::text[]) t`))).rows[0].t
+      expect(ordem(await doLink(token, 'ranking'))).toEqual([q, p])
+      // uma nota maior nunca fica atrás da marca
+      const r = await como(BETO, () => salvar({ titulo: 'Vit R', serie_id: serieBeto, numero_volume: 3, nota: 5 }))
+      const geral = (await doBeto('ranking')).map((x) => x.id).filter((id) => id === p || id === q || id === r)
+      expect(geral).toEqual([r, p, q])
+    })
+
+    it('9. ranking_amigos: n_melhor conta amigos com a marca, desempata e ignora quem não compartilha notas; meu_melhor', async () => {
+      await admin(`delete from itens; delete from series;`)
+      // Zeta e Alfa: mesmas notas, mesmos leitores. Sem a marca, Alfa vem primeiro (título). Beto e Carla marcam Zeta; Edu marca Alfa.
+      const leitores = [
+        { uid: BETO, marca: 'zeta' },
+        { uid: CARLA, marca: 'zeta' },
+        { uid: EDU, marca: 'alfa' },
+      ]
+      for (const { uid, marca: alvo } of leitores) {
+        await como(uid, async () => {
+          const serie = await serieDe(`Série ${uid.slice(0, 4)}`)
+          const z = await salvar({ titulo: 'Zeta', obra_chave: 'zeta|1|hq', serie_id: serie, numero_volume: 1, nota: 4, lido_em: '2026-03-01' })
+          const a = await salvar({ titulo: 'Alfa', obra_chave: 'alfa|1|hq', serie_id: serie, numero_volume: 2, nota: 4, lido_em: '2026-03-01' })
+          await marcar(alvo === 'zeta' ? z : a)
+        })
+      }
+      // Gui não compartilha notas: sua marca e sua nota não contam.
+      await como(GUI, async () => {
+        const serie = await serieDe('Série gui')
+        const z = await salvar({ titulo: 'Zeta', obra_chave: 'zeta|1|hq', serie_id: serie, numero_volume: 1, nota: 5, lido_em: '2026-03-01' })
+        await salvar({ titulo: 'Alfa', obra_chave: 'alfa|1|hq', serie_id: serie, numero_volume: 2, nota: 5, lido_em: '2026-03-01' })
+        await marcar(z)
+      })
+      // Ana leu os dois; marcou Zeta.
+      const sa = await serieDe('Série ana')
+      const za = await salvar({ titulo: 'Zeta', obra_chave: 'zeta|1|hq', serie_id: sa, numero_volume: 1, nota: 2 })
+      await salvar({ titulo: 'Alfa', obra_chave: 'alfa|1|hq', serie_id: sa, numero_volume: 2, nota: 2 })
+      await marcar(za)
+
+      const rank = async (ordem: string) =>
+        (await db.query<Record<string, unknown>>(`select * from ranking_amigos(null, null, null, $1, false, 30, 0)`, [ordem])).rows
+      for (const ordem of ['nota', 'media']) {
+        const linhas = (await rank(ordem)).filter((l) => l.titulo === 'Zeta' || l.titulo === 'Alfa')
+        expect(linhas.map((l) => l.titulo)).toEqual(['Zeta', 'Alfa'])
+        expect(linhas[0]).toMatchObject({ n: 3, n_melhor: 2, meu_melhor: true })
+        expect(linhas[1]).toMatchObject({ n: 3, n_melhor: 1, meu_melhor: false })
+      }
+      // `lidos` e `recentes` não mudam: Alfa vem antes de Zeta pelo título (tudo o mais igual).
+      const porLidos = (await rank('lidos')).filter((l) => l.titulo === 'Zeta' || l.titulo === 'Alfa')
+      expect(porLidos.map((l) => l.titulo)).toEqual(['Alfa', 'Zeta'])
+      // meu_melhor só vale com o meu item lido: volta a comprado e a marca de Ana cai (e some do retorno)
+      await db.query(`update itens set estado = 'comprado' where id = $1`, [za])
+      const depois = (await rank('nota')).find((l) => l.titulo === 'Zeta')!
+      expect(depois.meu_melhor).toBe(false)
+    })
+  })
+
+  it('a 0030 não toca nas migrations 0001–0029 (nenhuma menção ao nome novo)', () => {
+    for (const f of ['0023_ranking_amigos', '0024_spoiler_na_critica', '0029_leituras_blindar_update']) {
+      expect(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8')).not.toContain('melhor_da_serie')
+    }
   })
 })

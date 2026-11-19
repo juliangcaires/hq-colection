@@ -40,6 +40,8 @@ export type ItemVitrine = {
   critica: string | null
   /** A crítica é spoiler (0024): o visitante vê um cartão recolhido. */
   critica_spoiler: boolean
+  /** Melhor volume da série (0030): só chega `true` para amigo com `notas_criticas` + `lidos`; nunca no link público. */
+  melhor_da_serie: boolean
   lido_em: string | null
   isbn13: string | null
   reservado: boolean
@@ -119,6 +121,7 @@ export async function carregarItens(
       nota: num(l.nota),
       critica: (l.critica as string | null) ?? null,
       critica_spoiler: l.critica_spoiler === true,
+      melhor_da_serie: l.melhor_da_serie === true,
       lido_em: (l.lido_em as string | null) ?? null,
       isbn13: (l.isbn13 as string | null) ?? null,
       reservado: l.reservado === true,

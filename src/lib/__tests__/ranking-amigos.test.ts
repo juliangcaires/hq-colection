@@ -7,6 +7,8 @@ import {
   linhaDoRankingAmigos,
   pontuacaoSuavizada,
   rotuloDeAmigos,
+  rotuloMelhorParaAmigos,
+  REGRA_DA_ORDEM,
   situacaoVazia,
 } from '../ranking-amigos'
 
@@ -93,6 +95,18 @@ describe('mapeamento da resposta da RPC', () => {
     const l = linhaDoRankingAmigos(crua)
     expect(l).toMatchObject({ obraChave: 'obra y|1|hq', numeroVolume: 1, tipo: 'manga', n: 4, soma: 19, media: 4.75, score: 4.5, minhaNota: null, meuItemId: null, capaItemId: 'abc' })
     expect(l.avatares).toEqual([{ apelido: 'beto', nome: 'Beto', avatarUrl: null }])
+  })
+
+  it('melhor da série (0030): n_melhor e meu_melhor, com padrão 0/false', () => {
+    expect(linhaDoRankingAmigos(crua)).toMatchObject({ nMelhor: 0, meuMelhor: false })
+    expect(linhaDoRankingAmigos({ ...crua, n_melhor: 2, meu_melhor: true })).toMatchObject({ nMelhor: 2, meuMelhor: true })
+    expect(linhaDoRankingAmigos({ ...crua, n_melhor: '3', meu_melhor: null })).toMatchObject({ nMelhor: 3, meuMelhor: false })
+  })
+
+  it('rótulo do selo e regra do desempate', () => {
+    expect(rotuloMelhorParaAmigos(1)).toBe('Melhor da série para 1 amigo')
+    expect(rotuloMelhorParaAmigos(3)).toBe('Melhor da série para 3 amigos')
+    expect(REGRA_DA_ORDEM).toContain('Em caso de empate, vem primeiro o volume que mais amigos elegeram o melhor da série.')
   })
 
   it('tipo desconhecido vira hq e avatares ausentes viram lista vazia', () => {

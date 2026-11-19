@@ -1,11 +1,14 @@
 import Image from 'next/image'
 import Link from 'next/link'
+import { Crown } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Estrelas } from '@/components/ui/estrelas'
 import { CarregarMais } from '@/components/itens/carregar-mais'
 import { formatarNota } from '@/lib/nota'
 import { cn } from '@/lib/utils'
+import { SeloMelhor } from '@/components/ui/selo-melhor'
+import { ROTULO_MELHOR } from '@/lib/melhor-da-serie'
 import { hrefDoItem } from '@/lib/navegacao-item'
 import { ProgressoDaSerieBarra } from '@/components/series/progresso-da-serie'
 import type { ProgressoDaSerie } from '@/lib/progresso-serie'
@@ -18,6 +21,7 @@ import {
   REGRA_DA_ORDEM,
   ROTULOS_ORDEM_AMIGOS,
   rotuloDeAmigos,
+  rotuloMelhorParaAmigos,
   situacaoVazia,
   type EstadoDosAmigos,
   type FiltrosAmigos,
@@ -47,7 +51,7 @@ function subtitulo(l: LinhaDoRankingAmigos) {
   return `${num}${l.serieNome}`
 }
 
-function Capa({ titulo, url, className }: { titulo: string; url: string | null; className?: string }) {
+function Capa({ titulo, url, className, nMelhor = 0, seloPequeno }: { titulo: string; url: string | null; className?: string; nMelhor?: number; seloPequeno?: boolean }) {
   return (
     <div className={cn('relative aspect-[2/3] overflow-hidden rounded-lg bg-surface-2 ring-1 ring-white/10', className)}>
       {url ? (
@@ -55,7 +59,18 @@ function Capa({ titulo, url, className }: { titulo: string; url: string | null; 
       ) : (
         <div className="flex h-full items-end p-1.5 font-heading text-xs leading-tight font-extrabold">{titulo}</div>
       )}
+      {nMelhor > 0 && <SeloMelhor rotulo={rotuloMelhorParaAmigos(nMelhor)} className={cn('left-auto right-1.5', seloPequeno && 'top-0.5 right-0.5 size-4')} />}
     </div>
+  )
+}
+
+/** A sua marca de melhor da série, ao lado da sua nota. */
+function MinhaMarca() {
+  return (
+    <span title={`Você marcou como ${ROTULO_MELHOR.toLowerCase()}`} className="inline-flex align-middle">
+      <Crown className="size-3.5 text-[var(--melhor-da-serie)]" aria-hidden />
+      <span className="sr-only">Você marcou como {ROTULO_MELHOR.toLowerCase()}</span>
+    </span>
   )
 }
 
@@ -82,6 +97,7 @@ function Placar({ l }: { l: LinhaDoRankingAmigos }) {
       {l.minhaNota !== null && (
         <span className="text-xs text-muted-foreground" title="Sua nota (fora da média dos amigos)">
           você: <span className="font-semibold text-foreground">★ {formatarNota(l.minhaNota)}</span>
+          {l.meuMelhor && <> <MinhaMarca /></>}
         </span>
       )}
     </span>
@@ -206,7 +222,7 @@ export function RankingAmigos({
             {podio.map((l, i) => (
               <Link key={l.obraChave} href={destino(l, voltar)} className="group flex flex-col gap-2">
                 <div className="relative">
-                  <Capa titulo={l.titulo} url={capaDe(l)} className="group-hover:ring-primary/40" />
+                  <Capa titulo={l.titulo} url={capaDe(l)} className="group-hover:ring-primary/40" nMelhor={l.nMelhor} />
                   <span
                     className={cn(
                       'absolute top-1.5 left-1.5 flex size-8 items-center justify-center rounded-full font-heading text-base font-extrabold text-primary-foreground shadow-md',
@@ -228,7 +244,12 @@ export function RankingAmigos({
                     <Avatares l={l} />
                     <span>{rotuloDeAmigos(l.n)}</span>
                   </span>
-                  {l.minhaNota !== null && <span className="text-xs text-muted-foreground">você: ★ {formatarNota(l.minhaNota)}</span>}
+                  {l.minhaNota !== null && (
+                    <span className="text-xs text-muted-foreground">
+                      você: ★ {formatarNota(l.minhaNota)}
+                      {l.meuMelhor && <> <MinhaMarca /></>}
+                    </span>
+                  )}
                 </div>
               </Link>
             ))}
@@ -240,7 +261,7 @@ export function RankingAmigos({
                 <li key={l.obraChave}>
                   <Link href={destino(l, voltar)} className="flex items-center gap-3 p-3 hover:bg-white/[0.03]">
                     <span className="w-7 shrink-0 text-center font-heading text-lg font-extrabold text-muted-foreground tabular-nums">{i + 4}</span>
-                    <Capa titulo={l.titulo} url={capaDe(l)} className="w-[52px] shrink-0" />
+                    <Capa titulo={l.titulo} url={capaDe(l)} className="w-[52px] shrink-0" nMelhor={l.nMelhor} seloPequeno />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="truncate text-sm font-medium">{l.titulo}</span>
                       {subtitulo(l) && <span className="truncate text-xs text-muted-foreground">{subtitulo(l)}</span>}

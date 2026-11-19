@@ -66,6 +66,19 @@ describe('spoiler na crítica (0024)', () => {
   })
 })
 
+describe('melhor da série (0030)', () => {
+  const linha = { id: 'i1', titulo: 'T', serie_id: 's1', serie_nome: 'S', numero_volume: 1, tipo: 'hq', estado: 'lido', capa: null, nota: 4, critica: null, lido_em: null, isbn13: null, reservado: false, reservado_por_mim: false, total: 1 }
+  it('a marca vem do banco; ausente, nula ou qualquer coisa que não seja true vira falso', async () => {
+    const r = await carregarItens(
+      fake([{ ...linha, melhor_da_serie: true }, { ...linha, id: 'i2', melhor_da_serie: false }, { ...linha, id: 'i3' }, { ...linha, id: 'i4', melhor_da_serie: null }, { ...linha, id: 'i5', melhor_da_serie: 't' }]).cliente,
+      amigo,
+      'serie',
+      { serie: 's1' }
+    )
+    expect(r.itens.map((i) => i.melhor_da_serie)).toEqual([true, false, false, false, false])
+  })
+})
+
 describe('apoio', () => {
   it('base e rótulo de volume', () => {
     expect(baseDaFonte(amigo)).toBe('/amigos/maria_hq')

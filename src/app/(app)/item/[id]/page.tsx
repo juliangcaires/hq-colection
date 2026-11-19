@@ -15,6 +15,8 @@ import { VinculoDeObra } from '@/components/amigos/vinculo-de-obra'
 import { completarChaves } from '@/lib/obra-chaves'
 import { origemValida, vizinhosDeVolume } from '@/lib/navegacao-item'
 import { carregarLeituras } from '@/lib/leituras'
+import { podeMarcarMelhor } from '@/lib/melhor-da-serie'
+import { MelhorDaSerieBotao } from '@/components/itens/melhor-da-serie-botao'
 
 export default async function ItemPage({
   params,
@@ -88,6 +90,19 @@ export default async function ItemPage({
   // Leituras (0025): só do item lido. Falha aqui só some com a seção (o formulário volta a mostrar "Lido em").
   const leituras = item.estado === 'lido' ? await carregarLeituras(supabase, id).catch(() => null) : null
 
+  // Melhor da série (0030): volumes principais lidos da série (para a regra e para dizer qual volume perde a marca).
+  const { data: lidosDaSerie } = item.serie && item.estado === 'lido' && !item.variante_de
+    ? await supabase.from('itens').select('id, numero_volume, titulo, melhor_da_serie').eq('serie_id', item.serie.id).eq('estado', 'lido').is('variante_de', null)
+    : { data: null }
+  const podeMelhor = podeMarcarMelhor({
+    estado: item.estado,
+    serieId: item.serie?.id ?? null,
+    varianteDe: item.variante_de,
+    lidosNaSerie: (lidosDaSerie ?? []).length,
+  })
+  const outroMarcado = (lidosDaSerie ?? []).find((l) => l.melhor_da_serie && l.id !== item.id)
+  const substitui = outroMarcado ? (outroMarcado.numero_volume !== null ? `o Vol. ${Number(outroMarcado.numero_volume)}` : `"${outroMarcado.titulo}"`) : null
+
   const capaUrl = capaMap.get(item.capa_url ?? '') ?? null
   const vizinhos = vizinhosDeVolume(irmaos ?? [], item.id, item.numero_volume)
 
@@ -106,6 +121,12 @@ export default async function ItemPage({
       />
       {chaveRow?.obra_chave && item.estado !== 'desejo' && <VinculoDeObra itemId={item.id} obraChave={chaveRow.obra_chave} vinculos={vinculos} sugestoes={quaseCasamentos} />}
       </div>
+      {podeMelhor && (
+        <MelhorDaSerieBotao key={`${item.id}-${item.melhor_da_serie}`} itemId={item.id} marcado={item.melhor_da_serie} substitui={substitui} />
+      )}
+      {item.estado === 'lido' && item.variante_de && item.serie && (
+        <p className="text-xs text-muted-foreground">A marca de melhor da série fica no item principal.</p>
+      )}
       <AmigosDaObra avaliacoes={amigos} rotulo="volume" />
       {/* key: depois de salvar (ou de adquirir / marcar como lido) o formulário recomeça dos valores do banco, sem
           remontar quando só a capa muda (busca/upload de capa não pode apagar edição em andamento). */}
