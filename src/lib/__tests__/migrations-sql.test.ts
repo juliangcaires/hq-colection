@@ -30,7 +30,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume', '0033_notificacoes', '0034_push_endpoint_e_aviso_de_ex_amigo']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume', '0033_notificacoes', '0034_push_endpoint_e_aviso_de_ex_amigo', '0035_li_hoje_lote_no_feed']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -3930,7 +3930,7 @@ describe('notificações (migration 0033)', () => {
     expect(await total()).toBe(1)
     expect(n).toMatchObject({ autor_apelido: 'beto', autor_nome: 'Beto', titulo: 'Curtida', lida: false })
     // Só ids e nomes: nenhuma coluna de nota, crítica ou texto.
-    expect(Object.keys(n).sort()).toEqual(['autor_apelido', 'autor_nome', 'criado_em', 'id', 'item_id', 'lida', 'numero_volume', 'serie_nome', 'tipo', 'titulo'])
+    expect(Object.keys(n).sort()).toEqual(['autor_apelido', 'autor_nome', 'criado_em', 'id', 'item_id', 'lida', 'lote_qtd', 'numero_volume', 'serie_nome', 'tipo', 'titulo'])
     // Descurtir remove a não lida; curtir de novo cria outra (uma só).
     await como(OUTRO, () => db.query(`select feed_descurtir($1)`, [id]))
     expect(await total()).toBe(0)
@@ -4171,5 +4171,293 @@ describe('notificações (migration 0033)', () => {
     for (const f of ['0014_amigos_presentes_emprestimos', '0018_feed_amigos', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume']) {
       expect(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8')).not.toContain('notificacoes')
     }
+  })
+})
+
+describe('"Li hoje": lote de leituras e card único no feed (migration 0035)', () => {
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const feed = async () => (await db.query<Record<string, unknown>>(`select * from feed_listar()`)).rows
+  const serie = async (nome: string) =>
+    (await db.query<{ s: string }>(`select serie_salvar(null, $1::jsonb, '{}') s`, [JSON.stringify({ nome, tipo: 'hq', tem_numeracao: true })])).rows[0].s
+  const comprado = async (titulo: string, extra: object = {}) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo, tipo: 'hq', estado: 'comprado', prioridade: 0, ...extra })])).rows[0].id
+  /** Três volumes de três obras diferentes (duas séries e um avulso), todos comprados. */
+  const trio = async (prefixo: string) => {
+    const [sa, sb] = [await serie(`${prefixo} A`), await serie(`${prefixo} B`)]
+    return [
+      await comprado(`${prefixo} A 1`, { serie_id: sa, numero_volume: 1 }),
+      await comprado(`${prefixo} B 7`, { serie_id: sb, numero_volume: 7 }),
+      await comprado(`${prefixo} Avulso`),
+    ]
+  }
+  const lote = (data: string | null, itens: object[]) => db.query<{ r: { marcados: number; lote_id: string | null } }>(`select itens_marcar_lidos_lote($1, $2::jsonb) r`, [data, JSON.stringify(itens)])
+  const linha = async (id: string) => (await db.query<Record<string, unknown>>(`select estado, lido_em::text, nota, critica, critica_spoiler, feed_lote_id from itens where id = $1`, [id])).rows[0]
+  const hoje = async () => (await db.query<{ h: string }>(`select (now() at time zone 'America/Sao_Paulo')::date::text h`)).rows[0].h
+  const doCard = async (loteId: string) => (await feed()).filter((r) => r.lote_id === loteId)
+
+  beforeAll(async () => {
+    await admin(`
+      delete from notificacoes; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, nome_exibicao) values ('${U}', 'ana', 'Ana'), ('${OUTRO}', 'beto', 'Beto');
+    `)
+    const idBeto = await como(OUTRO, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id)
+    await db.query(`select amizade_responder($1, true)`, [idBeto])
+    await db.query(`select feed_configurar(true)`)
+  })
+
+  describe('itens_marcar_lidos_lote', () => {
+    it('grava o lote todo: lido, uma data só, nota/crítica/spoiler de cada um e o mesmo lote', async () => {
+      const [a, b, c] = await trio('Grava')
+      const r = (await lote('2026-11-15', [
+        { item_id: a, nota: 4.5, critica: 'Muito bom', critica_spoiler: true },
+        { item_id: b },
+        { item_id: c, nota: 3, critica: '  ' },
+      ])).rows[0].r
+      expect(r.marcados).toBe(3)
+      expect(r.lote_id).toBeTruthy()
+      const [la, lb, lc] = [await linha(a), await linha(b), await linha(c)]
+      expect([la.estado, lb.estado, lc.estado]).toEqual(['lido', 'lido', 'lido'])
+      expect([la.lido_em, lb.lido_em, lc.lido_em]).toEqual(['2026-11-15', '2026-11-15', '2026-11-15'])
+      expect(la).toMatchObject({ nota: '4.5', critica: 'Muito bom', critica_spoiler: true })
+      expect(lb).toMatchObject({ nota: null, critica: null, critica_spoiler: false }) // "Pular": só marca
+      expect(Number(lc.nota)).toBe(3)
+      expect(lc.critica).toBeNull() // crítica em branco não vira crítica
+      expect(new Set([la.feed_lote_id, lb.feed_lote_id, lc.feed_lote_id])).toEqual(new Set([r.lote_id]))
+      // A leitura de cada volume (0025) nasce com a data do lote.
+      const { rows } = await db.query<{ lido_em: string }>(`select lido_em::text from leituras where item_id = any ($1) order by lido_em`, [[a, b, c]])
+      expect(rows.map((x) => x.lido_em)).toEqual(['2026-11-15', '2026-11-15', '2026-11-15'])
+    })
+
+    it('sem data vale hoje; data futura é recusada e nada é gravado', async () => {
+      const [a, b] = await trio('Data')
+      await lote(null, [{ item_id: a }, { item_id: b }])
+      expect((await linha(a)).lido_em).toBe(await hoje())
+      const [c, d] = await trio('DataFutura')
+      await expect(lote('2999-01-01', [{ item_id: c }, { item_id: d }])).rejects.toThrow('data_futura')
+      expect((await linha(c)).estado).toBe('comprado')
+    })
+
+    it('é tudo ou nada: um volume que não está comprado, de outra pessoa ou repetido derruba o lote inteiro', async () => {
+      const [a, b, c] = await trio('Atomico')
+      const lido = await comprado('Já lido', { estado: 'lido' })
+      const desejo = await comprado('Desejo', { estado: 'desejo' })
+      await expect(lote(null, [{ item_id: a, nota: 5 }, { item_id: lido }])).rejects.toThrow('lote_item_indisponivel')
+      await expect(lote(null, [{ item_id: a }, { item_id: desejo }])).rejects.toThrow('lote_item_indisponivel')
+      await expect(lote(null, [{ item_id: a }, { item_id: a }])).rejects.toThrow('lote_repetido')
+      await expect(lote(null, [{ item_id: a }, { item_id: b, nota: 4.3 }])).rejects.toThrow('nota_invalida')
+      await expect(lote(null, [{ item_id: a }, { item_id: b, critica: 'x'.repeat(2001) }])).rejects.toThrow('critica_longa')
+      await expect(lote(null, [{ item_id: a }, { item_id: 'nao-e-uuid' }])).rejects.toThrow('lote_invalido')
+      await expect(lote(null, [])).rejects.toThrow('lote_vazio')
+      // Volume de outra pessoa (a RLS esconde): cai igual a um inexistente.
+      const alheio = await como(OUTRO, () => comprado('Do Beto'))
+      await expect(lote(null, [{ item_id: a }, { item_id: alheio }])).rejects.toThrow('lote_item_indisponivel')
+      for (const id of [a, b, c]) expect(await linha(id)).toMatchObject({ estado: 'comprado', nota: null, feed_lote_id: null })
+      await como(OUTRO, async () => expect((await linha(alheio)).estado).toBe('comprado'))
+    })
+
+    it('lote de 1 volume é leitura normal (sem lote)', async () => {
+      const a = await comprado('Sozinho')
+      const r = (await lote(null, [{ item_id: a, nota: 2 }])).rows[0].r
+      expect(r).toEqual({ marcados: 1, lote_id: null })
+      expect(await linha(a)).toMatchObject({ estado: 'lido', feed_lote_id: null })
+      expect(Number((await linha(a)).nota)).toBe(2)
+    })
+
+    it('mantém nota e crítica que o volume já tinha quando o passo não traz nenhuma (como o "Marcar como lido")', async () => {
+      const [a, b] = await trio('Mantem')
+      await admin(`update itens set nota = 4, critica = 'Antiga', critica_spoiler = true where id = '${a}'`)
+      await lote(null, [{ item_id: a }, { item_id: b }])
+      expect(await linha(a)).toMatchObject({ critica: 'Antiga', critica_spoiler: true })
+      expect(Number((await linha(a)).nota)).toBe(4)
+    })
+
+    it('o lote some quando o volume deixa de ser lido: marcar de novo é uma leitura normal', async () => {
+      const [a, b] = await trio('Limpa')
+      await lote(null, [{ item_id: a }, { item_id: b }])
+      await db.query(`update itens set estado = 'comprado' where id = $1`, [a])
+      expect((await linha(a)).feed_lote_id).toBeNull()
+      await db.query(`update itens set estado = 'lido' where id = $1`, [a])
+      expect((await linha(a)).feed_lote_id).toBeNull()
+      expect((await linha(b)).feed_lote_id).toBeTruthy()
+    })
+
+    it('exige login', async () => {
+      const a = await comprado('SemLogin')
+      await db.query(`select set_config('app.uid','',false)`)
+      try {
+        await expect(lote(null, [{ item_id: a }])).rejects.toThrow('nao_autenticado')
+      } finally {
+        await db.query(`select set_config('app.uid','${U}',false)`)
+      }
+    })
+  })
+
+  describe('feed', () => {
+    it('lote de séries diferentes vira UM card, com os volumes e a visibilidade de cada um', async () => {
+      const [a, b, c] = await trio('Card')
+      const r = (await lote(null, [
+        { item_id: a, nota: 5, critica: 'Obra-prima', critica_spoiler: true },
+        { item_id: b, nota: 3 },
+        { item_id: c },
+      ])).rows[0].r
+      const dono = await doCard(r.lote_id!)
+      expect(dono).toHaveLength(1)
+      expect(dono[0]).toMatchObject({ qtd: 3, serie_nome: null, serie_nota: null, serie_critica: null, proprio: true })
+      const itens = dono[0].lote_itens as { item_id: string; serie_nome: string | null; titulo: string; nota: number | null; critica: string | null; critica_spoiler: boolean }[]
+      expect(itens.map((i) => i.titulo)).toEqual(['Card A 1', 'Card B 7', 'Card Avulso'])
+      expect(itens.map((i) => i.serie_nome)).toEqual(['Card A', 'Card B', null])
+      expect(itens.map((i) => i.nota)).toEqual([5, 3, null])
+      expect(itens[0]).toMatchObject({ critica: 'Obra-prima', critica_spoiler: true })
+      expect(new Set(itens.map((i) => i.item_id))).toEqual(new Set([a, b, c]))
+      // Nenhum dos três aparece como card separado.
+      expect((await feed()).filter((x) => [a, b, c].includes(x.item_id as string) && x.lote_id === null)).toHaveLength(0)
+      // O amigo vê o mesmo card (nota e crítica estão no escopo padrão).
+      await como(OUTRO, async () => {
+        const amigo = await doCard(r.lote_id!)
+        expect(amigo).toHaveLength(1)
+        expect((amigo[0].lote_itens as { nota: number | null }[]).map((i) => i.nota)).toEqual([5, 3, null])
+      })
+    })
+
+    it('escopo sem notas_criticas: o amigo vê as capas e os títulos, mas nenhuma nota nem crítica; crítica privada nunca sai', async () => {
+      const [a, b, c] = await trio('Escopo')
+      const r = (await lote(null, [{ item_id: a, nota: 5, critica: 'Segredo' }, { item_id: b, nota: 2, critica: 'Pública' }, { item_id: c }])).rows[0].r
+      await admin(`update itens set critica_privada = true where id = '${a}'`)
+      await como(OUTRO, async () => {
+        const [card] = await doCard(r.lote_id!)
+        const itens = card.lote_itens as { titulo: string; nota: number | null; critica: string | null }[]
+        expect(itens.find((i) => i.titulo === 'Escopo A 1')).toMatchObject({ nota: 5, critica: null }) // privada: nota sim, crítica não
+        expect(itens.find((i) => i.titulo === 'Escopo B 7')).toMatchObject({ nota: 2, critica: 'Pública' })
+      })
+      await db.query(`select amigos_escopo_atualizar('{colecao,series,lidos}')`)
+      try {
+        await como(OUTRO, async () => {
+          const [card] = await doCard(r.lote_id!)
+          expect(card.qtd).toBe(3)
+          expect(card.nota_media).toBeNull()
+          for (const i of card.lote_itens as { nota: number | null; critica: string | null; critica_spoiler: boolean }[]) {
+            expect(i).toMatchObject({ nota: null, critica: null, critica_spoiler: false })
+          }
+        })
+        // O card do dono segue a mesma regra do card de um volume (0032): a visão vem do escopo, para ele também.
+        const [dono] = await doCard(r.lote_id!)
+        expect((dono.lote_itens as { nota: number | null }[]).map((i) => i.nota)).toEqual([null, null, null])
+      } finally {
+        await db.query(`select amigos_escopo_atualizar('{colecao,series,lidos,notas_criticas}')`)
+      }
+    })
+
+    it('lote de uma obra só segue como o card da série; e o card de lote não engole leitura de fora do lote', async () => {
+      const s = await serie('Uma Obra')
+      const [v1, v2] = [await comprado('UO 1', { serie_id: s, numero_volume: 1 }), await comprado('UO 2', { serie_id: s, numero_volume: 2 })]
+      await lote(null, [{ item_id: v1 }, { item_id: v2 }])
+      const card = (await feed()).filter((x) => x.serie_nome === 'Uma Obra')
+      expect(card).toHaveLength(1)
+      expect(card[0]).toMatchObject({ qtd: 2, lote_id: null, lote_itens: null })
+
+      const [a, b, c] = await trio('Fora')
+      const fora = await comprado('Fora do lote') // marcado como lido do jeito de sempre, no mesmo dia
+      await db.query(`update itens set estado = 'lido' where id = $1`, [fora])
+      await lote(null, [{ item_id: a }, { item_id: b }, { item_id: c }])
+      const posts = await feed()
+      const solto = posts.find((x) => x.item_id === fora)!
+      expect(solto).toMatchObject({ qtd: 1, lote_id: null, lote_itens: null, serie_nome: null })
+      expect(posts.find((x) => x.lote_id !== null && (x.lote_itens as { titulo: string }[]).some((i) => i.titulo === 'Fora A 1'))!.qtd).toBe(3)
+    })
+
+    it('a coluna nova fica no fim: o app antigo lê o mesmo formato', async () => {
+      const { rows } = await db.query<{ column_name: string }>(
+        `select unnest(proargnames[array_length(proargmodes, 1) - 0:]) as column_name from pg_proc where proname = 'feed_listar' and false`
+      )
+      expect(rows).toHaveLength(0)
+      const r = await db.query(`select * from feed_listar() limit 1`)
+      const nomes = r.fields.map((f) => f.name)
+      expect(nomes.slice(-4)).toEqual(['capa_destaque', 'capa_destaque_item', 'lote_id', 'lote_itens'])
+      expect(nomes.slice(0, 22)).toEqual(['item_id', 'dono_id', 'apelido', 'nome_exibicao', 'avatar_url', 'proprio', 'serie_nome', 'titulo', 'numero_volume', 'tipo', 'capa', 'nota', 'critica', 'critica_spoiler', 'lido_em', 'marcado_em', 'qtd', 'curtidas', 'curti', 'comentarios', 'releitura', 'leitura_id'])
+    })
+  })
+
+  describe('interações com o card de lote', () => {
+    it('curtir e comentar valem para o card (item que o representa); o aviso dá a quantidade de volumes', async () => {
+      const [a, b, c] = await trio('Social')
+      const r = (await lote(null, [{ item_id: a }, { item_id: b }, { item_id: c }])).rows[0].r
+      const [card] = await doCard(r.lote_id!)
+      const alvo = card.item_id as string
+      await admin(`delete from notificacoes`)
+      await como(OUTRO, async () => {
+        await db.query(`select feed_curtir($1)`, [alvo])
+        await db.query(`select feed_comentar($1, 'Boa semana de leitura')`, [alvo])
+      })
+      const [c2] = await doCard(r.lote_id!)
+      expect(c2).toMatchObject({ curtidas: 1, comentarios: 1, qtd: 3 })
+      const avisos = (await db.query<Record<string, unknown>>(`select * from notificacoes_listar()`)).rows
+      expect(avisos.map((x) => x.tipo).sort()).toEqual(['comentario', 'curtida'])
+      for (const n of avisos) expect(n).toMatchObject({ item_id: alvo, lote_qtd: 3 })
+      // Aviso de uma leitura comum não tem quantidade.
+      const solto = await comprado('Aviso comum')
+      await db.query(`update itens set estado = 'lido' where id = $1`, [solto])
+      await como(OUTRO, () => db.query(`select feed_curtir($1)`, [solto]))
+      const comum = (await db.query<Record<string, unknown>>(`select * from notificacoes_listar()`)).rows.find((x) => x.item_id === solto)!
+      expect(comum.lote_qtd).toBeNull()
+    })
+
+    it('tirar do feed leva o card inteiro (todos os volumes do lote) e recolocar traz de volta', async () => {
+      const [a, b, c] = await trio('Tirar')
+      const r = (await lote(null, [{ item_id: a }, { item_id: b }, { item_id: c }])).rows[0].r
+      const [card] = await doCard(r.lote_id!)
+      const ids = (await db.query<{ ids: string[] }>(`select feed_ocultar_post($1, true) ids`, [card.item_id])).rows[0].ids
+      expect(new Set(ids)).toEqual(new Set([a, b, c]))
+      expect(await doCard(r.lote_id!)).toHaveLength(0)
+      await como(OUTRO, async () => expect(await doCard(r.lote_id!)).toHaveLength(0))
+      // A nota e a crítica continuam nos itens.
+      expect((await linha(a)).estado).toBe('lido')
+
+      const tirados = (await db.query<Record<string, unknown>>(`select * from feed_ocultos_listar()`)).rows.filter((x) => (x.item_ids as string[]).includes(a))
+      expect(tirados).toHaveLength(1)
+      expect(tirados[0]).toMatchObject({ qtd: 3, serie_nome: null })
+      expect(new Set(tirados[0].item_ids as string[])).toEqual(new Set([a, b, c]))
+
+      await db.query(`select feed_ocultar_varios($1, false)`, [ids])
+      const [volta] = await doCard(r.lote_id!)
+      expect(volta.qtd).toBe(3)
+    })
+
+    it('tirar do feed um volume solto da mesma série continua tirando só o dele (lote não engole o resto)', async () => {
+      const s = await serie('Solto')
+      const v1 = await comprado('Solto 1', { serie_id: s, numero_volume: 1 })
+      const v2 = await comprado('Solto 2', { serie_id: s, numero_volume: 2 })
+      await db.query(`update itens set estado = 'lido' where id = $1`, [v1])
+      await db.query(`update itens set estado = 'lido' where id = $1`, [v2])
+      const ids = (await db.query<{ ids: string[] }>(`select feed_ocultar_post($1, true) ids`, [v1])).rows[0].ids
+      expect(new Set(ids)).toEqual(new Set([v1, v2])) // o card da série de sempre
+    })
+  })
+
+  it('migration: só acrescenta (coluna nova nula, colunas no fim) e exige login', () => {
+    const sql = readFileSync(path.join(PASTA, '0035_li_hoje_lote_no_feed.sql'), 'utf8')
+    expect(sql).toContain('alter table itens add column feed_lote_id uuid;')
+    expect(sql).toContain('revoke all on function feed_listar(int, timestamptz) from public, anon;')
+    expect(sql).toContain('revoke all on function itens_marcar_lidos_lote(date, jsonb) from public, anon;')
+    expect(sql).toContain('grant execute on function itens_marcar_lidos_lote(date, jsonb) to authenticated;')
+    expect(sql).toContain('grant execute on function notificacoes_listar(int, timestamptz) to authenticated;')
+    expect(sql.indexOf('capa_destaque_item uuid,')).toBeLessThan(sql.indexOf('lote_itens jsonb'))
+    expect(sql.indexOf('lida boolean,')).toBeLessThan(sql.indexOf('lote_qtd int'))
+    // Nada de editar o que já existia: só funções recriadas e a coluna nova.
+    expect(sql).not.toMatch(/alter table itens (drop|alter)/)
   })
 })
