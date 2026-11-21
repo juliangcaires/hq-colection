@@ -2,17 +2,19 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BarChart3, BookMarked, FileUp, Heart, House, ListChecks, Newspaper, Layers, LayoutGrid, Plus, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
+import { Bell, BarChart3, BookMarked, FileUp, Heart, House, ListChecks, Newspaper, Layers, LayoutGrid, Plus, Settings, Tags, Trophy, Users, HandHelping } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { estaAtivo } from '@/lib/nav'
 import { Avatar } from '@/components/ui/avatar'
 import type { ContaDoUsuario } from './account-sheet'
+import { SeloDoContador } from './sino'
 import { useQuickAdd } from '@/components/quick-add/quick-add-provider'
 import { Button } from '@/components/ui/button'
 
 const PRINCIPAL = [
   { href: '/', label: 'Início', Icon: House },
   { href: '/feed', label: 'Feed', Icon: Newspaper },
+  { href: '/notificacoes', label: 'Notificações', Icon: Bell },
   { href: '/colecao', label: 'Coleção', Icon: LayoutGrid },
   { href: '/series', label: 'Séries', Icon: Layers },
   { href: '/desejos', label: 'Desejos', Icon: Heart },
@@ -42,6 +44,7 @@ function Item({ href, label, Icon, pathname }: (typeof PRINCIPAL)[number] & { pa
     >
       <Icon className="size-[18px]" aria-hidden />
       {label}
+      {href === '/notificacoes' && <SeloDoContador className="ml-auto" />}
     </Link>
   )
 }

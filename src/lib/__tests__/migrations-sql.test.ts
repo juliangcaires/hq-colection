@@ -30,7 +30,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume', '0033_notificacoes']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -3847,6 +3847,259 @@ describe('melhor volume da série (migration 0030)', () => {
   it('a 0030 não toca nas migrations 0001–0029 (nenhuma menção ao nome novo)', () => {
     for (const f of ['0023_ranking_amigos', '0024_spoiler_na_critica', '0029_leituras_blindar_update']) {
       expect(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8')).not.toContain('melhor_da_serie')
+    }
+  })
+})
+
+describe('notificações (migration 0033)', () => {
+  // Ana (U, dona dos posts), Beto (amigo), Caio (desconhecido) e Dani (pede amizade a Ana).
+  const CAIO = '88888888-8888-8888-8888-888888888888'
+  const DANI = '66666666-6666-6666-6666-666666666666'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const lido = async (titulo: string) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo, tipo: 'hq', estado: 'lido', prioridade: 0 })])).rows[0].id
+  const lista = async () => (await db.query<Record<string, unknown>>(`select * from notificacoes_listar()`)).rows
+  const naoLidas = async () => (await db.query<{ n: number }>(`select notificacoes_contar_nao_lidas() n`)).rows[0].n
+  const doTipo = async (tipo: string) => (await lista()).filter((r) => r.tipo === tipo)
+  /** Conta as linhas como superusuário: como `authenticated` a RLS sem política esconde tudo. */
+  const total = async () => {
+    await db.query(`reset role`)
+    try {
+      return Number((await db.query<{ n: string }>(`select count(*) n from notificacoes`)).rows[0].n)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}'), ('${DANI}') on conflict do nothing;
+      delete from notificacoes; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, nome_exibicao) values ('${U}', 'ana', 'Ana'), ('${OUTRO}', 'beto', 'Beto'), ('${CAIO}', 'caio', null), ('${DANI}', 'dani', 'Dani');
+    `)
+    // Beto é amigo de Ana (aceito); o pedido dele já gerou aviso para Ana, que limpamos para os testes de feed.
+    const idBeto = await como(OUTRO, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id)
+    await db.query(`select amizade_responder($1, true)`, [idBeto])
+    await db.query(`select feed_configurar(true)`)
+    await admin(`delete from notificacoes`)
+  })
+
+  it('as tabelas não têm acesso direto e ninguém lê o aviso alheio', async () => {
+    const id = await lido('Decomposição')
+    await como(OUTRO, () => db.query(`select feed_curtir($1)`, [id]))
+    expect(await naoLidas()).toBe(1)
+    // O grant em bloco do teste devolve privilégio de tabela; o que vale é a RLS sem política (nenhuma linha).
+    expect((await db.query(`select * from notificacoes`)).rows).toHaveLength(0)
+    // Beto (o autor) e Caio não veem o aviso de Ana.
+    await como(OUTRO, async () => {
+      expect(await lista()).toHaveLength(0)
+      expect(await naoLidas()).toBe(0)
+    })
+    await como(CAIO, async () => expect(await lista()).toHaveLength(0))
+    // E não conseguem marcá-lo como lido.
+    await como(OUTRO, () => db.query(`select notificacoes_marcar_lidas(null)`))
+    expect(await naoLidas()).toBe(1)
+    await db.query(`select notificacoes_marcar_lidas(null)`)
+    await admin(`delete from notificacoes; delete from feed_curtidas`)
+  })
+
+  it('curtida: uma só por autor e item, a própria não notifica, descurtir remove a não lida', async () => {
+    const id = await lido('Curtida')
+    await db.query(`select feed_curtir($1)`, [id]) // a própria
+    expect(await total()).toBe(0)
+    await como(OUTRO, async () => {
+      await db.query(`select feed_curtir($1)`, [id])
+      await db.query(`select feed_curtir($1)`, [id]) // repetida
+    })
+    const [n] = await doTipo('curtida')
+    expect(await total()).toBe(1)
+    expect(n).toMatchObject({ autor_apelido: 'beto', autor_nome: 'Beto', titulo: 'Curtida', lida: false })
+    // Só ids e nomes: nenhuma coluna de nota, crítica ou texto.
+    expect(Object.keys(n).sort()).toEqual(['autor_apelido', 'autor_nome', 'criado_em', 'id', 'item_id', 'lida', 'numero_volume', 'serie_nome', 'tipo', 'titulo'])
+    // Descurtir remove a não lida; curtir de novo cria outra (uma só).
+    await como(OUTRO, () => db.query(`select feed_descurtir($1)`, [id]))
+    expect(await total()).toBe(0)
+    await como(OUTRO, () => db.query(`select feed_curtir($1)`, [id]))
+    expect(await total()).toBe(1)
+    // Depois de lida, descurtir e curtir de novo NÃO gera aviso novo e a lida fica.
+    await db.query(`select notificacoes_marcar_lidas(null)`)
+    expect(await naoLidas()).toBe(0)
+    await como(OUTRO, async () => {
+      await db.query(`select feed_descurtir($1)`, [id])
+      await db.query(`select feed_curtir($1)`, [id])
+    })
+    expect(await total()).toBe(1)
+    expect(await naoLidas()).toBe(0)
+  })
+
+  it('comentário: um por comentário, sem o texto; apagar remove a não lida; desconhecido não consegue comentar', async () => {
+    const id = await lido('Conversa')
+    await db.query(`select feed_comentar($1, 'eu mesma')`, [id])
+    expect(await total()).toBe(1) // só a curtida do teste anterior (lida)
+    const c1 = await como(OUTRO, async () => (await db.query<{ c: string }>(`select feed_comentar($1, 'Segredo do final!') c`, [id])).rows[0].c)
+    await como(OUTRO, () => db.query(`select feed_comentar($1, 'Outro')`, [id]))
+    const novos = await doTipo('comentario')
+    expect(novos).toHaveLength(2)
+    expect(JSON.stringify(novos)).not.toContain('Segredo')
+    expect(await naoLidas()).toBe(2)
+    await como(OUTRO, () => db.query(`select feed_apagar_comentario($1)`, [c1]))
+    expect(await doTipo('comentario')).toHaveLength(1)
+    // O comentário já lido fica como histórico mesmo se apagado.
+    await db.query(`select notificacoes_marcar_lidas(null)`)
+    const [resto] = await como(OUTRO, async () => (await db.query<{ id: string }>(`select id from feed_comentarios_listar($1) where meu`, [id])).rows)
+    await como(OUTRO, () => db.query(`select feed_apagar_comentario($1)`, [resto.id]))
+    expect(await doTipo('comentario')).toHaveLength(1)
+    await como(CAIO, () => expect(db.query(`select feed_comentar($1, 'oi')`, [id])).rejects.toThrow('item_nao_encontrado'))
+    expect(await doTipo('comentario')).toHaveLength(1)
+  })
+
+  it('só notifica quem podia ver o item e some se o item sai do feed', async () => {
+    const id = await lido('Oculto depois')
+    await como(OUTRO, () => db.query(`select feed_curtir($1)`, [id]))
+    expect(await naoLidas()).toBe(1)
+    await db.query(`select feed_ocultar($1, true)`, [id])
+    expect(await naoLidas()).toBe(0)
+    expect((await lista()).map((r) => r.titulo)).not.toContain('Oculto depois')
+    await db.query(`select feed_ocultar($1, false)`, [id])
+    expect(await naoLidas()).toBe(1)
+    // Item oculto: o amigo nem consegue curtir, então nada é criado.
+    const escondido = await lido('Escondido')
+    await db.query(`select feed_ocultar($1, true)`, [escondido])
+    const antes = await total()
+    await como(OUTRO, () => expect(db.query(`select feed_curtir($1)`, [escondido])).rejects.toThrow('item_nao_encontrado'))
+    expect(await total()).toBe(antes)
+    // Ex-amigo: o aviso antigo some da lista.
+    const idAmizade = (await db.query<{ amizade_id: string }>(`select amizade_id from amigos_listar() where apelido = 'beto'`)).rows[0].amizade_id
+    await db.query(`select amizade_desfazer($1)`, [idAmizade])
+    expect(await naoLidas()).toBe(0)
+    const novo = await como(OUTRO, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id)
+    await db.query(`select amizade_responder($1, true)`, [novo])
+    expect(await naoLidas()).toBe(1)
+  })
+
+  it('amizade: pedido avisa o destinatário, aceite avisa quem pediu, recusa remove o aviso, convite avisa quem o gerou', async () => {
+    await admin(`delete from notificacoes`)
+    const pedido = await como(DANI, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id)
+    const [p] = await doTipo('amizade_pedido')
+    expect(p).toMatchObject({ autor_apelido: 'dani', item_id: null, lida: false })
+    await como(DANI, async () => expect(await lista()).toHaveLength(0)) // quem pediu não recebe
+    // Recusar remove o aviso não lido.
+    await db.query(`select amizade_responder($1, false)`, [pedido])
+    expect(await total()).toBe(0)
+    // Pede de novo e Ana aceita: o aviso do pedido sai e Dani recebe "aceitou".
+    const pedido2 = await como(DANI, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id)
+    expect(await doTipo('amizade_pedido')).toHaveLength(1)
+    await db.query(`select amizade_responder($1, true)`, [pedido2])
+    expect(await doTipo('amizade_pedido')).toHaveLength(0)
+    await como(DANI, async () => {
+      const [a] = await doTipo('amizade_aceita')
+      expect(a).toMatchObject({ autor_apelido: 'ana', lida: false })
+      expect(await naoLidas()).toBe(1)
+    })
+    // Convite por link: a amizade nasce aceita e quem gerou o convite (Caio) é avisado.
+    const codigo = await como(CAIO, async () => (await db.query<{ c: string }>(`select convite_gerar() c`)).rows[0].c)
+    await db.query(`select convite_aceitar($1)`, [codigo])
+    await como(CAIO, async () => expect((await doTipo('amizade_aceita'))[0]).toMatchObject({ autor_apelido: 'ana' }))
+    // "Pedir de volta" também é um aceite: Ana pede a Caio? Já são amigos; usa outro par (Beto ↔ Dani).
+    const bd = await como(OUTRO, async () => (await db.query<{ id: string }>(`select amizade_solicitar('dani') id`)).rows[0].id)
+    await como(DANI, async () => expect(await doTipo('amizade_pedido')).toHaveLength(1))
+    await como(DANI, () => db.query(`select amizade_solicitar('beto')`)) // aceita pedindo de volta
+    await como(DANI, async () => expect(await doTipo('amizade_pedido')).toHaveLength(0))
+    await como(OUTRO, async () => expect((await doTipo('amizade_aceita')).map((r) => r.autor_apelido)).toContain('dani'))
+    expect(bd).toBeTruthy()
+  })
+
+  it('marcar como lida: por ids ou todas, só as próprias; contador acompanha', async () => {
+    await admin(`delete from notificacoes`)
+    const a = await lido('Lida 1')
+    const b = await lido('Lida 2')
+    await como(OUTRO, async () => {
+      await db.query(`select feed_curtir($1)`, [a])
+      await db.query(`select feed_curtir($1)`, [b])
+    })
+    expect(await naoLidas()).toBe(2)
+    const [primeira] = await lista()
+    await como(OUTRO, async () => expect((await db.query<{ n: number }>(`select notificacoes_marcar_lidas(array[$1]::uuid[]) n`, [primeira.id])).rows[0].n).toBe(0))
+    expect(await naoLidas()).toBe(2)
+    expect((await db.query<{ n: number }>(`select notificacoes_marcar_lidas(array[$1]::uuid[]) n`, [primeira.id])).rows[0].n).toBe(1)
+    expect(await naoLidas()).toBe(1)
+    expect((await db.query<{ n: number }>(`select notificacoes_marcar_lidas(null) n`)).rows[0].n).toBe(1)
+    expect(await naoLidas()).toBe(0)
+    // Lidas há mais de 90 dias são apagadas na próxima marcação.
+    await admin(`update notificacoes set lida_em = now() - interval '91 days'`)
+    await db.query(`select notificacoes_marcar_lidas(null)`)
+    expect(await total()).toBe(0)
+  })
+
+  it('apagar a conta ou o item do autor leva os avisos junto; sem login nada funciona', async () => {
+    const id = await lido('Efêmero')
+    await como(OUTRO, () => db.query(`select feed_curtir($1)`, [id]))
+    expect(await total()).toBe(1)
+    await admin(`delete from itens where id = '${id}'`)
+    expect(await total()).toBe(0)
+    await db.query(`select set_config('app.uid','',false)`)
+    expect(await lista()).toHaveLength(0)
+    expect(await naoLidas()).toBe(0)
+    await expect(db.query(`select notificacoes_marcar_lidas(null)`)).rejects.toThrow('nao_autenticado')
+    await db.query(`select set_config('app.uid','${U}',false)`)
+  })
+
+  describe('Web Push: assinaturas e preferências', () => {
+    const assinar = (endpoint: string, ua = 'iPhone') => db.query(`select push_assinar($1, 'chave-p256dh', 'chave-auth', $2)`, [endpoint, ua])
+    const meus = async () => (await db.query<{ endpoint: string }>(`select endpoint from push_assinaturas order by endpoint`)).rows.map((r) => r.endpoint)
+
+    it('cada um vê só as suas; reassinar o mesmo aparelho não duplica; endpoint inválido é recusado', async () => {
+      await admin(`delete from push_assinaturas; delete from push_preferencias`)
+      await assinar('https://push.exemplo/a')
+      await assinar('https://push.exemplo/a')
+      await como(OUTRO, async () => {
+        await assinar('https://push.exemplo/b')
+        expect(await meus()).toEqual(['https://push.exemplo/b'])
+      })
+      expect(await meus()).toEqual(['https://push.exemplo/a'])
+      await expect(assinar('http://inseguro/x')).rejects.toThrow('push_assinatura_invalida')
+      await expect(db.query(`select push_assinar('https://x/y', '', 'a', null)`)).rejects.toThrow('push_assinatura_invalida')
+      // Mesmo aparelho, outra conta: a assinatura muda de dono.
+      await como(OUTRO, () => assinar('https://push.exemplo/a'))
+      expect(await meus()).toEqual([])
+      // Desassinar só mexe na própria.
+      await db.query(`select push_desassinar('https://push.exemplo/b')`)
+      await como(OUTRO, async () => expect(await meus()).toEqual(['https://push.exemplo/a', 'https://push.exemplo/b']))
+      await como(OUTRO, () => db.query(`select push_desassinar('https://push.exemplo/b')`))
+      await como(OUTRO, async () => expect(await meus()).toEqual(['https://push.exemplo/a']))
+    })
+
+    it('preferências: padrão ligado ao assinar; cada pessoa só lê e altera as suas', async () => {
+      await admin(`delete from push_assinaturas; delete from push_preferencias`)
+      await assinar('https://push.exemplo/c')
+      const { rows } = await db.query<Record<string, boolean>>(`select * from push_preferencias`)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ notif_push_curtidas: true, notif_push_comentarios: true, notif_push_amizades: true })
+      await db.query(`select push_preferencias_definir(false, true, false)`)
+      expect((await db.query<Record<string, boolean>>(`select * from push_preferencias`)).rows[0]).toMatchObject({ notif_push_curtidas: false, notif_push_comentarios: true, notif_push_amizades: false })
+      await como(OUTRO, async () => expect((await db.query(`select * from push_preferencias`)).rows).toHaveLength(0))
+      await expect(db.query(`select push_preferencias_definir(null, true, true)`)).rejects.toThrow('valor_invalido')
+    })
+  })
+
+  it('a 0033 não altera as migrations anteriores (nenhuma menção ao nome novo)', () => {
+    for (const f of ['0014_amigos_presentes_emprestimos', '0018_feed_amigos', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume']) {
+      expect(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8')).not.toContain('notificacoes')
     }
   })
 })

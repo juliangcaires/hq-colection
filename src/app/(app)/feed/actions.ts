@@ -7,6 +7,7 @@ import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
 import { lancarErroRpc } from '@/lib/rpc'
 import { limiteComentarios } from '@/lib/limite-taxa'
+import { dispararPush } from '@/lib/push-servidor'
 import { carregarComentarios, carregarFeed, MAX_COMENTARIO, TAMANHO_PAGINA_FEED } from '@/lib/feed'
 
 const idSchema = z.string().uuid()
@@ -36,9 +37,11 @@ export async function definirFeedAtivo(ativo: boolean) {
 
 async function alternarCurtidaImpl(item: string, curtir: boolean) {
   const id = idSchema.parse(item)
-  const { supabase } = await contexto()
+  const { supabase, userId } = await contexto()
   const { error } = await supabase.rpc(curtir ? 'feed_curtir' : 'feed_descurtir', { p_item: id })
   if (error) lancarErroRpc(error)
+  // O banco já criou (ou não) o aviso; o push só sai se ele existe e é novo. Nunca derruba a curtida.
+  if (curtir) await dispararPush({ autorId: userId, tipos: ['curtida'], itemId: id })
 }
 export async function alternarCurtida(item: string, curtir: boolean) {
   return executar(() => alternarCurtidaImpl(item, curtir))
@@ -49,8 +52,9 @@ async function comentarImpl(item: string, texto: string) {
   const t = z.string().trim().min(1, 'Escreva alguma coisa para comentar.').max(MAX_COMENTARIO, `O comentário passa de ${MAX_COMENTARIO} caracteres.`).parse(texto)
   const { supabase, userId } = await contexto()
   if (!limiteComentarios.tentar(userId).ok) throw new ErroDeNegocio('Você está comentando rápido demais. Espere um minuto.')
-  const { error } = await supabase.rpc('feed_comentar', { p_item: id, p_texto: t })
+  const { data: comentarioId, error } = await supabase.rpc('feed_comentar', { p_item: id, p_texto: t })
   if (error) lancarErroRpc(error)
+  if (typeof comentarioId === 'string') await dispararPush({ autorId: userId, tipos: ['comentario'], itemId: id, refId: comentarioId })
 }
 export async function comentar(item: string, texto: string) {
   return executar(() => comentarImpl(item, texto))

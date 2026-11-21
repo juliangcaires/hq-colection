@@ -54,7 +54,7 @@ Antes de subir o código da Fase 4: aplicar `0013` e `0014` (as telas de amigos/
 - Apelidos `convite`, `comparar` e `capa` são reservados (colidiriam com rotas).
 - O limite de requisições é por instância (memória do processo), não global; em hospedagem sem servidor o teto efetivo pode ser maior. A segurança real vem do token de 244 bits e da regra de visibilidade no banco.
 - Presente: o amigo só reserva desejo do dono se o escopo de amigos incluir `desejos`.
-- Empréstimo atrasado: só indicação na tela (lista e Início); não há notificação push.
+- Empréstimo atrasado: só indicação na tela (lista e Início); não há notificação push. (Atualização 21/11/2026: curtida, comentário e amizade passaram a ter sininho e Web Push — ver `docs/notificacoes-push.md`; empréstimo atrasado segue sem aviso.)
 - Pontos de privacidade deixados de fora de propósito: `series.observacoes`, `prioridade`, preço, loja e data de aquisição não existem em nenhum tipo devolvido a terceiros.
 
 ## Pendências

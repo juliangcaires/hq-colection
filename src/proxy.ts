@@ -60,7 +60,9 @@ export async function proxy(request: NextRequest) {
 export const config = {
   // manifest.webmanifest (via app/manifest.ts) precisa ficar público: o
   // navegador o busca sem sessão para decidir se oferece "Instalar app".
+  // sw.js (service worker do Web Push) também: o navegador o busca por conta própria para checar atualização,
+  // e ele não tem nada secreto (só recebe o aviso e abre uma URL do app).
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
