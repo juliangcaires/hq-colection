@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Search } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
+import { Sino } from './sino'
 import { AccountSheet, type ContaDoUsuario } from './account-sheet'
 
 export function AppHeader({ conta: dados, signOut }: { conta: ContaDoUsuario; signOut: () => Promise<void> }) {
@@ -22,6 +23,7 @@ export function AppHeader({ conta: dados, signOut }: { conta: ContaDoUsuario; si
         >
           <Search className="size-5" aria-hidden />
         </Link>
+        <Sino />
         <button
           type="button"
           onClick={() => setConta(true)}
