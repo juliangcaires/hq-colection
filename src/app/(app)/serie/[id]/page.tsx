@@ -6,7 +6,7 @@ import { calcularVolumesFaltantes, serieEstaCompleta, serieEstaLida } from '@/li
 import { uuidOuNull } from '@/lib/filtros-url'
 import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
-import { SerieForm } from '@/components/series/serie-form'
+import { SerieResumo } from '@/components/series/serie-resumo'
 import { AdicionarVolumesDialog } from '@/components/series/adicionar-volumes-dialog'
 import { BuscarCapasFaltantes } from '@/components/series/buscar-capas-faltantes'
 import { CriarVolumesDialog } from '@/components/series/criar-volumes-dialog'
@@ -168,9 +168,8 @@ export default async function SeriePage({ params }: { params: Promise<{ id: stri
 
       <AmigosDaObra avaliacoes={amigos} rotulo="série" />
 
-      <SerieForm
-        key={JSON.stringify([serie.updated_at, serie.nome, serie.tipo, serie.total_volumes, serie.em_publicacao, serie.tem_numeracao, serie.observacoes, serie.critica_privada, tagIds])}
-        serie={{ ...serie, tagIds }} allTags={allTags ?? []} />
+      {/* O formulário só existe dentro do modal "Editar" e remonta a cada abertura, com os valores do banco. */}
+      <SerieResumo serie={{ ...serie, tagIds }} allTags={allTags ?? []} />
 
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
