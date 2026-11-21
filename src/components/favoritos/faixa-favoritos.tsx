@@ -1,21 +1,21 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import type { FavoritoSerie } from '@/lib/favoritos-series'
+import type { Favorito } from '@/lib/favoritos'
 import { cn } from '@/lib/utils'
 
 /**
- * Faixa de até 4 capas das séries favoritas (como os 4 filmes favoritos do Letterboxd). Sem favoritos, não renderiza
- * nada. Quatro colunas em qualquer largura: a capa encolhe no celular em vez de quebrar linha.
+ * Faixa de até 4 capas dos favoritos, séries e volumes únicos misturados (como os 4 filmes favoritos do Letterboxd).
+ * Sem favoritos, não renderiza nada. Quatro colunas em qualquer largura: a capa encolhe no celular em vez de quebrar linha.
  */
 export function FaixaFavoritos({
   favoritos,
-  hrefDaSerie,
-  titulo = 'Séries favoritas',
+  hrefDoFavorito,
+  titulo = 'Favoritos',
   className,
 }: {
-  favoritos: FavoritoSerie[]
-  /** Link de cada série (somente leitura: a página da série na vitrine, ou a própria série). */
-  hrefDaSerie?: (id: string) => string
+  favoritos: Favorito[]
+  /** Link de cada favorito (somente leitura); `null` deixa a capa sem link (ex.: volume único que o amigo não tem como abrir). */
+  hrefDoFavorito?: (favorito: Favorito) => string | null
   titulo?: string
   className?: string
 }) {
@@ -36,10 +36,11 @@ export function FaixaFavoritos({
               )}
             </div>
           )
+          const href = hrefDoFavorito?.(f) ?? null
           return (
             <li key={f.id} className="flex min-w-0 flex-col gap-1">
-              {hrefDaSerie ? (
-                <Link href={hrefDaSerie(f.id)} title={f.nome} className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {href ? (
+                <Link href={href} title={f.nome} className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {capa}
                 </Link>
               ) : (

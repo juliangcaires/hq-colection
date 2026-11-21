@@ -8,7 +8,7 @@ import { ConfiguracaoPerfil } from '@/components/configuracoes/configuracao-perf
 import { BackButton } from '@/components/ui/back-button'
 import { urlDeAvatarValida } from '@/lib/avatar'
 import type { SecaoCompartilhavel } from '@/lib/compartilhamento'
-import { carregarCandidatas, carregarMeusFavoritos } from '@/lib/favoritos-series'
+import { carregarCandidatos, carregarMeusFavoritos } from '@/lib/favoritos'
 import { PREFERENCIAS_PADRAO, pushDisponivel, vapidDoAmbiente } from '@/lib/push'
 
 export const metadata = { title: 'Configurações' }
@@ -18,12 +18,12 @@ export default async function ConfiguracoesPage() {
   const { data: claims } = await supabase.auth.getClaims()
   const userId = claims?.claims.sub
 
-  const [{ data: perfil }, { data: link }, favoritos, candidatas, { data: pushPrefs }] = userId
+  const [{ data: perfil }, { data: link }, favoritos, candidatos, { data: pushPrefs }] = userId
     ? await Promise.all([
         supabase.from('perfis').select('apelido, nome_exibicao, contribuir_capas, avatar_url, feed_ativo, escopo_amigos').eq('user_id', userId).maybeSingle(),
         supabase.from('compartilhamentos').select('token, escopo').eq('user_id', userId).is('revogado_em', null).maybeSingle(),
         carregarMeusFavoritos(supabase),
-        carregarCandidatas(supabase),
+        carregarCandidatos(supabase),
         supabase.from('push_preferencias').select('notif_push_curtidas, notif_push_comentarios, notif_push_amizades').eq('user_id', userId).maybeSingle(),
       ])
     : [{ data: null }, { data: null }, [], [], { data: null }]
@@ -36,7 +36,12 @@ export default async function ConfiguracoesPage() {
       <BackButton />
       <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">Configurações</h1>
       <ConfiguracaoPerfil apelidoInicial={perfil?.apelido ?? ''} nomeInicial={perfil?.nome_exibicao ?? ''} avatarInicial={urlDeAvatarValida(perfil?.avatar_url)} />
-      <ConfiguracaoFavoritos favoritosIniciais={favoritos} candidatas={candidatas} amigosVeemSeries={(perfil?.escopo_amigos ?? []).includes('series')} />
+      <ConfiguracaoFavoritos
+        favoritosIniciais={favoritos}
+        candidatos={candidatos}
+        amigosVeemSeries={(perfil?.escopo_amigos ?? []).includes('series')}
+        amigosVeemColecao={(perfil?.escopo_amigos ?? []).includes('colecao')}
+      />
       <ConfiguracaoFeed ativoInicial={perfil?.feed_ativo === true} />
       <ConfiguracaoNotificacoes chavePublica={chavePush} preferenciasIniciais={{ curtidas: prefs.notif_push_curtidas, comentarios: prefs.notif_push_comentarios, amizades: prefs.notif_push_amizades }} />
       <ConfiguracaoLink

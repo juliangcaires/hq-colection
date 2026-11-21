@@ -7,8 +7,10 @@ import {
   moverFavorito,
   podeAdicionar,
   removerFavorito,
-  seriesDoDono,
-} from '../favoritos-series'
+  favoritosDoDono,
+  paraSalvar,
+  ROTULO_DA_ORIGEM,
+} from '../favoritos'
 
 const s = (id: string, nome = id) => ({ id, nome })
 
@@ -90,13 +92,65 @@ describe('leitura das funções SQL', () => {
     expect(favoritosDaVitrine(cinco, { tipo: 'amigo', apelido: 'ana' })).toHaveLength(4)
   })
 
+  it('a origem vem do banco: avulso é volume único; sem origem (função antiga) é série', () => {
+    const fonte = { tipo: 'amigo', apelido: 'ana' } as const
+    const f = favoritosDaVitrine(
+      [
+        { origem: 'avulso', id: 'i', nome: 'Batman: Silêncio 2', tipo: 'hq', capa: null, posicao: 1 },
+        { origem: 'serie', id: 's', nome: 'Berserk', tipo: 'manga', capa: null, posicao: 2 },
+        { id: 'x', nome: 'Antiga', tipo: 'hq', capa: null, posicao: 3 },
+        { origem: 'qualquer', id: 'y', nome: 'Estranha', tipo: 'hq', capa: null, posicao: 4 },
+      ],
+      fonte
+    )
+    expect(f.map((x) => x.origem)).toEqual(['avulso', 'serie', 'serie', 'serie'])
+    expect(favoritosDoDono([{ origem: 'avulso', id: 'i', nome: 'N', tipo: 'hq', capa: null, posicao: 1 }])[0].origem).toBe('avulso')
+  })
+
   it('dono: capa privada vira /api/capa/<arquivo>; sem capa fica null', () => {
-    const f = seriesDoDono([
+    const f = favoritosDoDono([
       { id: 'a', nome: 'A', tipo: 'hq', capa: 'u1/arquivo.jpg', posicao: 1 },
       { id: 'b', nome: 'B', tipo: 'hq', capa: null, posicao: 2 },
     ])
     expect(f[0].capa).toBe('/api/capa/arquivo.jpg')
     expect(f[1].capa).toBeNull()
-    expect(seriesDoDono(undefined)).toEqual([])
+    expect(favoritosDoDono(undefined)).toEqual([])
+  })
+})
+
+describe('mistura de séries e avulsos', () => {
+  const serie = (id: string) => ({ origem: 'serie' as const, id, nome: id })
+  const avulso = (id: string) => ({ origem: 'avulso' as const, id, nome: id })
+
+  it('o limite de 4 vale no total, qualquer que seja a mistura', () => {
+    const tres = [serie('s1'), avulso('a1'), serie('s2')]
+    expect(podeAdicionar(tres)).toBe(true)
+    const quatro = adicionarFavorito(tres, avulso('a2'))
+    expect(quatro.map((x) => x.id)).toEqual(['s1', 'a1', 's2', 'a2'])
+    expect(podeAdicionar(quatro)).toBe(false)
+    expect(adicionarFavorito(quatro, serie('s3'))).toHaveLength(4)
+    expect(adicionarFavorito(quatro, avulso('a3'))).toHaveLength(4)
+  })
+
+  it('reordena e remove sem distinguir o tipo', () => {
+    const lista = [avulso('a1'), serie('s1'), avulso('a2')]
+    expect(moverFavorito(lista, 'a2', -1).map((x) => x.id)).toEqual(['a1', 'a2', 's1'])
+    expect(removerFavorito(lista, 's1').map((x) => x.id)).toEqual(['a1', 'a2'])
+  })
+
+  it('a busca acha série e volume único pelo nome, sem acento', () => {
+    const todos = [{ ...serie('s1'), nome: 'Batman' }, { ...avulso('a1'), nome: 'Batman: Silêncio 2 - Edição Encadernada' }, { ...avulso('a2'), nome: 'Maus' }]
+    expect(buscarCandidatas(todos, 'silencio').map((x) => x.id)).toEqual(['a1'])
+    expect(buscarCandidatas(todos, 'batman').map((x) => x.id)).toEqual(['s1', 'a1'])
+    expect(buscarCandidatas(todos, 'batman', [todos[0]]).map((x) => x.id)).toEqual(['a1'])
+  })
+
+  it('para gravar: série vira "serie" e volume único vira "item", na ordem', () => {
+    expect(paraSalvar([avulso('a1'), serie('s1')])).toEqual([{ tipo: 'item', id: 'a1' }, { tipo: 'serie', id: 's1' }])
+    expect(paraSalvar([])).toEqual([])
+  })
+
+  it('rótulos do tipo', () => {
+    expect(ROTULO_DA_ORIGEM).toEqual({ serie: 'Série', avulso: 'Volume único' })
   })
 })

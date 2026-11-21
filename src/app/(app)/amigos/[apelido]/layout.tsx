@@ -30,7 +30,8 @@ export default async function LayoutDoAmigo({ children, params }: { children: Re
             { href: `${base}/comparar`, rotulo: 'Comparar' },
           ]} />
       </header>
-      <FaixaFavoritos favoritos={favoritos} hrefDaSerie={(id) => `${base}/serie/${id}`} />
+      {/* Série abre a página da série na vitrine do amigo. Volume único não tem página própria na vitrine (a página do item é só do dono), então fica sem link. */}
+      <FaixaFavoritos favoritos={favoritos} hrefDoFavorito={(f) => (f.origem === 'serie' ? `${base}/serie/${f.id}` : null)} />
       {children}
     </div>
   )
