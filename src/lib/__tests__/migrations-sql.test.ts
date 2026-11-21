@@ -30,7 +30,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume', '0033_notificacoes', '0034_push_endpoint_e_aviso_de_ex_amigo', '0035_li_hoje_lote_no_feed', '0036_favoritos_com_volumes_avulsos']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume', '0033_notificacoes', '0034_push_endpoint_e_aviso_de_ex_amigo', '0035_li_hoje_lote_no_feed', '0036_favoritos_com_volumes_avulsos', '0037_favoritos_no_link_publico']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -3288,6 +3288,222 @@ describe('favoritos com volumes avulsos (migration 0036)', () => {
       expect(await meusSeries()).toEqual([{ nome: 'Akira', posicao: 1 }, { nome: 'Berserk', posicao: 2 }])
       await salvarSeries([])
       expect(await meus()).toEqual([])
+    })
+  })
+})
+
+describe('favoritos do cenário real (4 mistos) no perfil do amigo e no link público (migration 0037)', () => {
+  // Ana (U) é a dona: 2 séries e 2 volumes únicos favoritos, em ordem misturada. Beto (OUTRO) é amigo aceito dela.
+  const PADRAO = ['colecao', 'series', 'lidos', 'notas_criticas']
+  const HASH = 'd'.repeat(64)
+  const ARQ_AVULSO = '22222222-3333-4444-5555-666666666666-1700000000000.jpg'
+  const ARQ_SERIE = '33333333-4444-5555-6666-777777777777-1700000000001.jpg'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const comoAnon = async <T,>(fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','',false)`)
+    await db.query(`reset role`)
+    await db.query(`set role anon`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`reset role`)
+      await db.query(`set role authenticated`)
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  type Linha = { origem: string; id: string; nome: string; tipo: string; capa: string | null; posicao: number }
+  const doAmigo = async () => (await db.query<Linha>(`select * from amigo_favoritos('ana')`)).rows
+  const doLink = async (token: string) => (await db.query<Linha>(`select * from link_favoritos($1)`, [token])).rows
+  const gerar = async (escopo: string[]) => (await db.query<{ t: string }>(`select compartilhamento_gerar($1::text[]) t`, [escopo])).rows[0].t
+  const resumo = (l: Linha[]) => l.map((x) => `${x.posicao}:${x.origem}:${x.nome}`)
+  const TODOS = ['1:avulso:Maus', '2:serie:Berserk', '3:avulso:Watchmen', '4:serie:Akira']
+  const SO_SERIES = ['2:serie:Berserk', '4:serie:Akira']
+  const SO_AVULSOS = ['1:avulso:Maus', '3:avulso:Watchmen']
+  const ids: { berserk: string; akira: string; maus: string; watchmen: string } = { berserk: '', akira: '', maus: '', watchmen: '' }
+
+  beforeAll(async () => {
+    await admin(`
+      grant usage on schema public to anon;
+      delete from compartilhamentos; delete from amizades; delete from itens; delete from series; delete from perfis;
+    `)
+    // Sem `escopo_amigos`: vale o padrão do banco (a configuração de quem nunca mexeu em "Compartilhamento").
+    await admin(`insert into perfis(user_id, apelido) values ('${U}', 'ana'), ('${OUTRO}', 'beto');`)
+    const amizade = (await como(OUTRO, () => db.query<{ id: string }>(`select amizade_solicitar('ana') id`))).rows[0].id
+    await db.query(`select amizade_responder($1, true)`, [amizade])
+
+    const mkSerie = async (nome: string, capa: string) => {
+      const { rows } = await db.query<{ id: string }>(`insert into series(user_id, nome, tipo) values ($1, $2, 'manga') returning id`, [U, nome])
+      await db.query(`insert into itens(user_id, serie_id, titulo, numero_volume, estado, capa_url, tipo, preco, loja) values ($1, $2, $3, 1, 'comprado', $4, 'manga', 49.9, 'Amazon')`, [U, rows[0].id, `${nome} 1`, capa])
+      return rows[0].id
+    }
+    const mkAvulso = async (titulo: string, estado: string, capa: string) =>
+      (await db.query<{ id: string }>(
+        `insert into itens(user_id, titulo, estado, capa_url, tipo, nota, critica, preco, loja) values ($1, $2, $3, $4, 'hq', 4.5, 'crítica secreta', 79.9, 'Loja Secreta') returning id`,
+        [U, titulo, estado, capa]
+      )).rows[0].id
+    ids.berserk = await mkSerie('Berserk', `${U}/${ARQ_SERIE}`)
+    ids.akira = await mkSerie('Akira', `pub/${HASH}.jpg`)
+    ids.maus = await mkAvulso('Maus', 'comprado', `pub/${HASH}.jpg`)
+    ids.watchmen = await mkAvulso('Watchmen', 'lido', `${U}/${ARQ_AVULSO}`)
+    await db.query(`select favoritos_salvar($1::jsonb)`, [JSON.stringify([
+      { tipo: 'item', id: ids.maus }, { tipo: 'serie', id: ids.berserk }, { tipo: 'item', id: ids.watchmen }, { tipo: 'serie', id: ids.akira },
+    ])])
+  })
+
+  describe('perfil do amigo (amigo_favoritos) com o cenário do Julian', () => {
+    it('o escopo padrão do banco é colecao, series, lidos e notas_criticas', async () => {
+      const { rows } = await db.query<{ escopo_amigos: string[] }>(`select escopo_amigos from perfis where user_id = $1`, [U])
+      expect([...rows[0].escopo_amigos].sort()).toEqual([...PADRAO].sort())
+    })
+
+    it('com o escopo padrão e amizade aceita, o amigo recebe os 4, na ordem, com o tipo de cada um', async () => {
+      await como(OUTRO, async () => {
+        const f = await doAmigo()
+        expect(resumo(f)).toEqual(TODOS)
+        expect(f.map((x) => x.id)).toEqual([ids.maus, ids.berserk, ids.watchmen, ids.akira])
+        expect(f.map((x) => x.tipo)).toEqual(['hq', 'manga', 'hq', 'manga'])
+        // Capa no formato da vitrine: pública `pub/…`; privada só o arquivo, sem a pasta do dono.
+        expect(f.map((x) => x.capa)).toEqual([`pub/${HASH}.jpg`, ARQ_SERIE, ARQ_AVULSO, `pub/${HASH}.jpg`])
+        expect(JSON.stringify(f)).not.toContain(U)
+      })
+    })
+
+    it('sem a seção "Coleção" some só o avulso; sem "Séries" somem só as séries', async () => {
+      const ver = async (escopo: string) => {
+        await admin(`update perfis set escopo_amigos = '${escopo}' where user_id = '${U}'`)
+        return como(OUTRO, async () => resumo(await doAmigo()))
+      }
+      expect(await ver('{series,lidos,notas_criticas}')).toEqual(SO_SERIES)
+      expect(await ver('{colecao,lidos,notas_criticas}')).toEqual(SO_AVULSOS)
+      expect(await ver('{lidos,notas_criticas}')).toEqual([])
+      expect(await ver('{colecao,series,lidos,notas_criticas}')).toEqual(TODOS)
+      await admin(`update perfis set escopo_amigos = default where user_id = '${U}'`)
+      await como(OUTRO, async () => expect(resumo(await doAmigo())).toEqual(TODOS))
+    })
+
+    it('o apelido chega do jeito que está na URL: caixa diferente e espaços não atrapalham', async () => {
+      await como(OUTRO, async () => {
+        for (const url of ['ANA', 'Ana', ' ana ']) {
+          expect(resumo((await db.query<Linha>(`select * from amigo_favoritos($1)`, [url])).rows)).toEqual(TODOS)
+        }
+      })
+    })
+
+    it('a faixa depende só de `amigo_favoritos`: o layout lê o resumo e os favoritos com o mesmo apelido', async () => {
+      await como(OUTRO, async () => {
+        const r = (await db.query<{ r: { escopo: string[] } }>(`select amigo_resumo('ana') r`)).rows[0].r
+        expect([...r.escopo].sort()).toEqual([...PADRAO].sort())
+      })
+    })
+  })
+
+  describe('link público (link_favoritos)', () => {
+    it('com todas as seções: os 4, na ordem, no formato da vitrine; só origem, id, nome, tipo, capa e posição saem', async () => {
+      const token = await gerar(['colecao', 'series', 'lidos', 'notas_criticas'])
+      const f = await comoAnon(() => doLink(token))
+      expect(resumo(f)).toEqual(TODOS)
+      expect(f.map((x) => x.id)).toEqual([ids.maus, ids.berserk, ids.watchmen, ids.akira])
+      expect(f.map((x) => x.capa)).toEqual([`pub/${HASH}.jpg`, ARQ_SERIE, ARQ_AVULSO, `pub/${HASH}.jpg`])
+      const { rows } = await db.query<Record<string, unknown>>(`select * from link_favoritos($1)`, [token])
+      expect(Object.keys(rows[0]).sort()).toEqual(['capa', 'id', 'nome', 'origem', 'posicao', 'tipo'])
+      const texto = JSON.stringify(rows)
+      for (const segredo of ['secreta', 'Secreta', 'Amazon', '79.9', '49.9', '4.5', U]) expect(texto).not.toContain(segredo)
+    })
+
+    it('segue o escopo do link, não o dos amigos: sem "colecao" some só o avulso; sem "series" somem só as séries', async () => {
+      // O escopo dos amigos é o padrão (tem tudo); o do link manda sozinho.
+      expect(resumo(await doLink(await gerar(['series', 'lidos'])))).toEqual(SO_SERIES)
+      expect(resumo(await doLink(await gerar(['colecao'])))).toEqual(SO_AVULSOS)
+      expect(resumo(await doLink(await gerar(['desejos', 'ranking', 'lidos', 'notas_criticas'])))).toEqual([])
+      // E o contrário: escopo de amigos fechado não esconde nada do link.
+      await admin(`update perfis set escopo_amigos = '{ranking}' where user_id = '${U}'`)
+      expect(resumo(await doLink(await gerar(['colecao', 'series'])))).toEqual(TODOS)
+      await como(OUTRO, async () => expect(await doAmigo()).toEqual([]))
+      await admin(`update perfis set escopo_amigos = default where user_id = '${U}'`)
+    })
+
+    it('link revogado, trocado, inexistente ou malformado não devolve nada (sem distinguir o motivo)', async () => {
+      const velho = await gerar(['colecao', 'series'])
+      expect(await doLink(velho)).toHaveLength(4)
+      const novo = await gerar(['colecao', 'series'])
+      expect(await doLink(velho)).toEqual([]) // gerar outro revoga o anterior
+      expect(await doLink(novo)).toHaveLength(4)
+      await db.query(`select compartilhamento_revogar()`)
+      expect(await doLink(novo)).toEqual([])
+      for (const ruim of ['', 'x', 'a'.repeat(63), 'a'.repeat(64), `${novo}x`, `${novo.slice(0, 40)}%`, "' or true --"]) {
+        expect(await doLink(ruim)).toEqual([])
+      }
+      expect((await db.query(`select * from link_favoritos(null)`)).rows).toEqual([])
+    })
+
+    it('o avulso que o link não pode mostrar (virou desejo, entrou numa série ou virou variante) não aparece, nem a capa dele', async () => {
+      const token = await gerar(['colecao', 'series'])
+      await db.query(`update itens set estado = 'desejo' where id = $1`, [ids.watchmen])
+      expect(resumo(await doLink(token))).toEqual(['1:avulso:Maus', '2:serie:Berserk', '4:serie:Akira'])
+      await db.query(`update itens set estado = 'lido' where id = $1`, [ids.watchmen])
+      // O gatilho da 0036 já apagou o favorito dele quando virou desejo: não volta sozinho.
+      expect(resumo(await doLink(token))).toEqual(['1:avulso:Maus', '2:serie:Berserk', '4:serie:Akira'])
+      await db.query(`select favoritos_salvar($1::jsonb)`, [JSON.stringify([
+        { tipo: 'item', id: ids.maus }, { tipo: 'serie', id: ids.berserk }, { tipo: 'item', id: ids.watchmen }, { tipo: 'serie', id: ids.akira },
+      ])])
+      expect(resumo(await doLink(token))).toEqual(TODOS)
+    })
+
+    it('série sem volume possuído (só desejo) não aparece', async () => {
+      const token = await gerar(['colecao', 'series'])
+      await db.query(`update itens set estado = 'desejo' where serie_id = $1`, [ids.akira])
+      expect(resumo(await doLink(token))).toEqual(['1:avulso:Maus', '2:serie:Berserk', '3:avulso:Watchmen'])
+      await db.query(`update itens set estado = 'comprado' where serie_id = $1`, [ids.akira])
+      expect(resumo(await doLink(token))).toEqual(TODOS)
+    })
+
+    it('a capa privada de cada favorito é a que o link autoriza servir (`link_capa`), e só com a seção certa', async () => {
+      const capa = async (t: string, a: string) => (await db.query<{ c: string | null }>(`select link_capa($1, $2) c`, [t, a])).rows[0].c
+      const completo = await gerar(['colecao', 'series'])
+      expect(await capa(completo, ARQ_SERIE)).toBe(`${U}/${ARQ_SERIE}`)
+      expect(await capa(completo, ARQ_AVULSO)).toBe(`${U}/${ARQ_AVULSO}`)
+      const soSeries = await gerar(['series'])
+      expect(await capa(soSeries, ARQ_SERIE)).toBe(`${U}/${ARQ_SERIE}`)
+      expect(await capa(soSeries, ARQ_AVULSO)).toBeNull()
+      const soColecao = await gerar(['colecao'])
+      // Com "colecao" o volume 1 da série também é visível como item, então a capa da série sai pela rota; ainda assim
+      // a série em si não vem na faixa (acima), e a capa do avulso segue autorizada.
+      expect(await capa(soColecao, ARQ_AVULSO)).toBe(`${U}/${ARQ_AVULSO}`)
+    })
+
+    it('visitante sem login chama `link_favoritos`; as funções de amigo continuam fechadas para ele', async () => {
+      const token = await gerar(['colecao', 'series'])
+      await comoAnon(async () => {
+        expect(resumo(await doLink(token))).toEqual(TODOS)
+        await expect(db.query(`select * from amigo_favoritos('ana')`)).rejects.toThrow()
+        await expect(db.query(`select * from favoritos_meus()`)).rejects.toThrow()
+        await expect(db.query(`select * from favoritos`)).rejects.toThrow()
+      })
+    })
+
+    it('migration: só função nova; fechada para public e liberada para anon/authenticated; não altera nenhuma função existente', () => {
+      const sql = readFileSync(path.join(PASTA, '0037_favoritos_no_link_publico.sql'), 'utf8')
+      expect(sql).toMatch(/revoke all on function link_favoritos\(text\) from public;/)
+      expect(sql).toMatch(/grant execute on function link_favoritos\(text\) to anon, authenticated;/)
+      const criadas = [...sql.matchAll(/create or replace function ([a-z_.]+)\(/g)].map((m) => m[1])
+      expect(criadas).toEqual(['link_favoritos'])
+      expect(sql).not.toMatch(/\b(drop|alter)\s+(function|table|trigger)/i)
+      expect(sql).not.toMatch(/\b(insert into|update|delete from)\b/i)
     })
   })
 })
