@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { lerLink } from './dados'
+import { lerFavoritosDoLink, lerLink } from './dados'
+import { FaixaFavoritos } from '@/components/favoritos/faixa-favoritos'
 import { Avatar } from '@/components/ui/avatar'
 import { VitrineNav } from '@/components/vitrine/vitrine-nav'
 
@@ -29,6 +30,7 @@ export default async function LayoutDoLink({ children, params }: { children: Rea
   }
 
   const { resumo } = link
+  const favoritos = await lerFavoritosDoLink(token)
   return (
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-border bg-card/60">
@@ -44,7 +46,11 @@ export default async function LayoutDoLink({ children, params }: { children: Rea
           <VitrineNav base={`/c/${token}`} escopo={resumo.escopo} />
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[1160px] flex-1 px-5 py-6 pb-[calc(24px+env(safe-area-inset-bottom))] lg:px-10">{children}</main>
+      <main className="mx-auto w-full max-w-[1160px] flex-1 px-5 py-6 pb-[calc(24px+env(safe-area-inset-bottom))] lg:px-10">
+        {/* Série abre a página da série dentro do link. Volume único fica sem link: a página do item é só do dono. */}
+        <FaixaFavoritos favoritos={favoritos} hrefDoFavorito={(f) => (f.origem === 'serie' ? `/c/${token}/serie/${f.id}` : null)} className="mb-5" />
+        {children}
+      </main>
       <footer className="border-t border-border px-5 py-4 text-center text-xs text-muted-foreground">
         Somente leitura. Preço, loja e data de compra nunca são compartilhados.
       </footer>
