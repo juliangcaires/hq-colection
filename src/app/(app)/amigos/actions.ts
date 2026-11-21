@@ -7,7 +7,7 @@ import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
 import { lancarErroRpc } from '@/lib/rpc'
 import { apelidoSchema, escopoSchema } from '@/lib/compartilhamento'
-import { dispararPush } from '@/lib/push-servidor'
+import { agendarPush } from '@/lib/push-servidor'
 
 async function rpcComUsuario<T>(nome: string, args?: Record<string, unknown>): Promise<{ data: T; userId: string }> {
   const supabase = await createClient()
@@ -30,7 +30,7 @@ async function solicitarAmizadeImpl(apelido: string) {
   const { data: amizadeId, userId } = await rpcComUsuario<string>('amizade_solicitar', { p_apelido: a })
   revalidatePath('/amigos')
   // Pedido novo avisa o destinatário; "pedir de volta" vira aceite e avisa quem pediu antes. Nunca derruba a ação.
-  if (typeof amizadeId === 'string') await dispararPush({ autorId: userId, tipos: ['amizade_pedido', 'amizade_aceita'], refId: amizadeId })
+  if (typeof amizadeId === 'string') await agendarPush({ autorId: userId, tipos: ['amizade_pedido', 'amizade_aceita'], refId: amizadeId })
 }
 export async function solicitarAmizade(apelido: string) {
   return executar(() => solicitarAmizadeImpl(apelido))
@@ -40,7 +40,7 @@ async function responderAmizadeImpl(id: string, aceitar: boolean) {
   const amizade = z.string().uuid().parse(id)
   const { userId } = await rpcComUsuario('amizade_responder', { p_amizade: amizade, p_aceitar: z.boolean().parse(aceitar) })
   revalidatePath('/amigos')
-  if (aceitar) await dispararPush({ autorId: userId, tipos: ['amizade_aceita'], refId: amizade })
+  if (aceitar) await agendarPush({ autorId: userId, tipos: ['amizade_aceita'], refId: amizade })
 }
 export async function responderAmizade(id: string, aceitar: boolean) {
   return executar(() => responderAmizadeImpl(id, aceitar))
@@ -69,8 +69,9 @@ const codigoSchema = z.string().regex(/^[0-9a-f]{32,64}$/, 'Convite inválido')
 async function aceitarConviteImpl(codigo: string) {
   const { data: apelido, userId } = await rpcComUsuario<string>('convite_aceitar', { p_codigo: codigoSchema.parse(codigo) })
   revalidatePath('/amigos')
-  // Quem gerou o convite fica sabendo (o aviso nasce do trigger; aqui só o push, que o banco não envia).
-  await dispararPush({ autorId: userId, tipos: ['amizade_aceita'] })
+  // Quem gerou o convite fica sabendo (o aviso nasce do trigger; aqui só o push, que o banco não envia). O RPC não
+  // devolve o id da amizade; o código do convite entra no freio para o 2º convite aceito em 10 min também avisar.
+  await agendarPush({ autorId: userId, tipos: ['amizade_aceita'] }, { freio: codigo })
   return apelido
 }
 export async function aceitarConvite(codigo: string) {

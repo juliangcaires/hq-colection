@@ -1,5 +1,7 @@
+import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { TipoNotificacao } from '@/lib/notificacoes'
+import { endpointDePushPermitido } from '@/lib/push-endpoint'
 
 /**
  * Web Push (migration 0033). Este arquivo é a lógica: quem recebe, o que o aviso diz e o que fazer com cada resposta
@@ -105,6 +107,7 @@ export type WebPush = {
 /** Janela em que um aviso novo ainda vale para push (cobre a demora do clique até o RPC). */
 export const JANELA_DO_PUSH_MS = 5 * 60_000
 const TTL_SEGUNDOS = 24 * 60 * 60
+/** Limite por aparelho. O envio roda depois da resposta (`after`), mas um serviço de push lento não deve segurar a função. */
 const TIMEOUT_ENVIO_MS = 5_000
 
 function statusDoErro(e: unknown): number | null {
@@ -129,12 +132,19 @@ export async function avisarPorPush(
     for (const aviso of avisos) {
       try {
         const [prefs, assinaturas, nome] = await Promise.all([repo.preferencias(aviso.user_id), repo.assinaturas(aviso.user_id), repo.nomeDoAutor(criterio.autorId)])
-        if (!preferenciaPermite(prefs, aviso.tipo) || assinaturas.length === 0) continue
+        if (!preferenciaPermite(prefs, aviso.tipo)) continue
+        // Só serviços de push conhecidos: assinatura com outro host (gravada antes da 0034) nunca recebe POST e é apagada.
+        const validas: AssinaturaPush[] = []
+        for (const a of assinaturas) {
+          if (endpointDePushPermitido(a.endpoint)) validas.push(a)
+          else await repo.apagarAssinatura(a.id).catch((err) => log('não consegui apagar a assinatura com endpoint não permitido', err))
+        }
+        if (validas.length === 0) continue
         const conteudo = conteudoDoPush(aviso.tipo, nome, `${aviso.tipo}:${aviso.id}`)
         if (!conteudo) continue
         const payload = JSON.stringify(conteudo)
         await Promise.all(
-          assinaturas.map(async (a) => {
+          validas.map(async (a) => {
             try {
               await webpush.sendNotification({ endpoint: a.endpoint, keys: { p256dh: a.p256dh, auth: a.auth } }, payload, {
                 vapidDetails: vapid,

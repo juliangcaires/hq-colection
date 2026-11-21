@@ -23,12 +23,18 @@ O texto de amizade é neutro quanto ao gênero de propósito.
    Só se lê pelas funções `notificacoes_listar`, `notificacoes_contar_nao_lidas` e `notificacoes_marcar_lidas`
    (curtida/comentário só aparecem enquanto o item ainda está visível no feed e o autor segue sendo amigo).
    `push_assinaturas` (um aparelho por *endpoint*) e `push_preferencias` (interruptores por tipo, padrão ligado) guardam o push.
+   A **0034** endurece duas coisas: `push_assinar` só aceita endpoint `https://` de `fcm.googleapis.com`,
+   `*.push.services.mozilla.com`, `*.push.apple.com` e `*.notify.windows.com` (a mesma lista está em `src/lib/push-endpoint.ts`;
+   mudou numa, mude na outra e numa migration nova), e o aviso "aceitou seu pedido de amizade" some da lista e do contador
+   quando as duas pessoas deixam de ser amigas.
 2. **App** — sininho no cabeçalho (celular) e na barra lateral (desktop), contador atualizado ao trocar de tela, ao voltar para
    a aba e a cada minuto, e a tela `/notificacoes` (marcar uma ao abrir ou todas de uma vez).
 3. **Push** — `public/sw.js` (service worker: mostra o aviso e abre o app no clique), seção "Notificações" em `/configuracoes`
    e envio **no servidor** (`src/lib/push.ts`, `src/lib/push-servidor.ts`) logo depois de `curtir`, `comentar`, `solicitarAmizade`,
-   `responderAmizade` (aceitando) e `aceitarConvite`. O envio nunca faz a ação falhar: erro de push é só registrado, e
-   assinatura que o serviço de push responde 404/410 é apagada.
+   `responderAmizade` (aceitando) e `aceitarConvite`. O envio sai **depois da resposta**, com `after()` do Next (`agendarPush`);
+   se `after` não puder ser usado, sai na hora. Ele nunca faz a ação falhar: erro de push é só registrado; assinatura que o
+   serviço de push responde 404/410, ou com endpoint fora da lista acima, é apagada. `push.ts` e `push-servidor.ts` têm
+   `import 'server-only'` (não importar no cliente).
 
 ## Configurar o Web Push (uma vez)
 

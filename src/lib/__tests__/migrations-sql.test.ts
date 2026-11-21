@@ -30,7 +30,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume', '0033_notificacoes']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume', '0033_notificacoes', '0034_push_endpoint_e_aviso_de_ex_amigo']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -4024,6 +4024,34 @@ describe('notificações (migration 0033)', () => {
     expect(bd).toBeTruthy()
   })
 
+  it('0034: o aviso "aceitou seu pedido" de quem desfez a amizade some da lista e do contador (e volta se fizerem as pazes)', async () => {
+    // Dani e Ana já são amigas (teste anterior). Dani aceitou um pedido de Ana: Ana tem o aviso "Dani aceitou".
+    const amizadeAtual = async () => (await db.query<{ id: string }>(`select id from amizades where status = 'aceita' and ((solicitante = '${U}' and destinatario = '${DANI}') or (solicitante = '${DANI}' and destinatario = '${U}'))`)).rows
+    await admin(`delete from notificacoes; insert into notificacoes (user_id, tipo, autor_id, ref_id) values ('${U}', 'amizade_aceita', '${DANI}', gen_random_uuid())`)
+    expect((await amizadeAtual()).length).toBe(1)
+    expect((await doTipo('amizade_aceita')).map((r) => r.autor_apelido)).toEqual(['dani'])
+    expect(await naoLidas()).toBe(1)
+    // Ana desfaz a amizade: o aviso deixa de aparecer, e a lista e o contador concordam.
+    await db.query(`select amizade_desfazer($1)`, [(await amizadeAtual())[0].id])
+    expect(await doTipo('amizade_aceita')).toHaveLength(0)
+    expect(await lista()).toHaveLength(0)
+    expect(await naoLidas()).toBe(0)
+    // A linha continua no banco (só fica escondida).
+    expect(await total()).toBe(1)
+    // O pedido de amizade de quem ainda não é amigo continua aparecendo, na lista e no contador.
+    await como(DANI, () => db.query(`select amizade_solicitar('ana')`))
+    expect((await doTipo('amizade_pedido')).map((r) => r.autor_apelido)).toEqual(['dani'])
+    expect(await naoLidas()).toBe(1)
+    expect((await lista()).filter((r) => !r.lida)).toHaveLength(await naoLidas())
+    // Fazem as pazes (Ana aceita o pedido): o aviso antigo volta a valer; lista e contador seguem iguais.
+    const pedido = (await db.query<{ id: string }>(`select id from amizades where status = 'pendente'`)).rows[0].id
+    await db.query(`select amizade_responder($1, true)`, [pedido])
+    expect((await amizadeAtual()).length).toBe(1)
+    expect((await doTipo('amizade_aceita')).map((r) => r.autor_apelido)).toEqual(['dani'])
+    expect((await lista()).filter((r) => !r.lida)).toHaveLength(await naoLidas())
+    await admin(`delete from notificacoes`)
+  })
+
   it('marcar como lida: por ids ou todas, só as próprias; contador acompanha', async () => {
     await admin(`delete from notificacoes`)
     const a = await lido('Lida 1')
@@ -4065,28 +4093,63 @@ describe('notificações (migration 0033)', () => {
 
     it('cada um vê só as suas; reassinar o mesmo aparelho não duplica; endpoint inválido é recusado', async () => {
       await admin(`delete from push_assinaturas; delete from push_preferencias`)
-      await assinar('https://push.exemplo/a')
-      await assinar('https://push.exemplo/a')
+      await assinar('https://fcm.googleapis.com/fcm/send/a')
+      await assinar('https://fcm.googleapis.com/fcm/send/a')
       await como(OUTRO, async () => {
-        await assinar('https://push.exemplo/b')
-        expect(await meus()).toEqual(['https://push.exemplo/b'])
+        await assinar('https://fcm.googleapis.com/fcm/send/b')
+        expect(await meus()).toEqual(['https://fcm.googleapis.com/fcm/send/b'])
       })
-      expect(await meus()).toEqual(['https://push.exemplo/a'])
+      expect(await meus()).toEqual(['https://fcm.googleapis.com/fcm/send/a'])
       await expect(assinar('http://inseguro/x')).rejects.toThrow('push_assinatura_invalida')
+      await expect(assinar('https://push.exemplo/a')).rejects.toThrow('push_assinatura_invalida')
       await expect(db.query(`select push_assinar('https://x/y', '', 'a', null)`)).rejects.toThrow('push_assinatura_invalida')
       // Mesmo aparelho, outra conta: a assinatura muda de dono.
-      await como(OUTRO, () => assinar('https://push.exemplo/a'))
+      await como(OUTRO, () => assinar('https://fcm.googleapis.com/fcm/send/a'))
       expect(await meus()).toEqual([])
       // Desassinar só mexe na própria.
-      await db.query(`select push_desassinar('https://push.exemplo/b')`)
-      await como(OUTRO, async () => expect(await meus()).toEqual(['https://push.exemplo/a', 'https://push.exemplo/b']))
-      await como(OUTRO, () => db.query(`select push_desassinar('https://push.exemplo/b')`))
-      await como(OUTRO, async () => expect(await meus()).toEqual(['https://push.exemplo/a']))
+      await db.query(`select push_desassinar('https://fcm.googleapis.com/fcm/send/b')`)
+      await como(OUTRO, async () => expect(await meus()).toEqual(['https://fcm.googleapis.com/fcm/send/a', 'https://fcm.googleapis.com/fcm/send/b']))
+      await como(OUTRO, () => db.query(`select push_desassinar('https://fcm.googleapis.com/fcm/send/b')`))
+      await como(OUTRO, async () => expect(await meus()).toEqual(['https://fcm.googleapis.com/fcm/send/a']))
+    })
+
+    it('0034: só aceita endpoint https dos serviços de push dos navegadores (os 4 passam; http, IP, localhost e host parecido não)', async () => {
+      await admin(`delete from push_assinaturas; delete from push_preferencias`)
+      const validos = [
+        'https://fcm.googleapis.com/fcm/send/abc',
+        'https://updates.push.services.mozilla.com/wpush/v2/abc',
+        'https://web.push.apple.com/QGxyz',
+        'https://wns2-by3p.notify.windows.com/w/?token=abc',
+        'https://FCM.googleapis.com:443/fcm/send/maiuscula',
+      ]
+      for (const e of validos) await assinar(e)
+      expect(await meus()).toHaveLength(validos.length)
+      const invalidos = [
+        'http://fcm.googleapis.com/fcm/send/abc',
+        'https://142.250.1.1/fcm/send/abc',
+        'https://10.0.0.5/x',
+        'https://[::1]/x',
+        'https://localhost/x',
+        'https://localhost:3000/x',
+        'https://fcm.googleapis.com.evil.com/fcm/send/abc',
+        'https://evilfcm.googleapis.com/x',
+        'https://web.push.apple.com.evil.com/x',
+        'https://push.apple.com/x',
+        'https://xpush.apple.com/x',
+        'https://fcm.googleapis.com@evil.com/x',
+        'https://user:pass@fcm.googleapis.com/x',
+        'https://fcm.googleapis.com:8443/x',
+        'https://example.com/push',
+        'ftp://fcm.googleapis.com/x',
+        '',
+      ]
+      for (const e of invalidos) await expect(assinar(e), e).rejects.toThrow('push_assinatura_invalida')
+      expect(await meus()).toHaveLength(validos.length)
     })
 
     it('preferências: padrão ligado ao assinar; cada pessoa só lê e altera as suas', async () => {
       await admin(`delete from push_assinaturas; delete from push_preferencias`)
-      await assinar('https://push.exemplo/c')
+      await assinar('https://fcm.googleapis.com/fcm/send/c')
       const { rows } = await db.query<Record<string, boolean>>(`select * from push_preferencias`)
       expect(rows).toHaveLength(1)
       expect(rows[0]).toMatchObject({ notif_push_curtidas: true, notif_push_comentarios: true, notif_push_amizades: true })
@@ -4095,6 +4158,13 @@ describe('notificações (migration 0033)', () => {
       await como(OUTRO, async () => expect((await db.query(`select * from push_preferencias`)).rows).toHaveLength(0))
       await expect(db.query(`select push_preferencias_definir(null, true, true)`)).rejects.toThrow('valor_invalido')
     })
+  })
+
+  it('a 0034 não altera migrations anteriores e não mexe em tabelas (só create or replace de duas funções)', () => {
+    const sql = readFileSync(path.join(PASTA, '0034_push_endpoint_e_aviso_de_ex_amigo.sql'), 'utf8')
+    expect(sql).not.toMatch(/\b(create|alter|drop)\s+table\b/i)
+    expect(sql).not.toMatch(/\bdrop\s+function\b/i)
+    expect(readFileSync(path.join(PASTA, '0033_notificacoes.sql'), 'utf8')).toContain("p_endpoint !~ '^https://'") // a 0033 segue como foi aplicada
   })
 
   it('a 0033 não altera as migrations anteriores (nenhuma menção ao nome novo)', () => {
