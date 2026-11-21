@@ -23,6 +23,26 @@ describe('urlDeCapaDoFeed', () => {
     expect(urlDeCapaDoFeed({ capa: '../x.jpg', itemId: 'abc' })).toBeNull()
     expect(urlDeCapaDoFeed({ capa: null, itemId: 'abc' })).toBeNull()
   })
+
+  describe('capa do melhor volume (0032)', () => {
+    const arquivo = '0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f-1700000000000.jpg'
+    const melhor = '1a1a1a1a-1a1a-4a1a-8a1a-1a1a1a1a1a1a-1700000000001.jpg'
+    it('com melhor volume usa a capa dele e pede pelo id dele; sem melhor, a de sempre', () => {
+      expect(urlDeCapaDoFeed({ capa: arquivo, itemId: 'quatro', capaDestaque: melhor, capaDestaqueItem: 'cinco' })).toBe('/feed/capa/cinco')
+      expect(urlDeCapaDoFeed({ capa: arquivo, itemId: 'quatro', capaDestaque: null, capaDestaqueItem: null })).toBe('/feed/capa/quatro')
+      expect(urlDeCapaDoFeed({ capa: arquivo, itemId: 'quatro' })).toBe('/feed/capa/quatro') // app/banco antes da 0032
+    })
+    it('a capa do melhor também é validada, e a do catálogo público não passa pela rota', () => {
+      expect(urlDeCapaDoFeed({ capa: arquivo, itemId: 'quatro', capaDestaque: '../x.jpg', capaDestaqueItem: 'cinco' })).toBeNull()
+      expect(urlDeCapaDoFeed({ capa: arquivo, itemId: 'quatro', capaDestaque: 'pub/abc', capaDestaqueItem: 'cinco' }) ?? '').not.toContain('/feed/capa/')
+    })
+    it('o feed repassa as colunas novas; ausentes viram nulo', async () => {
+      const linha = { item_id: 'quatro', titulo: 'T', tipo: 'hq', marcado_em: '2026-11-17T12:00:00Z', qtd: 5 }
+      const rpc = vi.fn(async () => ({ data: [{ ...linha, capa_destaque: melhor, capa_destaque_item: 'cinco' }, { ...linha, item_id: 'b' }], error: null }))
+      const posts = await carregarFeed({ rpc } as never)
+      expect(posts.map((p) => [p.capaDestaque, p.capaDestaqueItem])).toEqual([[melhor, 'cinco'], [null, null]])
+    })
+  })
 })
 
 describe('tempoRelativo', () => {
