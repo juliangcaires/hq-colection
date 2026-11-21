@@ -5,9 +5,10 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
+import { endpointDePushPermitido } from '@/lib/push-endpoint'
 
 const assinaturaSchema = z.object({
-  endpoint: z.string().max(2048).startsWith('https://', 'Endereço de push inválido'),
+  endpoint: z.string().max(2048).refine(endpointDePushPermitido, 'Endereço de push inválido'),
   keys: z.object({ p256dh: z.string().min(1).max(256), auth: z.string().min(1).max(256) }),
 })
 const preferenciasSchema = z.object({ curtidas: z.boolean(), comentarios: z.boolean(), amizades: z.boolean() })

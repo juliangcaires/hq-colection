@@ -24,7 +24,7 @@ function repo({ assinaturas, ...over }: Partial<Omit<RepositorioPush, 'assinatur
   const r: RepositorioPush = {
     reivindicar: vi.fn(async () => [{ id: 'n1', user_id: 'dono', tipo: 'curtida' }]),
     preferencias: vi.fn(async () => null),
-    assinaturas: vi.fn(async () => assinaturas ?? [{ id: 'a1', endpoint: 'https://push.exemplo/1', p256dh: 'k', auth: 's' }]),
+    assinaturas: vi.fn(async () => assinaturas ?? [{ id: 'a1', endpoint: 'https://fcm.googleapis.com/fcm/send/1', p256dh: 'k', auth: 's' }]),
     nomeDoAutor: vi.fn(async () => 'Beto'),
     apagarAssinatura: vi.fn(async (id: string) => void apagadas.push(id)),
     ...over,
@@ -75,8 +75,8 @@ describe('conteudoDoPush (sem spoiler)', () => {
 describe('avisarPorPush', () => {
   it('curtir dispara o envio para TODAS as assinaturas do dono, com as chaves VAPID e o texto sem spoiler', async () => {
     const { r } = repo({ assinaturas: [
-      { id: 'a1', endpoint: 'https://push.exemplo/1', p256dh: 'k1', auth: 's1' },
-      { id: 'a2', endpoint: 'https://push.exemplo/2', p256dh: 'k2', auth: 's2' },
+      { id: 'a1', endpoint: 'https://fcm.googleapis.com/fcm/send/1', p256dh: 'k1', auth: 's1' },
+      { id: 'a2', endpoint: 'https://fcm.googleapis.com/fcm/send/2', p256dh: 'k2', auth: 's2' },
     ] })
     const wp = webpushOk()
     const n = await avisarPorPush(criterio, { repo: r, webpush: wp, vapid: VAPID, log: silencio })
@@ -84,7 +84,7 @@ describe('avisarPorPush', () => {
     expect(r.reivindicar).toHaveBeenCalledWith(criterio)
     expect(wp.sendNotification).toHaveBeenCalledTimes(2)
     const [assinatura, payload, opcoes] = wp.sendNotification.mock.calls[0]
-    expect(assinatura).toEqual({ endpoint: 'https://push.exemplo/1', keys: { p256dh: 'k1', auth: 's1' } })
+    expect(assinatura).toEqual({ endpoint: 'https://fcm.googleapis.com/fcm/send/1', keys: { p256dh: 'k1', auth: 's1' } })
     expect(JSON.parse(payload)).toMatchObject({ corpo: 'Beto curtiu sua leitura', url: '/feed' })
     expect(opcoes).toMatchObject({ vapidDetails: VAPID, urgency: 'normal' })
   })
@@ -119,8 +119,8 @@ describe('avisarPorPush', () => {
 
   it('erro de envio não derruba a ação: não lança, registra e segue nas outras assinaturas', async () => {
     const { r, apagadas } = repo({ assinaturas: [
-      { id: 'a1', endpoint: 'https://push.exemplo/1', p256dh: 'k', auth: 's' },
-      { id: 'a2', endpoint: 'https://push.exemplo/2', p256dh: 'k', auth: 's' },
+      { id: 'a1', endpoint: 'https://fcm.googleapis.com/fcm/send/1', p256dh: 'k', auth: 's' },
+      { id: 'a2', endpoint: 'https://fcm.googleapis.com/fcm/send/2', p256dh: 'k', auth: 's' },
     ] })
     const wp: WebPush = {
       sendNotification: vi.fn(async (a) => {
@@ -136,9 +136,9 @@ describe('avisarPorPush', () => {
 
   it('assinatura expirada (404/410) é removida; as outras ficam', async () => {
     const { r, apagadas } = repo({ assinaturas: [
-      { id: 'velha404', endpoint: 'https://push.exemplo/1', p256dh: 'k', auth: 's' },
-      { id: 'velha410', endpoint: 'https://push.exemplo/2', p256dh: 'k', auth: 's' },
-      { id: 'boa', endpoint: 'https://push.exemplo/3', p256dh: 'k', auth: 's' },
+      { id: 'velha404', endpoint: 'https://fcm.googleapis.com/fcm/send/1', p256dh: 'k', auth: 's' },
+      { id: 'velha410', endpoint: 'https://fcm.googleapis.com/fcm/send/2', p256dh: 'k', auth: 's' },
+      { id: 'boa', endpoint: 'https://fcm.googleapis.com/fcm/send/3', p256dh: 'k', auth: 's' },
     ] })
     const wp: WebPush = {
       sendNotification: vi.fn(async (a) => {
@@ -149,6 +149,28 @@ describe('avisarPorPush', () => {
     }
     expect(await avisarPorPush(criterio, { repo: r, webpush: wp, vapid: VAPID, log: silencio })).toBe(1)
     expect(apagadas.sort()).toEqual(['velha404', 'velha410'])
+  })
+
+  it('endpoint fora dos serviços de push conhecidos: nada é enviado para ele e a assinatura é apagada', async () => {
+    const { r, apagadas } = repo({ assinaturas: [
+      { id: 'http', endpoint: 'http://fcm.googleapis.com/fcm/send/1', p256dh: 'k', auth: 's' },
+      { id: 'interno', endpoint: 'https://10.0.0.5/push', p256dh: 'k', auth: 's' },
+      { id: 'parecido', endpoint: 'https://fcm.googleapis.com.evil.com/fcm/send/1', p256dh: 'k', auth: 's' },
+      { id: 'boa', endpoint: 'https://web.push.apple.com/abc', p256dh: 'k', auth: 's' },
+    ] })
+    const wp = webpushOk()
+    expect(await avisarPorPush(criterio, { repo: r, webpush: wp, vapid: VAPID, log: silencio })).toBe(1)
+    expect(wp.sendNotification).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(wp.sendNotification).mock.calls[0][0].endpoint).toBe('https://web.push.apple.com/abc')
+    expect(apagadas.sort()).toEqual(['http', 'interno', 'parecido'])
+  })
+
+  it('só assinaturas com endpoint não permitido: não envia nada e não lança', async () => {
+    const { r, apagadas } = repo({ assinaturas: [{ id: 'x', endpoint: 'https://localhost/push', p256dh: 'k', auth: 's' }] })
+    const wp = webpushOk()
+    expect(await avisarPorPush(criterio, { repo: r, webpush: wp, vapid: VAPID, log: silencio })).toBe(0)
+    expect(wp.sendNotification).not.toHaveBeenCalled()
+    expect(apagadas).toEqual(['x'])
   })
 
   it('falha no banco (reivindicar/preferências) também não lança', async () => {

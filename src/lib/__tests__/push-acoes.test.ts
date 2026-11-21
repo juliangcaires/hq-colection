@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * As ações do servidor de verdade (curtir, comentar, pedir e aceitar amizade) com o banco e o `web-push` de mentira:
@@ -63,7 +63,13 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 const agoraIso = () => new Date().toISOString()
-const assinatura = (id: string, user = DONO) => ({ id, user_id: user, endpoint: `https://push.exemplo/${id}`, p256dh: 'k', auth: 's' })
+const assinatura = (id: string, user = DONO) => ({ id, user_id: user, endpoint: `https://fcm.googleapis.com/fcm/send/${id}`, p256dh: 'k', auth: 's' })
+
+// A 1ª importação das ações (next/server, zod, supabase...) é lenta quando o vitest roda tudo em paralelo; fora do tempo do teste.
+beforeAll(async () => {
+  await import('@/app/(app)/feed/actions')
+  await import('@/app/(app)/amigos/actions')
+}, 60_000)
 
 beforeEach(() => {
   vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'PUB')
@@ -91,7 +97,7 @@ describe('curtir (ação do feed)', () => {
     expect(rpcs[0]).toEqual({ nome: 'feed_curtir', args: { p_item: ITEM } })
     expect(sendNotification).toHaveBeenCalledTimes(2)
     const [sub, payload, opcoes] = sendNotification.mock.calls[0]
-    expect(sub.endpoint).toMatch(/^https:\/\/push\.exemplo\//)
+    expect(sub.endpoint).toMatch(/^https:\/\/fcm\.googleapis\.com\/fcm\/send\//)
     expect(JSON.parse(payload)).toMatchObject({ corpo: 'Beto curtiu sua leitura', url: '/feed' })
     expect(opcoes.vapidDetails).toEqual({ subject: 'mailto:dono@exemplo.com', publicKey: 'PUB', privateKey: 'PRIV' })
     expect(tabelas.notificacoes[0].push_enviado_em).toBeTruthy()
@@ -202,5 +208,24 @@ describe('amizade (ações de Amigos)', () => {
     tabelas.notificacoes = [{ id: 'n4', user_id: DONO, tipo: 'amizade_aceita', autor_id: AUTOR, item_id: null, ref_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', criado_em: agoraIso(), push_enviado_em: null }]
     expect(await aceitarConvite('a'.repeat(32))).toEqual({ ok: true, data: 'dono' })
     expect(sendNotification).toHaveBeenCalledTimes(2)
+  })
+
+  it('freio do convite: o 2º convite aceito em 10 min também avisa (o código entra na chave); o mesmo convite não avisa duas vezes', async () => {
+    const { aceitarConvite } = await import('@/app/(app)/amigos/actions')
+    retornoDoRpc.convite_aceitar = 'dono'
+    const aviso = (id: string) => ({ id, user_id: DONO, tipo: 'amizade_aceita', autor_id: AUTOR, item_id: null, ref_id: id, criado_em: agoraIso(), push_enviado_em: null })
+    tabelas.notificacoes = [aviso('e1111111-1111-4111-8111-111111111111')]
+    await aceitarConvite('b'.repeat(32))
+    expect(sendNotification).toHaveBeenCalledTimes(2)
+    // Outro convite (outro código) logo depois: sai push.
+    sendNotification.mockClear()
+    tabelas.notificacoes = [aviso('e2222222-2222-4222-8222-222222222222')]
+    await aceitarConvite('c'.repeat(32))
+    expect(sendNotification).toHaveBeenCalledTimes(2)
+    // O mesmo código de novo dentro dos 10 min: freado.
+    sendNotification.mockClear()
+    tabelas.notificacoes = [aviso('e3333333-3333-4333-8333-333333333333')]
+    await aceitarConvite('c'.repeat(32))
+    expect(sendNotification).not.toHaveBeenCalled()
   })
 })
