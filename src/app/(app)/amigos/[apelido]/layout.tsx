@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { lerAmigo, lerFavoritosDoAmigo } from './dados'
-import { FaixaFavoritos } from '@/components/favoritos/faixa-favoritos'
+import { lerAmigo } from './dados'
 import { Avatar } from '@/components/ui/avatar'
 import { VitrineNav } from '@/components/vitrine/vitrine-nav'
 
@@ -9,7 +8,6 @@ export default async function LayoutDoAmigo({ children, params }: { children: Re
   const { apelido } = await params
   const resumo = await lerAmigo(apelido)
   if (!resumo) notFound()
-  const favoritos = await lerFavoritosDoAmigo(apelido)
   const base = `/amigos/${resumo.apelido ?? apelido}`
 
   return (
@@ -30,8 +28,6 @@ export default async function LayoutDoAmigo({ children, params }: { children: Re
             { href: `${base}/comparar`, rotulo: 'Comparar' },
           ]} />
       </header>
-      {/* Série abre a página da série na vitrine do amigo. Volume único não tem página própria na vitrine (a página do item é só do dono), então fica sem link. */}
-      <FaixaFavoritos favoritos={favoritos} hrefDoFavorito={(f) => (f.origem === 'serie' ? `${base}/serie/${f.id}` : null)} />
       {children}
     </div>
   )

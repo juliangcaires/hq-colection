@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation'
 import { createAnonClient } from '@/lib/supabase/anon'
+import { FaixaFavoritos } from '@/components/favoritos/faixa-favoritos'
 import { PaginaColecao } from '@/components/vitrine/paginas'
 import { SECOES_DA_VITRINE } from '@/components/vitrine/vitrine-nav'
 import { lerLimite } from '@/lib/filtros-url'
-import { lerLink } from './dados'
+import { lerFavoritosDoLink, lerLink } from './dados'
 
 export default async function PaginaInicialDoLink({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ limite?: string }> }) {
   const { token } = await params
@@ -17,5 +18,12 @@ export default async function PaginaInicialDoLink({ params, searchParams }: { pa
     if (primeira) redirect(`/c/${token}${primeira.sufixo}`)
     return <p className="text-sm text-muted-foreground">Nada para mostrar por aqui.</p>
   }
-  return <PaginaColecao supabase={createAnonClient()} fonte={{ tipo: 'link', token }} resumo={resumo} limite={lerLimite((await searchParams).limite)} />
+  const favoritos = await lerFavoritosDoLink(token)
+  return (
+    <>
+      {/* Favoritos só aqui, na página principal do link (as subpáginas não carregam). Série abre a página da série dentro do link; volume único fica sem link (a página do item é só do dono). */}
+      <FaixaFavoritos favoritos={favoritos} hrefDoFavorito={(f) => (f.origem === 'serie' ? `/c/${token}/serie/${f.id}` : null)} className="mb-5" />
+      <PaginaColecao supabase={createAnonClient()} fonte={{ tipo: 'link', token }} resumo={resumo} limite={lerLimite((await searchParams).limite)} />
+    </>
+  )
 }
