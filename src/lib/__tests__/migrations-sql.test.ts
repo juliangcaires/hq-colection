@@ -30,7 +30,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -1607,6 +1607,145 @@ describe('feed: tirar o post inteiro, desfazer e nota do grupo (migration 0031)'
       expect(sql).toContain(`revoke all on function ${f} from public, anon;`)
       expect(sql).toContain(`grant execute on function ${f} to authenticated;`)
     }
+  })
+})
+
+describe('feed: capa do melhor volume da série (migration 0032)', () => {
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const feed = async () => (await db.query<Record<string, unknown>>(`select * from feed_listar()`)).rows
+  const noFeed = async (nome: string) => (await feed()).filter((r) => r.serie_nome === nome)
+  const salvarItem = async (extra: object) =>
+    (await db.query<{ id: string }>(`select item_salvar(null, $1::jsonb, '{}') id`, [JSON.stringify({ titulo: 'Leitura', tipo: 'hq', prioridade: 0, ...extra })])).rows[0].id
+  /** Série de 5 volumes, cada um com a sua capa privada (`capa-<n>.jpg`), marcada como lida de uma vez. */
+  const serieLida = async (nome: string) => {
+    const { rows: [s] } = await db.query<{ s: string }>(`select serie_salvar(null, $1::jsonb, '{}') s`, [JSON.stringify({ nome, tipo: 'hq', tem_numeracao: true, total_volumes: 5 })])
+    const ids: string[] = []
+    for (const n of [1, 2, 3, 4, 5]) ids.push(await salvarItem({ titulo: `${nome} ${n}`, estado: 'comprado', serie_id: s.s, numero_volume: n }))
+    // `item_salvar` não grava a capa (ela vem do upload): põe uma por volume direto na tabela.
+    for (const [k, id] of ids.entries()) await admin(`update itens set capa_url = '${U}/${nome}-${k + 1}.jpg' where id = '${id}'`)
+    await db.query(`select serie_marcar_lida($1, null, null, 'serie_e_sem_nota', true)`, [s.s])
+    return { serie: s.s, ids }
+  }
+  const marcarMelhor = (id: string, marcar = true) => db.query(`select item_melhor_da_serie_definir($1, $2)`, [id, marcar])
+
+  beforeAll(async () => {
+    await admin(`
+      delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido) values ('${U}', 'ana'), ('${OUTRO}', 'beto');
+    `)
+    const idBeto = await como(OUTRO, async () => (await db.query<{ id: string }>(`select amizade_solicitar('ana') id`)).rows[0].id)
+    await db.query(`select amizade_responder($1, true)`, [idBeto])
+    await db.query(`select feed_configurar(true)`)
+  })
+
+  it('card de vários volumes: sem melhor volume as colunas novas vêm nulas (a capa de sempre vale)', async () => {
+    await serieLida('SemMelhor')
+    for (const r of await noFeed('SemMelhor')) {
+      expect(r.qtd).toBe(5)
+      expect(r.capa_destaque).toBeNull()
+      expect(r.capa_destaque_item).toBeNull()
+    }
+  })
+
+  it('com melhor volume marcado, o card traz a capa dele (dono e amigo); `capa` e `item_id` seguem os mesmos', async () => {
+    const { ids } = await serieLida('ComMelhor')
+    const antes = (await noFeed('ComMelhor'))[0]
+    await marcarMelhor(ids[4]) // o volume 5
+    const dono = (await noFeed('ComMelhor'))[0]
+    expect(dono.capa_destaque).toBe('ComMelhor-5.jpg')
+    expect(dono.capa_destaque_item).toBe(ids[4])
+    expect(dono.item_id).toBe(antes.item_id) // quem representa o post (curtidas/comentários) não muda
+    expect(dono.capa).toBe(antes.capa)
+    await como(OUTRO, async () => {
+      const amigo = (await noFeed('ComMelhor'))[0]
+      expect(amigo.capa_destaque).toBe('ComMelhor-5.jpg')
+      expect(amigo.capa_destaque_item).toBe(ids[4])
+      // A capa privada do melhor sai pela rota do feed, pedida pelo id dele.
+      expect((await db.query<{ c: string }>(`select feed_capa($1) c`, [amigo.capa_destaque_item])).rows[0].c).toBe(`${U}/ComMelhor-5.jpg`)
+    })
+  })
+
+  it('acompanha o melhor: marcado depois, trocado ou desmarcado (a capa não fica gravada no post)', async () => {
+    const { ids } = await serieLida('Muda')
+    expect((await noFeed('Muda'))[0].capa_destaque).toBeNull()
+    await marcarMelhor(ids[1])
+    expect((await noFeed('Muda'))[0].capa_destaque_item).toBe(ids[1])
+    await marcarMelhor(ids[3]) // trocar desmarca o anterior
+    expect((await noFeed('Muda'))[0].capa_destaque_item).toBe(ids[3])
+    await marcarMelhor(ids[3], false)
+    const r = (await noFeed('Muda'))[0]
+    expect(r.capa_destaque).toBeNull()
+    expect(r.capa_destaque_item).toBeNull()
+  })
+
+  it('card de um volume não muda, nem o melhor que ficou de fora do card (outro dia)', async () => {
+    const { ids } = await serieLida('OutroDia')
+    await marcarMelhor(ids[4])
+    // O melhor foi lido há 3 dias; o card de hoje tem os outros 4.
+    await admin(`update itens set lido_marcado_em = now() - interval '3 days' where id = '${ids[4]}'`)
+    const rows = await noFeed('OutroDia')
+    const hoje = rows.find((r) => r.qtd === 4)!
+    expect(hoje.capa_destaque).toBeNull() // o card não cita o melhor: fica a capa de sempre
+    const antigo = rows.find((r) => r.qtd === 1)!
+    expect(antigo.item_id).toBe(ids[4])
+    expect(antigo.capa_destaque).toBeNull() // um volume só: a coluna nova não entra
+  })
+
+  it('privacidade: o amigo só vê a marca com notas_criticas + lidos no escopo; o dono vê sempre', async () => {
+    const { ids } = await serieLida('Escopo')
+    await marcarMelhor(ids[4])
+    for (const escopo of ['{colecao,series,lidos}', '{colecao,series,notas_criticas}']) {
+      await db.query(`select amigos_escopo_atualizar('${escopo}')`)
+      await como(OUTRO, async () => {
+        const r = (await noFeed('Escopo'))[0]
+        expect(r.qtd).toBe(5)
+        expect(r.capa_destaque).toBeNull()
+        expect(r.capa_destaque_item).toBeNull()
+      })
+      expect((await noFeed('Escopo'))[0].capa_destaque_item).toBe(ids[4])
+    }
+    await db.query(`select amigos_escopo_atualizar('{colecao,series,lidos,notas_criticas}')`)
+    await como(OUTRO, async () => expect((await noFeed('Escopo'))[0].capa_destaque_item).toBe(ids[4]))
+  })
+
+  it('melhor volume tirado do feed some do card (não vaza) e o melhor sem capa cai na capa de sempre', async () => {
+    const { ids } = await serieLida('Tirado')
+    await marcarMelhor(ids[4])
+    await db.query(`select feed_ocultar_varios($1, true)`, [[ids[4]]])
+    const r = (await noFeed('Tirado'))[0]
+    expect(r.qtd).toBe(4)
+    expect(r.capa_destaque).toBeNull()
+    await db.query(`select feed_ocultar_varios($1, false)`, [[ids[4]]])
+    expect((await noFeed('Tirado'))[0].capa_destaque_item).toBe(ids[4])
+
+    const { ids: ids2 } = await serieLida('SemCapa')
+    await marcarMelhor(ids2[4])
+    await admin(`update itens set capa_url = null where id = '${ids2[4]}'`)
+    const s = (await noFeed('SemCapa'))[0]
+    expect(s.capa_destaque).toBeNull()
+    expect(s.capa_destaque_item).toBeNull()
+  })
+
+  it('migration: feed_listar exige login e só acrescenta colunas no fim', () => {
+    const sql = readFileSync(path.join(PASTA, '0032_feed_capa_do_melhor_volume.sql'), 'utf8')
+    expect(sql).toContain('revoke all on function feed_listar(int, timestamptz) from public, anon;')
+    expect(sql).toContain('grant execute on function feed_listar(int, timestamptz) to authenticated;')
+    expect(sql.indexOf('serie_critica text,')).toBeLessThan(sql.indexOf('capa_destaque text,'))
   })
 })
 
