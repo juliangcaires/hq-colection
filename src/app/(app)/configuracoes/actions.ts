@@ -7,6 +7,7 @@ import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
 import { apelidoSchema, escopoSchema, nomeExibicaoSchema } from '@/lib/compartilhamento'
 import { lancarErroRpc } from '@/lib/rpc'
+import type { FavoritoParaSalvar } from '@/lib/favoritos'
 import { detectarTipoDeImagem, EXT_POR_MIME_IMAGEM, removerMetadados } from '@/lib/imagem'
 import { BUCKET_AVATARES, caminhoDeAvatar, MAX_BYTES_AVATAR, urlPublicaDeAvatar } from '@/lib/avatar'
 
@@ -170,23 +171,25 @@ async function apagarArquivoAntigo(supabase: Awaited<ReturnType<typeof createCli
   if (error) console.error('[avatar] não removeu arquivo antigo', antigo, error.message)
 }
 
-const favoritosSchema = z.array(z.string().uuid()).max(4, 'Você pode ter no máximo 4 séries favoritas. Tire uma para escolher outra.')
+const favoritosSchema = z
+  .array(z.object({ tipo: z.enum(['serie', 'item']), id: z.string().uuid() }))
+  .max(4, 'Você pode ter no máximo 4 favoritos. Tire um para escolher outro.')
 
-/** Grava a lista inteira dos favoritos (até 4), na ordem recebida; o banco confere dono, limite e repetidas. */
-async function salvarFavoritosSeriesImpl(ids: string[]) {
-  const lista = favoritosSchema.parse(ids)
+/** Grava a lista inteira dos favoritos (séries e volumes únicos, até 4 no total), na ordem recebida; o banco confere dono, limite e repetidos. */
+async function salvarFavoritosImpl(lista: FavoritoParaSalvar[]) {
+  const favoritos = favoritosSchema.parse(lista)
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) throw new ErroDeNegocio('Não autenticado')
 
-  const { error } = await supabase.rpc('favoritos_series_salvar', { p_series: lista })
+  const { error } = await supabase.rpc('favoritos_salvar', { p_lista: favoritos })
   if (error) lancarErroRpc(error)
   revalidatePath('/configuracoes')
   revalidatePath('/amigos', 'layout')
 }
 
-export async function salvarFavoritosSeries(ids: string[]) {
-  return executar(() => salvarFavoritosSeriesImpl(ids))
+export async function salvarFavoritos(lista: FavoritoParaSalvar[]) {
+  return executar(() => salvarFavoritosImpl(lista))
 }

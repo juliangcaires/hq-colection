@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
@@ -30,7 +30,7 @@ beforeAll(async () => {
     create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
     create role authenticated; create role anon;
   `)
-  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume', '0033_notificacoes', '0034_push_endpoint_e_aviso_de_ex_amigo', '0035_li_hoje_lote_no_feed']) {
+  for (const f of ['0001_init', '0002_editora_vira_tag', '0003_busca_capa_serie', '0004_serie_tem_numeracao', '0005_remove_view_tags_efetivas', '0006_integridade_indices_e_limites', '0007_funcoes_transacionais_e_resumo', '0008_nota_meia_estrela_e_critica', '0009_nota_e_critica_da_serie', '0010_serie_lida_e_lido_em', '0011_catalogo_edicoes', '0012_capas_compartilhadas', '0013_compartilhamento', '0014_amigos_presentes_emprestimos', '0016_foto_de_perfil', '0017_capa_variante', '0018_feed_amigos', '0019_notas_entre_amigos', '0020_casar_obra_por_isbn_e_manual', '0021_escopo_amigos_notas_padrao', '0022_chave_obra_edicao_luxo', '0023_ranking_amigos', '0024_spoiler_na_critica', '0025_releitura_e_diario', '0026_favoritos_series', '0027_progresso_por_serie', '0028_listas_curadas', '0029_leituras_blindar_update', '0030_melhor_volume_da_serie', '0031_feed_desfazer_e_nota_do_grupo', '0032_feed_capa_do_melhor_volume', '0033_notificacoes', '0034_push_endpoint_e_aviso_de_ex_amigo', '0035_li_hoje_lote_no_feed', '0036_favoritos_com_volumes_avulsos']) {
     await db.exec(readFileSync(path.join(PASTA, `${f}.sql`), 'utf8'))
   }
   await db.exec(`
@@ -2906,20 +2906,20 @@ describe('séries favoritas (migration 0026)', () => {
     await salvar([s[0], s[1], s[2], s[3]])
     expect(await meus()).toHaveLength(4)
     // Inserção direta (RLS do dono): uma quinta série não cabe em nenhuma posição.
-    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) values ($1, $2, 5)`, [U, s[4]])).rejects.toThrow()
-    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) values ($1, $2, 4)`, [U, s[4]])).rejects.toThrow()
-    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) values ($1, $2, 0)`, [U, s[4]])).rejects.toThrow()
+    await expect(db.query(`insert into favoritos(user_id, serie_id, posicao) values ($1, $2, 5)`, [U, s[4]])).rejects.toThrow()
+    await expect(db.query(`insert into favoritos(user_id, serie_id, posicao) values ($1, $2, 4)`, [U, s[4]])).rejects.toThrow()
+    await expect(db.query(`insert into favoritos(user_id, serie_id, posicao) values ($1, $2, 0)`, [U, s[4]])).rejects.toThrow()
     expect(await meus()).toHaveLength(4)
   })
 
   it('a mesma série não entra duas vezes', async () => {
     await expect(salvar([s[0], s[0]])).rejects.toThrow('favoritos_repetido')
-    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) select $1, serie_id, 1 from favoritos_series where user_id = $1 limit 1`, [U])).rejects.toThrow()
+    await expect(db.query(`insert into favoritos(user_id, serie_id, posicao) select $1, serie_id, 1 from favoritos where user_id = $1 limit 1`, [U])).rejects.toThrow()
   })
 
   it('trocar a ordem por update direto funciona (a posição é conferida no fim do comando)', async () => {
     await salvar([s[0], s[1]])
-    await db.query(`update favoritos_series set posicao = case posicao when 1 then 2 else 1 end where user_id = $1`, [U])
+    await db.query(`update favoritos set posicao = case posicao when 1 then 2 else 1 end where user_id = $1`, [U])
     expect((await meus()).map((x) => x.nome)).toEqual(['Akira', 'Berserk'])
   })
 
@@ -2927,19 +2927,19 @@ describe('séries favoritas (migration 0026)', () => {
     const doBeto = await como(OUTRO, () => mkSerieComo(OUTRO, 'Do Beto'))
     await expect(salvar([doBeto])).rejects.toThrow('serie_nao_encontrada')
     await expect(salvar(['33333333-3333-3333-3333-333333333333'])).rejects.toThrow('serie_nao_encontrada')
-    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) values ($1, $2, 4)`, [U, doBeto])).rejects.toThrow('serie_nao_encontrada')
+    await expect(db.query(`insert into favoritos(user_id, serie_id, posicao) values ($1, $2, 4)`, [U, doBeto])).rejects.toThrow('serie_nao_encontrada')
     // Nem pondo o user_id do Beto: a RLS do dono barra.
-    await expect(db.query(`insert into favoritos_series(user_id, serie_id, posicao) values ($1, $2, 4)`, [OUTRO, doBeto])).rejects.toThrow()
+    await expect(db.query(`insert into favoritos(user_id, serie_id, posicao) values ($1, $2, 4)`, [OUTRO, doBeto])).rejects.toThrow()
     expect((await meus()).map((x) => x.nome)).toEqual(['Akira', 'Berserk'])
   })
   const mkSerieComo = (uid: string, nome: string) => mkSerie(nome, { uid })
 
   it('RLS do dono: ninguém lê nem altera os favoritos de outra pessoa pela tabela', async () => {
     await como(OUTRO, async () => {
-      expect((await db.query(`select * from favoritos_series`)).rows).toHaveLength(0)
+      expect((await db.query(`select * from favoritos`)).rows).toHaveLength(0)
       expect((await meus())).toEqual([])
-      await db.query(`delete from favoritos_series`)
-      await db.query(`update favoritos_series set posicao = 3`)
+      await db.query(`delete from favoritos`)
+      await db.query(`update favoritos set posicao = 3`)
     })
     expect(await meus()).toHaveLength(2)
     // O Beto salvando a lista dele não mexe na da Ana.
@@ -3025,6 +3025,317 @@ describe('séries favoritas (migration 0026)', () => {
     await db.query(`delete from series where id = $1`, [s[1]])
     expect((await meus()).map((x) => x.nome)).toEqual(['Berserk'])
   })
+})
+
+describe('favoritos com volumes avulsos (migration 0036)', () => {
+  // Ana (U) é a dona; Beto (OUTRO) é amigo dela; Caio não é amigo de ninguém.
+  const CAIO = '66666666-6666-6666-6666-666666666666'
+  const como = async <T,>(uid: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('app.uid','${uid}',false)`)
+    try {
+      return await fn()
+    } finally {
+      await db.query(`select set_config('app.uid','${U}',false)`)
+    }
+  }
+  const admin = async (sql: string) => {
+    await db.query(`reset role`)
+    try {
+      await db.exec(sql)
+    } finally {
+      await db.query(`set role authenticated`)
+    }
+  }
+  const HASH = 'b'.repeat(64)
+  const PRIVADA = `${U}/11111111-2222-3333-4444-555555555555-1700000000000.jpg`
+  const mkSerie = async (nome: string, uid = U) => {
+    const { rows } = await db.query<{ id: string }>(`insert into series(user_id, nome, tipo) values ($1, $2, 'hq') returning id`, [uid, nome])
+    await db.query(`insert into itens(user_id, serie_id, titulo, numero_volume, estado, capa_url) values ($1, $2, $3, 1, 'comprado', $4)`, [uid, rows[0].id, `${nome} 1`, `pub/${HASH}.jpg`])
+    return rows[0].id
+  }
+  const mkAvulso = async (titulo: string, opts: { estado?: string; capa?: string | null; uid?: string; serie?: string | null; variante?: string | null } = {}) => {
+    const { rows } = await db.query<{ id: string }>(
+      `insert into itens(user_id, serie_id, titulo, estado, capa_url, tipo, variante_de) values ($1, $2, $3, $4, $5, 'hq', $6) returning id`,
+      [opts.uid ?? U, opts.serie ?? null, titulo, opts.estado ?? 'comprado', opts.capa === undefined ? `pub/${HASH}.jpg` : opts.capa, opts.variante ?? null]
+    )
+    return rows[0].id
+  }
+  type Fav = { tipo: 'serie' | 'item'; id: string }
+  const salvar = (lista: Fav[]) => db.query(`select favoritos_salvar($1::jsonb)`, [JSON.stringify(lista)])
+  const meus = async () => (await db.query<{ origem: string; nome: string; posicao: number }>(`select origem, nome, posicao from favoritos_meus()`)).rows
+  const doAmigo = async (apelido: string) =>
+    (await db.query<{ origem: string; id: string; nome: string; capa: string | null; posicao: number }>(`select * from amigo_favoritos($1)`, [apelido])).rows
+  const nomes = (l: { nome: string }[]) => l.map((x) => x.nome)
+  let amizade = ''
+  const s: string[] = []
+  const a: string[] = []
+
+  beforeAll(async () => {
+    await admin(`
+      insert into auth.users values ('${CAIO}') on conflict do nothing;
+      delete from compartilhamentos; delete from amizades; delete from itens; delete from series; delete from perfis;
+      insert into perfis(user_id, apelido, escopo_amigos) values
+        ('${U}', 'ana', '{series,colecao}'), ('${OUTRO}', 'beto', '{series,colecao}'), ('${CAIO}', 'caio', '{series,colecao}');
+    `)
+    amizade = (await como(OUTRO, () => db.query<{ id: string }>(`select amizade_solicitar('ana') id`))).rows[0].id
+    await db.query(`select amizade_responder($1, true)`, [amizade])
+    for (const nome of ['Berserk', 'Akira', 'Monster']) s.push(await mkSerie(nome))
+    a.push(await mkAvulso('Batman: Silêncio 2'))
+    a.push(await mkAvulso('Maus'))
+    a.push(await mkAvulso('Watchmen', { estado: 'lido', capa: PRIVADA }))
+    a.push(await mkAvulso('Persépolis'))
+    a.push(await mkAvulso('Quero Muito', { estado: 'desejo' }))
+  })
+
+  it('mistura série e avulso, na ordem; o amigo vê igual, com o tipo de cada um', async () => {
+    await salvar([{ tipo: 'item', id: a[0] }, { tipo: 'serie', id: s[0] }, { tipo: 'item', id: a[2] }])
+    expect(await meus()).toEqual([
+      { origem: 'avulso', nome: 'Batman: Silêncio 2', posicao: 1 },
+      { origem: 'serie', nome: 'Berserk', posicao: 2 },
+      { origem: 'avulso', nome: 'Watchmen', posicao: 3 },
+    ])
+    await como(OUTRO, async () => {
+      const f = await doAmigo('ana')
+      expect(f.map((x) => [x.origem, x.nome, x.posicao])).toEqual([['avulso', 'Batman: Silêncio 2', 1], ['serie', 'Berserk', 2], ['avulso', 'Watchmen', 3]])
+      expect(f[0].capa).toBe(`pub/${HASH}.jpg`)
+      // Capa privada: só o arquivo, sem a pasta do dono.
+      expect(f[2].capa).toBe('11111111-2222-3333-4444-555555555555-1700000000000.jpg')
+      expect(f[2].capa).not.toContain(U)
+    })
+  })
+
+  it('o limite de 4 vale no total, na função e no banco', async () => {
+    await expect(salvar([{ tipo: 'serie', id: s[0] }, { tipo: 'serie', id: s[1] }, { tipo: 'item', id: a[0] }, { tipo: 'item', id: a[1] }, { tipo: 'item', id: a[2] }])).rejects.toThrow('favoritos_limite')
+    await salvar([{ tipo: 'serie', id: s[0] }, { tipo: 'serie', id: s[1] }, { tipo: 'item', id: a[0] }, { tipo: 'item', id: a[1] }])
+    expect(await meus()).toHaveLength(4)
+    // Inserção direta (RLS do dono): nem avulso nem série cabem em uma quinta linha.
+    await expect(db.query(`insert into favoritos(user_id, item_id, posicao) values ($1, $2, 5)`, [U, a[2]])).rejects.toThrow()
+    await expect(db.query(`insert into favoritos(user_id, item_id, posicao) values ($1, $2, 4)`, [U, a[2]])).rejects.toThrow()
+    await expect(db.query(`insert into favoritos(user_id, serie_id, posicao) values ($1, $2, 3)`, [U, s[2]])).rejects.toThrow()
+    expect(await meus()).toHaveLength(4)
+  })
+
+  it('cada linha é série OU item, nunca os dois nem nenhum; repetido é recusado', async () => {
+    await salvar([{ tipo: 'serie', id: s[0] }])
+    await expect(db.query(`insert into favoritos(user_id, serie_id, item_id, posicao) values ($1, $2, $3, 2)`, [U, s[1], a[0]])).rejects.toThrow()
+    await expect(db.query(`insert into favoritos(user_id, posicao) values ($1, 2)`, [U])).rejects.toThrow()
+    await expect(salvar([{ tipo: 'item', id: a[0] }, { tipo: 'item', id: a[0] }])).rejects.toThrow('favoritos_repetido')
+    await expect(db.query(`insert into favoritos(user_id, serie_id, posicao) values ($1, $2, 2)`, [U, s[0]])).rejects.toThrow()
+    await salvar([{ tipo: 'item', id: a[0] }])
+    await expect(db.query(`insert into favoritos(user_id, item_id, posicao) values ($1, $2, 2)`, [U, a[0]])).rejects.toThrow()
+  })
+
+  it('lista malformada é recusada sem gravar nada', async () => {
+    await salvar([{ tipo: 'item', id: a[0] }])
+    for (const ruim of ['{"tipo":"item"}', '"x"', '[{"tipo":"livro","id":"' + a[0] + '"}]', '[{"tipo":"item","id":"nao-e-uuid"}]', '[1]', '[{"tipo":"item"}]']) {
+      await expect(db.query(`select favoritos_salvar($1::jsonb)`, [ruim])).rejects.toThrow('favoritos_invalido')
+    }
+    expect(await meus()).toEqual([{ origem: 'avulso', nome: 'Batman: Silêncio 2', posicao: 1 }])
+    await db.query(`select favoritos_salvar(null)`)
+    expect(await meus()).toEqual([])
+  })
+
+  it('só avulso da própria coleção, possuído e sem série: desejo, item de série, variante e item de outro são recusados', async () => {
+    const comSerie = await mkAvulso('Tem Série', { serie: s[1] })
+    const variante = await mkAvulso('Variante do Maus', { variante: a[1] })
+    const doBeto = await como(OUTRO, () => mkAvulso('Do Beto', { uid: OUTRO }))
+    for (const id of [a[4], comSerie, variante, doBeto, '33333333-3333-3333-3333-333333333333']) {
+      await expect(salvar([{ tipo: 'item', id }])).rejects.toThrow('item_nao_elegivel')
+      await expect(db.query(`insert into favoritos(user_id, item_id, posicao) values ($1, $2, 1)`, [U, id])).rejects.toThrow('item_nao_elegivel')
+    }
+    await expect(db.query(`insert into favoritos(user_id, item_id, posicao) values ($1, $2, 1)`, [OUTRO, doBeto])).rejects.toThrow()
+    // Série do Beto continua recusada.
+    await expect(salvar([{ tipo: 'serie', id: await como(OUTRO, () => mkSerie('Série do Beto', OUTRO)) }])).rejects.toThrow('serie_nao_encontrada')
+    expect(await meus()).toEqual([])
+  })
+
+  it('o item deixa de ser elegível depois (vira desejo, entra numa série, vira variante): sai dos favoritos na hora', async () => {
+    await salvar([{ tipo: 'item', id: a[0] }, { tipo: 'item', id: a[1] }, { tipo: 'item', id: a[3] }, { tipo: 'serie', id: s[0] }])
+    await db.query(`update itens set estado = 'desejo' where id = $1`, [a[0]])
+    await db.query(`update itens set serie_id = $2 where id = $1`, [a[1], s[2]])
+    await db.query(`update itens set variante_de = $2 where id = $1`, [a[3], a[2]])
+    expect(await meus()).toEqual([{ origem: 'serie', nome: 'Berserk', posicao: 4 }])
+    // Os avulsos mudaram de volta: não voltam sozinhos.
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [a[0]])
+    await db.query(`update itens set serie_id = null where id = $1`, [a[1]])
+    await db.query(`update itens set variante_de = null where id = $1`, [a[3]])
+    expect(await meus()).toHaveLength(1)
+  })
+
+  it('lido continua elegível (comprado ou lido); apagar o item tira dos favoritos', async () => {
+    await salvar([{ tipo: 'item', id: a[2] }, { tipo: 'item', id: a[3] }])
+    await db.query(`update itens set estado = 'comprado' where id = $1`, [a[2]])
+    expect(await meus()).toHaveLength(2)
+    await db.query(`delete from itens where id = $1`, [a[3]])
+    expect(nomes(await meus())).toEqual(['Watchmen'])
+    a[3] = await mkAvulso('Persépolis')
+  })
+
+  it('candidatos: minhas séries com volume possuído e meus avulsos possuídos, em ordem alfabética; sem desejo, variante, série ou dos outros', async () => {
+    const { rows } = await db.query<{ origem: string; nome: string; capa: string | null }>(`select origem, nome, capa from favoritos_candidatos()`)
+    const n = rows.map((r) => r.nome)
+    expect(n).toEqual([...n].sort((x, y) => x.localeCompare(y, 'pt', { sensitivity: 'base' })))
+    expect(rows.find((r) => r.nome === 'Berserk')?.origem).toBe('serie')
+    expect(rows.find((r) => r.nome === 'Maus')?.origem).toBe('avulso')
+    expect(rows.find((r) => r.nome === 'Watchmen')?.capa).toBe(PRIVADA)
+    for (const fora of ['Quero Muito', 'Tem Série', 'Variante do Maus', 'Do Beto', 'Série do Beto', 'Berserk 1']) expect(n).not.toContain(fora)
+  })
+
+  it('visibilidade: o avulso segue a seção "colecao" e a série segue "series"; sem a seção, nada vaza', async () => {
+    await salvar([{ tipo: 'item', id: a[0] }, { tipo: 'serie', id: s[0] }, { tipo: 'item', id: a[2] }])
+    const ver = async (escopo: string) => {
+      await admin(`update perfis set escopo_amigos = '${escopo}' where user_id = '${U}'`)
+      return como(OUTRO, async () => nomes(await doAmigo('ana')))
+    }
+    expect(await ver('{series,colecao}')).toEqual(['Batman: Silêncio 2', 'Berserk', 'Watchmen'])
+    expect(await ver('{series}')).toEqual(['Berserk'])
+    expect(await ver('{colecao}')).toEqual(['Batman: Silêncio 2', 'Watchmen'])
+    expect(await ver('{lidos,desejos,ranking,notas_criticas}')).toEqual([])
+    expect(await ver('{}')).toEqual([])
+    // O dono continua vendo tudo, qualquer que seja o escopo.
+    expect(await meus()).toHaveLength(3)
+    await admin(`update perfis set escopo_amigos = '{series,colecao}' where user_id = '${U}'`)
+  })
+
+  it('quem não é amigo, quem só pediu e quem saiu da amizade não veem; sem login também não', async () => {
+    await como(CAIO, async () => expect(await doAmigo('ana')).toEqual([]))
+    await como(CAIO, async () => {
+      await db.query(`select amizade_solicitar('ana')`)
+      expect(await doAmigo('ana')).toEqual([])
+    })
+    await admin(`delete from amizades where solicitante = '${CAIO}'`)
+    await db.query(`select set_config('app.uid','',false)`)
+    expect(await doAmigo('ana')).toEqual([])
+    await db.query(`select set_config('app.uid','${U}',false)`)
+    // Ex-amigo: some na hora e volta se refizerem a amizade; os favoritos ficam guardados.
+    await db.query(`select amizade_desfazer($1)`, [amizade])
+    await como(OUTRO, async () => expect(await doAmigo('ana')).toEqual([]))
+    expect(await meus()).toHaveLength(3)
+    amizade = (await como(OUTRO, () => db.query<{ id: string }>(`select amizade_solicitar('ana') id`))).rows[0].id
+    await db.query(`select amizade_responder($1, true)`, [amizade])
+    await como(OUTRO, async () => expect(await doAmigo('ana')).toHaveLength(3))
+  })
+
+  it('o avulso que o amigo não pode mais ver (virou desejo) não aparece, e a capa privada dele não sai', async () => {
+    await db.query(`update itens set estado = 'desejo' where id = $1`, [a[2]])
+    await como(OUTRO, async () => expect(nomes(await doAmigo('ana'))).toEqual(['Batman: Silêncio 2', 'Berserk']))
+    await db.query(`update itens set estado = 'lido' where id = $1`, [a[2]])
+  })
+
+  it('só origem, id, nome, tipo, capa e posição saem: nota e crítica nunca vazam', async () => {
+    await salvar([{ tipo: 'item', id: a[2] }, { tipo: 'serie', id: s[0] }])
+    await db.query(`update itens set nota = 5, critica = 'segredo do item', critica_privada = true where id = $1`, [a[2]])
+    await db.query(`update series set nota = 5, critica = 'segredo da série', critica_privada = true where id = $1`, [s[0]])
+    await como(OUTRO, async () => {
+      const { rows } = await db.query<Record<string, unknown>>(`select * from amigo_favoritos('ana')`)
+      expect(rows).toHaveLength(2)
+      expect(Object.keys(rows[0]).sort()).toEqual(['capa', 'id', 'nome', 'origem', 'posicao', 'tipo'])
+      expect(JSON.stringify(rows)).not.toContain('segredo')
+    })
+  })
+
+  it('RLS do dono: ninguém lê nem altera os favoritos de outra pessoa pela tabela; cada um salva a sua lista', async () => {
+    await como(OUTRO, async () => {
+      expect((await db.query(`select * from favoritos`)).rows).toHaveLength(0)
+      expect(await meus()).toEqual([])
+      await db.query(`delete from favoritos`)
+      await db.query(`update favoritos set posicao = 3`)
+      await salvar([{ tipo: 'item', id: await mkAvulso('Avulso do Beto', { uid: OUTRO }) }])
+      expect(nomes(await meus())).toEqual(['Avulso do Beto'])
+    })
+    expect(await meus()).toHaveLength(2)
+    expect(nomes(await doAmigo('beto'))).toEqual(['Avulso do Beto'])
+  })
+
+  it('reordenar por update direto funciona (a posição é conferida no fim do comando)', async () => {
+    await salvar([{ tipo: 'item', id: a[0] }, { tipo: 'serie', id: s[0] }])
+    await db.query(`update favoritos set posicao = case posicao when 1 then 2 else 1 end where user_id = $1`, [U])
+    expect(nomes(await meus())).toEqual(['Berserk', 'Batman: Silêncio 2'])
+  })
+
+  describe('compatibilidade com o app antigo (funções favoritos_series_*)', () => {
+    const salvarSeries = (ids: string[]) => db.query(`select favoritos_series_salvar($1::uuid[])`, [ids])
+    const meusSeries = async () => (await db.query<{ nome: string; posicao: number }>(`select nome, posicao from favoritos_series_meus()`)).rows
+    const seriesDoAmigo = async (apelido: string) => (await db.query<{ nome: string }>(`select nome from amigo_favoritos_series($1)`, [apelido])).rows.map((x) => x.nome)
+
+    it('o app antigo só enxerga as séries, no amigo e no dono', async () => {
+      await salvar([{ tipo: 'item', id: a[0] }, { tipo: 'serie', id: s[1] }, { tipo: 'item', id: a[1] }, { tipo: 'serie', id: s[0] }])
+      expect(await meusSeries()).toEqual([{ nome: 'Akira', posicao: 2 }, { nome: 'Berserk', posicao: 4 }])
+      await como(OUTRO, async () => expect(await seriesDoAmigo('ana')).toEqual(['Akira', 'Berserk']))
+    })
+
+    it('o app antigo salva só as séries e os avulsos ficam guardados, depois delas', async () => {
+      await salvarSeries([s[2]])
+      expect(await meus()).toEqual([
+        { origem: 'serie', nome: 'Monster', posicao: 1 },
+        { origem: 'avulso', nome: 'Batman: Silêncio 2', posicao: 2 },
+        { origem: 'avulso', nome: 'Maus', posicao: 3 },
+      ])
+    })
+
+    it('se as séries mais os avulsos guardados passam de 4, recusa sem apagar nada', async () => {
+      await expect(salvarSeries([s[0], s[1], s[2]])).rejects.toThrow('favoritos_limite')
+      expect(await meus()).toHaveLength(3)
+      await expect(salvarSeries([s[0], s[0]])).rejects.toThrow('favoritos_repetido')
+      await expect(salvarSeries([s[0], '33333333-3333-3333-3333-333333333333'])).rejects.toThrow('serie_nao_encontrada')
+      await salvarSeries([s[0], s[1]])
+      expect(await meus()).toHaveLength(4)
+    })
+
+    it('sem avulsos o comportamento é o de sempre: lista vazia limpa', async () => {
+      await salvar([])
+      await salvarSeries([s[1], s[0]])
+      expect(await meusSeries()).toEqual([{ nome: 'Akira', posicao: 1 }, { nome: 'Berserk', posicao: 2 }])
+      await salvarSeries([])
+      expect(await meus()).toEqual([])
+    })
+  })
+})
+
+describe('favoritos: migração das linhas da 0026 para a 0036', () => {
+  it('as séries favoritas de antes continuam, na mesma posição e ordem, e o limite de 4 segue valendo', async () => {
+    const velho = new PGlite()
+    await velho.exec(`
+      create schema auth; create table auth.users(id uuid primary key);
+      create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('app.uid', true),'')::uuid $$;
+      create schema storage;
+      create table storage.buckets(id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+      create table storage.objects(bucket_id text, name text);
+      create function storage.foldername(n text) returns text[] language sql as $$ select string_to_array(n,'/') $$;
+      create role authenticated; create role anon;
+    `)
+    const arquivos = readdirSync(PASTA).filter((f) => f.endsWith('.sql')).sort()
+    for (const f of arquivos.filter((x) => x < '0036')) await velho.exec(readFileSync(path.join(PASTA, f), 'utf8'))
+    await velho.exec(`
+      insert into auth.users values ('${U}');
+      insert into series(id, user_id, nome, tipo) values
+        ('a0000000-0000-0000-0000-000000000001', '${U}', 'Berserk', 'manga'),
+        ('a0000000-0000-0000-0000-000000000002', '${U}', 'Akira', 'manga'),
+        ('a0000000-0000-0000-0000-000000000003', '${U}', 'Monster', 'manga');
+      insert into itens(user_id, serie_id, titulo, numero_volume, estado, capa_url)
+        select '${U}', id, nome || ' 1', 1, 'comprado', 'pub/${'c'.repeat(64)}.jpg' from series;
+      insert into favoritos_series(user_id, serie_id, posicao) values
+        ('${U}', 'a0000000-0000-0000-0000-000000000003', 1),
+        ('${U}', 'a0000000-0000-0000-0000-000000000001', 2),
+        ('${U}', 'a0000000-0000-0000-0000-000000000002', 4);
+    `)
+    await velho.exec(readFileSync(path.join(PASTA, arquivos.find((x) => x.startsWith('0036'))!), 'utf8'))
+    await velho.exec(`select set_config('app.uid','${U}',false)`)
+
+    const { rows } = await velho.query<{ serie_id: string; item_id: string | null; posicao: number }>(`select serie_id, item_id, posicao from favoritos order by posicao`)
+    expect(rows).toEqual([
+      { serie_id: 'a0000000-0000-0000-0000-000000000003', item_id: null, posicao: 1 },
+      { serie_id: 'a0000000-0000-0000-0000-000000000001', item_id: null, posicao: 2 },
+      { serie_id: 'a0000000-0000-0000-0000-000000000002', item_id: null, posicao: 4 },
+    ])
+    expect((await velho.query<{ nome: string; origem: string }>(`select nome, origem from favoritos_meus()`)).rows).toEqual([
+      { nome: 'Monster', origem: 'serie' }, { nome: 'Berserk', origem: 'serie' }, { nome: 'Akira', origem: 'serie' },
+    ])
+    expect((await velho.query<{ nome: string }>(`select nome from favoritos_series_meus()`)).rows.map((x) => x.nome)).toEqual(['Monster', 'Berserk', 'Akira'])
+    // A 4ª posição já estava ocupada: uma quinta linha continua impossível.
+    await expect(velho.exec(`insert into favoritos(user_id, serie_id, posicao) values ('${U}', 'a0000000-0000-0000-0000-000000000001', 4)`)).rejects.toThrow()
+    await velho.close()
+  }, 60_000)
 })
 
 describe('listas curadas (migration 0028)', () => {
