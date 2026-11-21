@@ -107,6 +107,8 @@ export function ItemForm({
   const [compraAberto, setCompraAberto] = useState(false)
 
   const tagsHerdadas = item?.tagsSerie ?? []
+  // Tipos de tag sem nenhuma tag (própria ou herdada): viram os botões "+ Arco", "+ Selo"… no fim da grade.
+  const tiposSemTag = TIPOS_TAG_DEDICADOS.filter(({ tipo }) => tagsPorTipo[tipo].length === 0 && !tagsHerdadas.some((t) => t.tipo === tipo))
   // Item que já era lido e tem as leituras carregadas: as datas vivem na seção "Leituras" (o `lido_em` segue a mais recente).
   const usaLeituras = leituras !== null && item.estado === 'lido' && estado === 'lido'
 
@@ -688,65 +690,69 @@ export function ItemForm({
           {/* Tags */}
           <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-[18px]">
             <h2 className="font-heading text-[19px] font-bold">Tags</h2>
-            {TIPOS_TAG_DEDICADOS.map(({ tipo: tipoTag, label, multiple }) => {
-              const proprias = tagsPorTipo[tipoTag]
-              const herdadas = tagsHerdadas.filter((t) => t.tipo === tipoTag)
-              if (proprias.length === 0 && herdadas.length === 0) return null
-              return (
-                <div key={tipoTag} className="flex flex-wrap items-center gap-2">
-                  <span className="mr-0.5 text-xs text-muted-foreground">{label}</span>
-                  {herdadas.map((t) => (
-                    <span
-                      key={t.id}
-                      title="Herdada da série"
-                      className="inline-flex h-8 items-center gap-1.5 rounded-full border border-dashed border-border-strong px-3 text-[13px]"
-                    >
-                      <Layers className="size-3" aria-hidden />
-                      {t.nome}
-                    </span>
-                  ))}
-                  {proprias.map((t) => (
-                    <span key={t.id} className="inline-flex h-8 items-center gap-1 rounded-full bg-primary/20 pr-1.5 pl-3 text-[13px] font-medium">
-                      {t.nome}
-                      <button
-                        type="button"
-                        aria-label={`Remover ${t.nome}`}
-                        className="flex size-6 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
-                        onClick={() => setTagsPorTipo((prev) => ({ ...prev, [tipoTag]: prev[tipoTag].filter((x) => x.id !== t.id) }))}
+            {/* Em tela larga os tipos viram colunas (2, e 3 se couber); no celular, uma coluna. Os "+ Arco/Selo/…" dos tipos
+                vazios entram na mesma grade, como o último item, e não numa linha solitária no fim. */}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] items-start gap-x-6 gap-y-3">
+              {TIPOS_TAG_DEDICADOS.map(({ tipo: tipoTag, label, multiple }) => {
+                const proprias = tagsPorTipo[tipoTag]
+                const herdadas = tagsHerdadas.filter((t) => t.tipo === tipoTag)
+                if (proprias.length === 0 && herdadas.length === 0) return null
+                return (
+                  <div key={tipoTag} className="flex flex-wrap items-center gap-2">
+                    <span className="mr-0.5 text-xs text-muted-foreground">{label}</span>
+                    {herdadas.map((t) => (
+                      <span
+                        key={t.id}
+                        title="Herdada da série"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-dashed border-border-strong px-3 text-[13px]"
                       >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                  {multiple && proprias.length > 0 && (
+                        <Layers className="size-3" aria-hidden />
+                        {t.nome}
+                      </span>
+                    ))}
+                    {proprias.map((t) => (
+                      <span key={t.id} className="inline-flex h-8 items-center gap-1 rounded-full bg-primary/20 pr-1.5 pl-3 text-[13px] font-medium">
+                        {t.nome}
+                        <button
+                          type="button"
+                          aria-label={`Remover ${t.nome}`}
+                          className="flex size-6 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                          onClick={() => setTagsPorTipo((prev) => ({ ...prev, [tipoTag]: prev[tipoTag].filter((x) => x.id !== t.id) }))}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    {multiple && proprias.length > 0 && (
+                      <TagTypeCombobox
+                        tipo={tipoTag}
+                        label={label}
+                        multiple
+                        value={proprias}
+                        onChange={(tags) => setTagsPorTipo((prev) => ({ ...prev, [tipoTag]: tags }))}
+                        gatilho={<Plus className="size-4" aria-label={`Adicionar ${label}`} />}
+                        gatilhoClassName="flex size-8 items-center justify-center rounded-full border border-dashed border-input text-link"
+                      />
+                    )}
+                  </div>
+                )
+              })}
+              {tiposSemTag.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {tiposSemTag.map(({ tipo: tipoTag, label, multiple }) => (
                     <TagTypeCombobox
+                      key={tipoTag}
                       tipo={tipoTag}
                       label={label}
-                      multiple
-                      value={proprias}
+                      multiple={multiple}
+                      value={tagsPorTipo[tipoTag]}
                       onChange={(tags) => setTagsPorTipo((prev) => ({ ...prev, [tipoTag]: tags }))}
-                      gatilho={<Plus className="size-4" aria-label={`Adicionar ${label}`} />}
-                      gatilhoClassName="flex size-8 items-center justify-center rounded-full border border-dashed border-input text-link"
+                      gatilho={`+ ${label}`}
+                      gatilhoClassName="h-9 rounded-full border border-dashed border-input px-3 text-[13px] text-link"
                     />
-                  )}
+                  ))}
                 </div>
-              )
-            })}
-            <div className="flex flex-wrap gap-2">
-              {TIPOS_TAG_DEDICADOS.filter(
-                ({ tipo: tipoTag }) => tagsPorTipo[tipoTag].length === 0 && !tagsHerdadas.some((t) => t.tipo === tipoTag)
-              ).map(({ tipo: tipoTag, label, multiple }) => (
-                <TagTypeCombobox
-                  key={tipoTag}
-                  tipo={tipoTag}
-                  label={label}
-                  multiple={multiple}
-                  value={tagsPorTipo[tipoTag]}
-                  onChange={(tags) => setTagsPorTipo((prev) => ({ ...prev, [tipoTag]: tags }))}
-                  gatilho={`+ ${label}`}
-                  gatilhoClassName="h-9 rounded-full border border-dashed border-input px-3 text-[13px] text-link"
-                />
-              ))}
+              )}
             </div>
           </section>
 
