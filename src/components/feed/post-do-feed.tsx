@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Estrelas } from '@/components/ui/estrelas'
 import { CriticaSpoiler } from '@/components/ui/critica-spoiler'
 import { InteracaoDoItem } from '@/components/feed/interacao-do-item'
-import { avaliacaoDoPost, tempoRelativo, tituloDoPost, urlDeCapaDoFeed, type PostDoFeed } from '@/lib/feed'
+import { LoteDoFeed } from '@/components/feed/lote-do-feed'
+import { avaliacaoDoPost, ehPostDeLote, tempoRelativo, tituloDoPost, urlDeCapaDoFeed, type PostDoFeed } from '@/lib/feed'
 import { formatarNota } from '@/lib/nota'
 
 /** Um "leu X" do feed: quem leu, capa, nota, crítica, curtir e comentar. Todo texto vai como texto puro. */
@@ -19,6 +20,8 @@ export function PostDoFeed({ post, onOcultar }: { post: PostDoFeed; onOcultar?: 
   const nome = post.nome || post.apelido || 'Alguém'
   const titulo = tituloDoPost(post)
   const av = avaliacaoDoPost(post)
+  // Card de lote do "Li hoje" (0035): capas dos volumes + lista que se expande, no lugar do corpo de um volume.
+  const lote = !post.releitura && ehPostDeLote(post) ? post.loteItens : null
   // Post de vários volumes sai inteiro: o aviso diz quantos.
   const tiraVarios = post.qtd > 1 && !post.releitura
 
@@ -49,6 +52,9 @@ export function PostDoFeed({ post, onOcultar }: { post: PostDoFeed; onOcultar?: 
         )}
       </header>
 
+      {lote ? (
+        <LoteDoFeed post={post} volumes={lote} />
+      ) : (
       <div className="flex gap-3">
         <div className="relative h-[108px] w-[72px] shrink-0 overflow-hidden rounded-lg bg-surface-2">
           {capa && <Image unoptimized src={capa} alt="" fill sizes="72px" className="object-cover" />}
@@ -71,6 +77,7 @@ export function PostDoFeed({ post, onOcultar }: { post: PostDoFeed; onOcultar?: 
           )}
         </div>
       </div>
+      )}
 
       <InteracaoDoItem itemId={post.itemId} curti={post.curti} curtidas={post.curtidas} comentarios={post.comentarios} />
     </article>

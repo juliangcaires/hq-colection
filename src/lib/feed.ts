@@ -14,6 +14,19 @@ type Cliente = SupabaseClient<any>
 export const TAMANHO_PAGINA_FEED = 20
 export const MAX_COMENTARIO = 500
 
+/** Um volume do card de lote do "Li hoje" (0035), já com a visibilidade de quem pede (nota/crítica nulas se não pode ver). */
+export type VolumeDoLoteNoFeed = {
+  itemId: string
+  serieNome: string | null
+  titulo: string
+  numeroVolume: number | null
+  /** `pub/<hash>` (catálogo público), nome de arquivo privado ou null. */
+  capa: string | null
+  nota: number | null
+  critica: string | null
+  criticaSpoiler: boolean
+}
+
 export type PostDoFeed = {
   /** Item do post (o mais recente, se for um lote): é nele que curtidas e comentários ficam. */
   itemId: string
@@ -58,6 +71,13 @@ export type PostDoFeed = {
    */
   capaDestaque: string | null
   capaDestaqueItem: string | null
+  /**
+   * Card de lote do "Li hoje" (0035): vários volumes de séries diferentes lidos juntos viram UM post. `loteItens` traz os
+   * volumes (para as capas e a lista que se expande); nulos nos posts de sempre e sem a migration. Curtir e comentar
+   * continuam no `itemId` (o volume que representa o card).
+   */
+  loteId: string | null
+  loteItens: VolumeDoLoteNoFeed[] | null
 }
 
 /** Item tirado do feed que ainda pode voltar (0031): um por post original (série + dia). */
@@ -90,6 +110,33 @@ export type ResumoSemanal = {
 }
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v))
+
+/** `lote_itens` (jsonb) do banco → volumes do card. Qualquer coisa fora do formato vira "sem lote" (cai no card normal). */
+function lerLoteItens(bruto: unknown): VolumeDoLoteNoFeed[] | null {
+  if (!Array.isArray(bruto) || bruto.length === 0) return null
+  const lista: VolumeDoLoteNoFeed[] = []
+  for (const x of bruto) {
+    if (!x || typeof x !== 'object') return null
+    const r = x as Record<string, unknown>
+    if (typeof r.item_id !== 'string' || typeof r.titulo !== 'string') return null
+    lista.push({
+      itemId: r.item_id,
+      serieNome: (r.serie_nome as string | null) ?? null,
+      titulo: r.titulo,
+      numeroVolume: num(r.numero_volume),
+      capa: (r.capa as string | null) ?? null,
+      nota: num(r.nota),
+      critica: (r.critica as string | null) ?? null,
+      criticaSpoiler: r.critica_spoiler === true,
+    })
+  }
+  return lista
+}
+
+/** O post é o card de lote (2 ou mais volumes de obras diferentes)? Um lote de 1 volume é leitura comum. */
+export function ehPostDeLote(post: Pick<PostDoFeed, 'loteItens'>): post is Pick<PostDoFeed, 'loteItens'> & { loteItens: VolumeDoLoteNoFeed[] } {
+  return post.loteItens !== null && post.loteItens.length >= 2
+}
 
 export async function carregarFeed(supabase: Cliente, antes: string | null = null, limite = TAMANHO_PAGINA_FEED): Promise<PostDoFeed[]> {
   const { data, error } = await supabase.rpc('feed_listar', { p_limite: limite, p_antes: antes })
@@ -125,6 +172,8 @@ export async function carregarFeed(supabase: Cliente, antes: string | null = nul
     serieCritica: (r.serie_critica as string | null) ?? null,
     capaDestaque: (r.capa_destaque as string | null) ?? null,
     capaDestaqueItem: (r.capa_destaque_item as string | null) ?? null,
+    loteId: (r.lote_id as string | null) ?? null,
+    loteItens: lerLoteItens(r.lote_itens),
   }))
 }
 
@@ -237,8 +286,15 @@ export function chaveDoPost(post: Pick<PostDoFeed, 'itemId' | 'leituraId'>): str
  */
 export function urlDeCapaDoFeed(post: Pick<PostDoFeed, 'capa' | 'itemId'> & Partial<Pick<PostDoFeed, 'capaDestaque' | 'capaDestaqueItem'>>): string | null {
   const destaque = post.capaDestaque && post.capaDestaqueItem
-  const capa = destaque ? post.capaDestaque! : post.capa
-  const item = destaque ? post.capaDestaqueItem! : post.itemId
+  return urlDaCapa(destaque ? post.capaDestaque! : post.capa, destaque ? post.capaDestaqueItem! : post.itemId)
+}
+
+/** Capa de um volume do card de lote: a mesma regra (catálogo público direto; privada pela rota, pedida pelo id do volume). */
+export function urlDeCapaDoVolumeDoLote(v: Pick<VolumeDoLoteNoFeed, 'capa' | 'itemId'>): string | null {
+  return urlDaCapa(v.capa, v.itemId)
+}
+
+function urlDaCapa(capa: string | null, item: string): string | null {
   if (!capa) return null
   if (capa.startsWith('pub/')) return urlPublicaDeCapa(capa) || null
   if (!ARQUIVO_DE_CAPA.test(capa)) return null

@@ -13,7 +13,29 @@ const base: Notificacao = {
   numeroVolume: null,
   criadoEm: '2026-11-21T12:00:00Z',
   lida: false,
+  loteQtd: null,
 }
+
+describe('aviso de curtida/comentário no card de lote do "Li hoje" (0035)', () => {
+  it('nomeia o card pela quantidade de volumes; leitura comum e lote de 1 seguem como antes', () => {
+    expect(textoDaNotificacao({ ...base, loteQtd: 5 })).toBe('Beto curtiu sua leitura de 5 volumes')
+    expect(textoDaNotificacao({ ...base, tipo: 'comentario', loteQtd: 3 })).toBe('Beto comentou na sua leitura de 3 volumes')
+    expect(textoDaNotificacao({ ...base, loteQtd: 1 })).toBe('Beto curtiu sua leitura de Decomposição')
+    expect(textoDaNotificacao({ ...base, loteQtd: null })).toBe('Beto curtiu sua leitura de Decomposição')
+  })
+  it('o app lê lote_qtd; banco sem a 0035 (coluna ausente) vira nulo', async () => {
+    const rpc = vi.fn(async () => ({
+      data: [
+        { id: 'a', tipo: 'curtida', item_id: 'i', titulo: 'T', criado_em: '2026-11-21T12:00:00Z', lida: false, lote_qtd: 4 },
+        { id: 'b', tipo: 'curtida', item_id: 'i', titulo: 'T', criado_em: '2026-11-21T12:00:00Z', lida: false },
+      ],
+      error: null,
+    }))
+    const [a, b] = await carregarNotificacoes({ rpc } as never)
+    expect(a.loteQtd).toBe(4)
+    expect(b.loteQtd).toBeNull()
+  })
+})
 
 describe('textoDaNotificacao', () => {
   it('curtida e comentário citam a obra (título ou "Série #n"), sem crítica nem texto do comentário', () => {
