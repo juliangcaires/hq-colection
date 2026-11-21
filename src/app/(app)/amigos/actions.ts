@@ -7,8 +7,9 @@ import { executar } from '@/lib/executar'
 import { ErroDeNegocio } from '@/lib/resultado'
 import { lancarErroRpc } from '@/lib/rpc'
 import { apelidoSchema, escopoSchema } from '@/lib/compartilhamento'
+import { dispararPush } from '@/lib/push-servidor'
 
-async function rpcAutenticado<T>(nome: string, args?: Record<string, unknown>): Promise<T> {
+async function rpcComUsuario<T>(nome: string, args?: Record<string, unknown>): Promise<{ data: T; userId: string }> {
   const supabase = await createClient()
   const {
     data: { user },
@@ -16,22 +17,30 @@ async function rpcAutenticado<T>(nome: string, args?: Record<string, unknown>): 
   if (!user) throw new ErroDeNegocio('Não autenticado')
   const { data, error } = await supabase.rpc(nome, args)
   if (error) lancarErroRpc(error)
-  return data as T
+  return { data: data as T, userId: user.id }
+}
+
+async function rpcAutenticado<T>(nome: string, args?: Record<string, unknown>): Promise<T> {
+  return (await rpcComUsuario<T>(nome, args)).data
 }
 
 /** Pede amizade pelo apelido. Só vale quando a outra pessoa aceitar (ou se ela já tinha pedido a você). */
 async function solicitarAmizadeImpl(apelido: string) {
   const a = apelidoSchema.parse(apelido)
-  await rpcAutenticado<string>('amizade_solicitar', { p_apelido: a })
+  const { data: amizadeId, userId } = await rpcComUsuario<string>('amizade_solicitar', { p_apelido: a })
   revalidatePath('/amigos')
+  // Pedido novo avisa o destinatário; "pedir de volta" vira aceite e avisa quem pediu antes. Nunca derruba a ação.
+  if (typeof amizadeId === 'string') await dispararPush({ autorId: userId, tipos: ['amizade_pedido', 'amizade_aceita'], refId: amizadeId })
 }
 export async function solicitarAmizade(apelido: string) {
   return executar(() => solicitarAmizadeImpl(apelido))
 }
 
 async function responderAmizadeImpl(id: string, aceitar: boolean) {
-  await rpcAutenticado('amizade_responder', { p_amizade: z.string().uuid().parse(id), p_aceitar: z.boolean().parse(aceitar) })
+  const amizade = z.string().uuid().parse(id)
+  const { userId } = await rpcComUsuario('amizade_responder', { p_amizade: amizade, p_aceitar: z.boolean().parse(aceitar) })
   revalidatePath('/amigos')
+  if (aceitar) await dispararPush({ autorId: userId, tipos: ['amizade_aceita'], refId: amizade })
 }
 export async function responderAmizade(id: string, aceitar: boolean) {
   return executar(() => responderAmizadeImpl(id, aceitar))
@@ -58,8 +67,10 @@ const codigoSchema = z.string().regex(/^[0-9a-f]{32,64}$/, 'Convite inválido')
 
 /** Quem abre o link e confirma fecha o aceite dos dois lados. Devolve o apelido do novo amigo. */
 async function aceitarConviteImpl(codigo: string) {
-  const apelido = await rpcAutenticado<string>('convite_aceitar', { p_codigo: codigoSchema.parse(codigo) })
+  const { data: apelido, userId } = await rpcComUsuario<string>('convite_aceitar', { p_codigo: codigoSchema.parse(codigo) })
   revalidatePath('/amigos')
+  // Quem gerou o convite fica sabendo (o aviso nasce do trigger; aqui só o push, que o banco não envia).
+  await dispararPush({ autorId: userId, tipos: ['amizade_aceita'] })
   return apelido
 }
 export async function aceitarConvite(codigo: string) {

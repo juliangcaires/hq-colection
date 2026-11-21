@@ -34,6 +34,8 @@ export function politicaDeSeguranca(nonce: string, { dev, supabaseUrl }: { dev: 
     `img-src 'self' blob: data: ${[...FONTES_IMG_CAPA, ...(capasPublicas ? [capasPublicas] : []), ...(avatares ? [avatares] : [])].join(' ')}`,
     "font-src 'self'",
     "connect-src 'self'",
+    // O service worker do Web Push (`/sw.js`): sem isto, o `script-src` com 'strict-dynamic' ignoraria o 'self' para ele.
+    "worker-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
