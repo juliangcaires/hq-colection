@@ -51,6 +51,13 @@ export function lancarErroRpc(error: { message: string }): never {
   if (m === 'melhor_exige_serie') throw new ErroDeNegocio('O volume precisa estar em uma série para ser o melhor dela.')
   if (m === 'melhor_em_variante') throw new ErroDeNegocio('A marca de melhor da série fica no volume normal; esta é uma variante dele.')
   if (m === 'melhor_exige_dois_lidos') throw new ErroDeNegocio('A série precisa ter ao menos 2 volumes lidos para escolher o melhor.')
+  if (m === 'data_futura') throw new ErroDeNegocio('A leitura não pode ser no futuro.')
+  if (m === 'lote_vazio') throw new ErroDeNegocio('Selecione ao menos um volume.')
+  if (m === 'lote_grande') throw new ErroDeNegocio('São volumes demais de uma vez (o máximo é 100).')
+  if (m === 'lote_repetido') throw new ErroDeNegocio('Um volume foi escolhido duas vezes.')
+  if (m === 'lote_invalido') throw new ErroDeNegocio('Não entendi a lista de volumes. Tente de novo.')
+  if (m === 'nota_invalida') throw new ErroDeNegocio('A nota vai de 0,5 a 5, de meia em meia estrela.')
+  if (m === 'lote_item_indisponivel') throw new ErroDeNegocio('Um dos volumes já não está como comprado (talvez já tenha sido marcado como lido). Nada foi gravado: atualize a página e escolha de novo.')
   if (m === 'nao_autenticado') throw new ErroDeNegocio('Entre na sua conta para continuar.')
   if (m === 'critica_longa') throw new ErroDeNegocio('A crítica passa de 2000 caracteres.')
   if (m.startsWith('volumes_repetidos:')) {
