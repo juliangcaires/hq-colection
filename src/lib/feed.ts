@@ -52,6 +52,12 @@ export type PostDoFeed = {
   /** Nota e crítica da série como um todo (0031). */
   serieNota: number | null
   serieCritica: string | null
+  /**
+   * Post de vários volumes (0032): capa do volume marcado como melhor da série e o item de onde ela vem. Nulos sem melhor
+   * volume no post (ou sem a migration): vale `capa`/`itemId`.
+   */
+  capaDestaque: string | null
+  capaDestaqueItem: string | null
 }
 
 /** Item tirado do feed que ainda pode voltar (0031): um por post original (série + dia). */
@@ -117,6 +123,8 @@ export async function carregarFeed(supabase: Cliente, antes: string | null = nul
     criticaGrupoVolume: num(r.critica_grupo_volume),
     serieNota: num(r.serie_nota),
     serieCritica: (r.serie_critica as string | null) ?? null,
+    capaDestaque: (r.capa_destaque as string | null) ?? null,
+    capaDestaqueItem: (r.capa_destaque_item as string | null) ?? null,
   }))
 }
 
@@ -223,12 +231,18 @@ export function chaveDoPost(post: Pick<PostDoFeed, 'itemId' | 'leituraId'>): str
   return post.leituraId ? `${post.itemId}:${post.leituraId}` : post.itemId
 }
 
-/** Capa de um post: catálogo público direto do bucket; privada pela rota autorizada pelo banco. */
-export function urlDeCapaDoFeed(post: Pick<PostDoFeed, 'capa' | 'itemId'>): string | null {
-  if (!post.capa) return null
-  if (post.capa.startsWith('pub/')) return urlPublicaDeCapa(post.capa) || null
-  if (!ARQUIVO_DE_CAPA.test(post.capa)) return null
-  return `/feed/capa/${post.itemId}`
+/**
+ * Capa de um post: catálogo público direto do bucket; privada pela rota autorizada pelo banco. Post de vários volumes
+ * com melhor volume (0032) usa a capa dele, pedida pelo id dele; senão, a do volume que representa o post.
+ */
+export function urlDeCapaDoFeed(post: Pick<PostDoFeed, 'capa' | 'itemId'> & Partial<Pick<PostDoFeed, 'capaDestaque' | 'capaDestaqueItem'>>): string | null {
+  const destaque = post.capaDestaque && post.capaDestaqueItem
+  const capa = destaque ? post.capaDestaque! : post.capa
+  const item = destaque ? post.capaDestaqueItem! : post.itemId
+  if (!capa) return null
+  if (capa.startsWith('pub/')) return urlPublicaDeCapa(capa) || null
+  if (!ARQUIVO_DE_CAPA.test(capa)) return null
+  return `/feed/capa/${item}`
 }
 
 /** "Berserk #3" / "12 volumes de Berserk" / só o título quando não há série. */

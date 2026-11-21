@@ -22,7 +22,19 @@ import { agruparTagsPorTipo, TIPOS_TAG_DEDICADOS } from '@/lib/tags-por-tipo'
 import type { Serie, TagLite, TipoObra, TipoTag } from '@/lib/types'
 import { desembrulhar } from '@/lib/resultado'
 
-export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[] }; allTags: TagLite[] }) {
+export function SerieForm({
+  serie,
+  allTags,
+  semMoldura = false,
+  onSalvo,
+}: {
+  serie: Serie & { tagIds: string[] }
+  allTags: TagLite[]
+  /** Dentro do modal de edição: sem o cartão em volta (o modal já é a moldura). */
+  semMoldura?: boolean
+  /** Chamado depois de salvar com sucesso (o modal fecha). */
+  onSalvo?: () => void
+}) {
   const router = useRouter()
   const [nome, setNome] = useState(serie.nome)
   const [tipo, setTipo] = useState<TipoObra>(serie.tipo)
@@ -55,6 +67,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
         }))
         toast.success('Série atualizada')
         router.refresh()
+        onSalvo?.()
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Erro ao salvar')
       }
@@ -75,7 +88,7 @@ export function SerieForm({ serie, allTags }: { serie: Serie & { tagIds: string[
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
+    <div className={semMoldura ? 'flex flex-col gap-4' : 'flex flex-col gap-4 rounded-xl border border-border bg-card p-4'}>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="nome">Nome</Label>
         <Input id="nome" value={nome} onChange={(e) => setNome(e.target.value)} />
