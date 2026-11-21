@@ -2,35 +2,30 @@
 
 import { useTransition } from 'react'
 import Image from 'next/image'
-import { toast } from 'sonner'
 import { EyeOff } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Estrelas } from '@/components/ui/estrelas'
 import { CriticaSpoiler } from '@/components/ui/critica-spoiler'
 import { InteracaoDoItem } from '@/components/feed/interacao-do-item'
-import { ocultarDoFeed } from '@/app/(app)/feed/actions'
-import { tempoRelativo, tituloDoPost, urlDeCapaDoFeed, type PostDoFeed } from '@/lib/feed'
+import { avaliacaoDoPost, tempoRelativo, tituloDoPost, urlDeCapaDoFeed, type PostDoFeed } from '@/lib/feed'
 import { formatarNota } from '@/lib/nota'
-import { desembrulhar } from '@/lib/resultado'
 
 /** Um "leu X" do feed: quem leu, capa, nota, crítica, curtir e comentar. Todo texto vai como texto puro. */
-export function PostDoFeed({ post, onOcultar }: { post: PostDoFeed; onOcultar?: (itemId: string) => void }) {
+export function PostDoFeed({ post, onOcultar }: { post: PostDoFeed; onOcultar?: (post: PostDoFeed) => Promise<void> }) {
   const [pendente, startTransition] = useTransition()
 
   const capa = urlDeCapaDoFeed(post)
   const nome = post.nome || post.apelido || 'Alguém'
   const titulo = tituloDoPost(post)
+  const av = avaliacaoDoPost(post)
+  // Post de vários volumes sai inteiro: o aviso diz quantos.
+  const tiraVarios = post.qtd > 1 && !post.releitura
 
   function ocultar() {
+    if (!onOcultar) return
     startTransition(async () => {
-      try {
-        desembrulhar(await ocultarDoFeed(post.itemId, true))
-        onOcultar?.(post.itemId)
-        toast.success('Tirei do feed. A nota e a crítica continuam no seu item.')
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Não foi possível tirar do feed')
-      }
+      await onOcultar(post)
     })
   }
 
@@ -48,7 +43,7 @@ export function PostDoFeed({ post, onOcultar }: { post: PostDoFeed; onOcultar?: 
           </p>
         </div>
         {post.proprio && (
-          <Button type="button" variant="ghost" size="sm" onClick={ocultar} disabled={pendente} aria-label="Tirar este post do feed">
+          <Button type="button" variant="ghost" size="sm" onClick={ocultar} disabled={pendente} aria-label={tiraVarios ? `Tirar este post do feed (${post.qtd} volumes)` : 'Tirar este post do feed'}>
             <EyeOff aria-hidden /> Tirar do feed
           </Button>
         )}
@@ -61,13 +56,19 @@ export function PostDoFeed({ post, onOcultar }: { post: PostDoFeed; onOcultar?: 
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <h3 className="font-heading text-base font-bold break-words text-foreground">{titulo}</h3>
           {post.qtd === 1 && post.serieNome && !titulo.startsWith(post.serieNome) && <p className="text-xs text-muted-foreground">{post.serieNome}</p>}
-          {post.nota !== null && post.qtd === 1 && (
-            <div className="flex items-center gap-2">
-              <Estrelas valor={post.nota} tamanho={16} mostrarValor={false} />
-              <span className="text-sm font-medium text-foreground">{formatarNota(post.nota)}</span>
+          {av.nota !== null && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <Estrelas valor={av.nota} tamanho={16} mostrarValor={false} />
+              <span className="text-sm font-medium text-foreground">{formatarNota(av.nota)}</span>
+              {av.rotuloNota && <span className="text-xs text-muted-foreground">{av.rotuloNota}</span>}
             </div>
           )}
-          {post.critica && post.qtd === 1 && <CriticaSpoiler texto={post.critica} spoiler={post.criticaSpoiler} proprio={post.proprio} />}
+          {av.critica && (
+            <div className="flex flex-col gap-0.5">
+              {av.rotuloCritica && <p className="text-xs text-muted-foreground">{av.rotuloCritica}</p>}
+              <CriticaSpoiler texto={av.critica} spoiler={av.spoiler} proprio={post.proprio} />
+            </div>
+          )}
         </div>
       </div>
 
