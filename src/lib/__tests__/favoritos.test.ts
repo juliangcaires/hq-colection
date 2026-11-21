@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   adicionarFavorito,
   buscarCandidatas,
+  carregarFavoritosDoLink,
   favoritosDaVitrine,
   LIMITE_FAVORITOS,
   moverFavorito,
@@ -152,5 +153,37 @@ describe('mistura de séries e avulsos', () => {
 
   it('rótulos do tipo', () => {
     expect(ROTULO_DA_ORIGEM).toEqual({ serie: 'Série', avulso: 'Volume único' })
+  })
+})
+
+describe('favoritos do link público', () => {
+  const TOKEN = 'a'.repeat(64)
+  const arq = '11111111-2222-3333-4444-555555555555-1700000000000.jpg'
+  const cliente = (resposta: { data: unknown; error: { message: string } | null }) => {
+    const rpc = vi.fn().mockResolvedValue(resposta)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { rpc, supabase: { rpc } as any }
+  }
+
+  it('uma chamada só (`link_favoritos`, pelo token), na ordem, com a capa privada pela rota do link', async () => {
+    const { rpc, supabase } = cliente({
+      data: [
+        { origem: 'serie', id: 's', nome: 'Berserk', tipo: 'manga', capa: arq, posicao: 2 },
+        { origem: 'avulso', id: 'i', nome: 'Maus', tipo: 'hq', capa: '../x.jpg', posicao: 1 },
+      ],
+      error: null,
+    })
+    const f = await carregarFavoritosDoLink(supabase, TOKEN)
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith('link_favoritos', { p_token: TOKEN })
+    expect(f.map((x) => [x.origem, x.nome])).toEqual([['avulso', 'Maus'], ['serie', 'Berserk']])
+    expect(f[0].capa).toBeNull() // nome fora do padrão nunca vira URL
+    expect(f[1].capa).toBe(`/c/${TOKEN}/capa/${arq}`)
+  })
+
+  it('link inválido ou sem favoritos visíveis: vazio; erro do banco sobe (o layout trata e a página abre sem a faixa)', async () => {
+    expect(await carregarFavoritosDoLink(cliente({ data: [], error: null }).supabase, TOKEN)).toEqual([])
+    expect(await carregarFavoritosDoLink(cliente({ data: null, error: null }).supabase, TOKEN)).toEqual([])
+    await expect(carregarFavoritosDoLink(cliente({ data: null, error: { message: 'boom' } }).supabase, TOKEN)).rejects.toThrow('boom')
   })
 })

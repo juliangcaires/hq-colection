@@ -114,6 +114,16 @@ export async function carregarFavoritosDoAmigo(supabase: Cliente, apelido: strin
   return favoritosDaVitrine(data as Linha[] | null, { tipo: 'amigo', apelido })
 }
 
+/**
+ * Os favoritos visíveis pelo link público (0037): uma chamada só, pelo token e pelo escopo do próprio link (série pede
+ * "séries"; avulso pede "coleção"). Link inválido, revogado ou sem favoritos visíveis: vazio, sem distinguir o motivo.
+ */
+export async function carregarFavoritosDoLink(supabase: Cliente, token: string): Promise<Favorito[]> {
+  const { data, error } = await supabase.rpc('link_favoritos', { p_token: token })
+  if (error) throw new Error(error.message)
+  return favoritosDaVitrine(data as Linha[] | null, { tipo: 'link', token })
+}
+
 export async function carregarMeusFavoritos(supabase: Cliente): Promise<Favorito[]> {
   const { data, error } = await supabase.rpc('favoritos_meus')
   if (error) throw new Error(error.message)
