@@ -30,6 +30,8 @@ export type Notificacao = {
   numeroVolume: number | null
   criadoEm: string
   lida: boolean
+  /** Volumes do card de lote do "Li hoje" a que o aviso se refere (0035); nulo quando é uma leitura comum. */
+  loteQtd: number | null
 }
 
 export async function carregarNotificacoes(supabase: Cliente, antes: string | null = null, limite = TAMANHO_PAGINA_NOTIFICACOES): Promise<Notificacao[]> {
@@ -46,6 +48,7 @@ export async function carregarNotificacoes(supabase: Cliente, antes: string | nu
     numeroVolume: r.numero_volume === null || r.numero_volume === undefined ? null : Number(r.numero_volume),
     criadoEm: String(r.criado_em),
     lida: r.lida === true,
+    loteQtd: r.lote_qtd === null || r.lote_qtd === undefined ? null : Number(r.lote_qtd),
   }))
 }
 
@@ -62,9 +65,10 @@ export function nomeDoAutor(n: Pick<Notificacao, 'autorNome' | 'autorApelido'>):
   return n.autorNome?.trim() || n.autorApelido?.trim() || 'Alguém'
 }
 
-/** "Berserk #3" ou só o título; vazio se o aviso não tem item. */
-export function obraDaNotificacao(n: Pick<Notificacao, 'serieNome' | 'titulo' | 'numeroVolume'>): string {
+/** "Berserk #3" ou só o título; "5 volumes" no card de lote do "Li hoje"; vazio se o aviso não tem item. */
+export function obraDaNotificacao(n: Pick<Notificacao, 'serieNome' | 'titulo' | 'numeroVolume'> & { loteQtd?: number | null }): string {
   if (!n.titulo) return ''
+  if (n.loteQtd && n.loteQtd > 1) return `${n.loteQtd} volumes`
   return tituloDoPost({ serieNome: n.serieNome, titulo: n.titulo, numeroVolume: n.numeroVolume, qtd: 1 })
 }
 

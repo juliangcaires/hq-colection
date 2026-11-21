@@ -8,6 +8,7 @@ import { ScrollRestore } from '@/components/ui/scroll-restore'
 import { lerFiltrosDaUrl, lerLimite } from '@/lib/filtros-url'
 import { CarregarMais } from '@/components/itens/carregar-mais'
 import { CardSelecionavel, SelecaoItens } from '@/components/itens/selecao-itens'
+import { LiHoje } from '@/components/itens/li-hoje'
 
 type SearchParams = {
   limite?: string
@@ -57,9 +58,12 @@ export default async function ColecaoPage({
   return (
     <div className="flex flex-col gap-6">
       <ScrollRestore />
-      <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">
-        Coleção <span className="font-normal text-muted-foreground">· {total} {total === 1 ? 'item' : 'itens'}</span>
-      </h1>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h1 className="font-heading text-[28px] font-extrabold tracking-tight text-foreground">
+          Coleção <span className="font-normal text-muted-foreground">· {total} {total === 1 ? 'item' : 'itens'}</span>
+        </h1>
+        <LiHoje />
+      </div>
 
       <ColecaoFilters series={series} tags={tagsData ?? []} />
 

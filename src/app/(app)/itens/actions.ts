@@ -32,6 +32,8 @@ import { novoCaminhoDeCapa, removerCapaAntiga, urlsDeCapas } from '@/lib/supabas
 const LIMITE_CAPA_BYTES = 5 * 1024 * 1024
 const EXT_POR_MIME: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 import { FUSO_DO_APP, hojeIso } from '@/lib/datas'
+import { dataDeLeituraSchema, validarDataDeLeitura } from '@/lib/leituras'
+import { MAX_VOLUMES_DO_LOTE, type VolumeDoLote } from '@/lib/leitura-lote'
 import { lancarErroRpc } from '@/lib/rpc'
 import { alimentarCatalogoComItem } from '@/lib/isbn-supabase'
 import { gravarChaveDoItem } from '@/lib/obra-chaves'
@@ -237,6 +239,124 @@ async function marcarLidoEmLoteImpl(itemIds: string[], avaliacao?: AvaliacaoLeit
 
 export async function marcarLidoEmLote(itemIds: string[], avaliacao?: AvaliacaoLeitura) {
   return executar(() => marcarLidoEmLoteImpl(itemIds, avaliacao))
+}
+
+const itemDoLoteSchema = avaliacaoSchema.extend({
+  item_id: z.string().uuid(),
+  critica_spoiler: z.boolean().optional(),
+})
+
+const loteDeLeiturasSchema = z.object({
+  data: dataDeLeituraSchema.nullish(),
+  itens: z.array(itemDoLoteSchema).min(1, 'Selecione ao menos um volume').max(MAX_VOLUMES_DO_LOTE, `No máximo ${MAX_VOLUMES_DO_LOTE} volumes por vez`),
+})
+
+/**
+ * "Li hoje": marca vários volumes (de séries diferentes) como lidos de uma vez, cada um com a sua nota e crítica
+ * (opcionais), todos com a mesma data. A gravação é UMA função SQL (`itens_marcar_lidos_lote`, migration 0035): se um
+ * volume não puder ser marcado, nenhum é. Mesma regra do "Marcar como lido" em lote: só volume comprado.
+ */
+async function registrarLeiturasEmLoteImpl(input: z.input<typeof loteDeLeiturasSchema>) {
+  const { data: dataBruta, itens } = loteDeLeiturasSchema.parse(input)
+  const data = dataBruta ? validarDataDeLeitura(dataBruta, hojeIso(FUSO_DO_APP)) : null
+  const supabase = await createClient()
+
+  const { data: r, error } = await supabase.rpc('itens_marcar_lidos_lote', {
+    p_data: data,
+    p_itens: itens.map((i) => ({
+      item_id: i.item_id,
+      nota: i.nota ?? null,
+      critica: i.critica || null,
+      critica_spoiler: i.critica ? (i.critica_spoiler ?? false) : false,
+    })),
+  })
+  if (error) lancarErroRpc(error)
+
+  revalidateListagens()
+  revalidatePath('/series')
+  revalidatePath('/ranking')
+  revalidatePath('/feed')
+  revalidatePath('/diario')
+  for (const i of itens) revalidatePath(`/item/${i.item_id}`)
+  return { marcados: Number((r as { marcados: number }).marcados) }
+}
+
+export async function registrarLeiturasEmLote(input: z.input<typeof loteDeLeiturasSchema>) {
+  return executar(() => registrarLeiturasEmLoteImpl(input))
+}
+
+const LIMITE_BUSCA_LI_HOJE = 40
+
+/**
+ * Volumes para a seleção do "Li hoje": a busca olha o título do volume e o nome da série. Sem termo, devolve a fila de
+ * leitura (comprados, mais recentes primeiro). Volume que não pode entrar no lote (desejo, já lido) volta também, depois
+ * dos comprados, para a tela dizer por que não dá para marcá-lo. Variantes ficam de fora: dividem o estado com o volume normal.
+ */
+async function buscarVolumesParaLiHojeImpl(termo: string): Promise<VolumeDoLote[]> {
+  const limpo = z.string().trim().max(100).parse(termo ?? '')
+  const supabase = await createClient()
+  const SELECT = 'id, titulo, estado, numero_volume, capa_url, serie:series(nome)'
+
+  type Linha = {
+    id: string
+    titulo: string
+    estado: VolumeDoLote['estado']
+    numero_volume: number | null
+    capa_url: string | null
+    serie: { nome: string } | { nome: string }[] | null
+  }
+
+  let linhas: Linha[]
+  if (limpo === '') {
+    const { data, error } = await supabase
+      .from('itens')
+      .select(SELECT)
+      .is('variante_de', null)
+      .eq('estado', 'comprado')
+      .order('created_at', { ascending: false })
+      .order('id')
+      .limit(LIMITE_BUSCA_LI_HOJE)
+    if (error) throw new Error(error.message)
+    linhas = (data ?? []) as unknown as Linha[]
+  } else {
+    const padrao = `%${escaparLike(limpo)}%`
+    const { data: series, error: erroSeries } = await supabase.from('series').select('id').ilike('nome', padrao).limit(30)
+    if (erroSeries) throw new Error(erroSeries.message)
+    const idsDeSeries = (series ?? []).map((x) => x.id as string)
+    const [porTitulo, porSerie] = await Promise.all([
+      supabase.from('itens').select(SELECT).is('variante_de', null).ilike('titulo', padrao).order('titulo').order('id').limit(LIMITE_BUSCA_LI_HOJE * 2),
+      idsDeSeries.length > 0
+        ? supabase.from('itens').select(SELECT).is('variante_de', null).in('serie_id', idsDeSeries).order('numero_volume').order('id').limit(LIMITE_BUSCA_LI_HOJE * 2)
+        : Promise.resolve({ data: [] as unknown[], error: null }),
+    ])
+    if (porTitulo.error) throw new Error(porTitulo.error.message)
+    if (porSerie.error) throw new Error(porSerie.error.message)
+    const vistos = new Set<string>()
+    linhas = []
+    for (const l of [...((porTitulo.data ?? []) as unknown as Linha[]), ...((porSerie.data ?? []) as unknown as Linha[])]) {
+      if (vistos.has(l.id)) continue
+      vistos.add(l.id)
+      linhas.push(l)
+    }
+    linhas.sort((a, b) => Number(b.estado === 'comprado') - Number(a.estado === 'comprado'))
+    linhas = linhas.slice(0, LIMITE_BUSCA_LI_HOJE)
+  }
+
+  const capas = urlsDeCapas(linhas.map((l) => l.capa_url))
+  return linhas.map(
+    (l): VolumeDoLote => ({
+      id: l.id,
+      titulo: l.titulo,
+      serieNome: (Array.isArray(l.serie) ? l.serie[0]?.nome : l.serie?.nome) ?? null,
+      numeroVolume: l.numero_volume === null ? null : Number(l.numero_volume),
+      capaUrl: capas.get(l.capa_url ?? '') ?? null,
+      estado: l.estado,
+    })
+  )
+}
+
+export async function buscarVolumesParaLiHoje(termo: string) {
+  return executar(() => buscarVolumesParaLiHojeImpl(termo))
 }
 
 /**

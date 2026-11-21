@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { avaliacaoDoPost, carregarFeed, carregarOcultos, chaveDoPost, frasesDoResumo, reinserirPost, tempoRelativo, tituloDoPost, urlDeCapaDoFeed, type PostDoFeed } from '@/lib/feed'
+import { avaliacaoDoPost, carregarFeed, ehPostDeLote, urlDeCapaDoVolumeDoLote, carregarOcultos, chaveDoPost, frasesDoResumo, reinserirPost, tempoRelativo, tituloDoPost, urlDeCapaDoFeed, type PostDoFeed } from '@/lib/feed'
 
 describe('tituloDoPost', () => {
   const base = { serieNome: 'Berserk', titulo: 'Berserk 3', numeroVolume: 3, qtd: 1 }
@@ -135,5 +135,63 @@ describe('tirar do feed: reinserirPost e carregarOcultos (0031)', () => {
     expect(await carregarOcultos(ok)).toEqual([{ itemIds: ['1', '2'], serieNome: 'S', titulo: 'T', numeroVolume: 2, qtd: 2, marcadoEm: '2026-11-20T12:00:00Z' }])
     const falha = { rpc: vi.fn().mockResolvedValue({ data: null, error: { message: 'function does not exist' } }) } as never
     expect(await carregarOcultos(falha)).toEqual([])
+  })
+})
+
+describe('card de lote do "Li hoje" (0035)', () => {
+  const arquivo = '0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f-1700000000000.jpg'
+  const linha = { item_id: 'rep', titulo: 'T', tipo: 'hq', marcado_em: '2026-11-21T12:00:00Z', qtd: 3, serie_nome: null }
+  const vol = (id: string, extra: object = {}) => ({ item_id: id, serie_nome: 'S', titulo: `T ${id}`, numero_volume: '2', capa: arquivo, nota: '4.5', critica: 'ok', critica_spoiler: true, ...extra })
+
+  it('o feed repassa o lote e os volumes dele; sem a migration (ou fora de lote) vira nulo e o card é o de sempre', async () => {
+    const rpc = vi.fn(async () => ({
+      data: [
+        { ...linha, lote_id: 'L1', lote_itens: [vol('a'), vol('b', { nota: null, critica: null, critica_spoiler: false, serie_nome: null, numero_volume: null, capa: null }), vol('c')] },
+        { ...linha, item_id: 'x', qtd: 1, lote_id: null, lote_itens: null },
+        { ...linha, item_id: 'y' },
+      ],
+      error: null,
+    }))
+    const [lote, solto, antigo] = await carregarFeed({ rpc } as never)
+    expect(lote.loteId).toBe('L1')
+    expect(lote.loteItens).toHaveLength(3)
+    expect(lote.loteItens![0]).toEqual({ itemId: 'a', serieNome: 'S', titulo: 'T a', numeroVolume: 2, capa: arquivo, nota: 4.5, critica: 'ok', criticaSpoiler: true })
+    expect(lote.loteItens![1]).toMatchObject({ itemId: 'b', serieNome: null, numeroVolume: null, capa: null, nota: null, critica: null, criticaSpoiler: false })
+    expect(ehPostDeLote(lote)).toBe(true)
+    for (const p of [solto, antigo]) {
+      expect(p).toMatchObject({ loteId: null, loteItens: null })
+      expect(ehPostDeLote(p)).toBe(false)
+    }
+  })
+
+  it('lista malformada não derruba o feed: vira "sem lote"; um volume só não é card de lote', async () => {
+    const rpc = vi.fn(async () => ({
+      data: [
+        { ...linha, lote_itens: [{ item_id: 5 }] },
+        { ...linha, item_id: 'b', lote_itens: 'lixo' },
+        { ...linha, item_id: 'c', lote_itens: [vol('a')] },
+        { ...linha, item_id: 'd', lote_itens: [] },
+      ],
+      error: null,
+    }))
+    const posts = await carregarFeed({ rpc } as never)
+    expect(posts.map((p) => ehPostDeLote(p))).toEqual([false, false, false, false])
+  })
+
+  it('o card mostra "N volumes" (sem nome de série) e a capa de cada volume sai pelo id dele', () => {
+    expect(tituloDoPost({ serieNome: null, titulo: 'T', numeroVolume: null, qtd: 3 })).toBe('3 volumes')
+    expect(urlDeCapaDoVolumeDoLote({ capa: arquivo, itemId: 'abc' })).toBe('/feed/capa/abc')
+    expect(urlDeCapaDoVolumeDoLote({ capa: '../x.jpg', itemId: 'abc' })).toBeNull()
+    expect(urlDeCapaDoVolumeDoLote({ capa: null, itemId: 'abc' })).toBeNull()
+    expect(urlDeCapaDoVolumeDoLote({ capa: 'pub/abc', itemId: 'abc' }) ?? '').not.toContain('/feed/capa/')
+  })
+
+  it('curtir/comentar e "tirar do feed" valem para o card: a chave é a do volume que o representa', () => {
+    expect(chaveDoPost({ itemId: 'rep', leituraId: null })).toBe('rep')
+  })
+
+  it('a nota do card é a média dos volumes avaliados (a série não entra: são várias)', () => {
+    const a = avaliacaoDoPost({ qtd: 3, nota: 4, critica: null, criticaSpoiler: false, notaMedia: 4.25, avaliados: 2, criticaGrupo: null, criticaGrupoSpoiler: false, criticaGrupoVolume: null, serieNota: null, serieCritica: null })
+    expect(a).toMatchObject({ nota: 4.25, rotuloNota: 'Média de 2 volumes' })
   })
 })
