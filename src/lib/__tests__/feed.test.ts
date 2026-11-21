@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { carregarFeed, chaveDoPost, frasesDoResumo, tempoRelativo, tituloDoPost, urlDeCapaDoFeed } from '@/lib/feed'
+import { avaliacaoDoPost, carregarFeed, carregarOcultos, chaveDoPost, frasesDoResumo, reinserirPost, tempoRelativo, tituloDoPost, urlDeCapaDoFeed, type PostDoFeed } from '@/lib/feed'
 
 describe('tituloDoPost', () => {
   const base = { serieNome: 'Berserk', titulo: 'Berserk 3', numeroVolume: 3, qtd: 1 }
@@ -68,5 +68,52 @@ describe('releitura no feed (0025)', () => {
     expect(chaveDoPost({ itemId: 'a', leituraId: null })).toBe('a')
     expect(chaveDoPost({ itemId: 'a', leituraId: 'l1' })).toBe('a:l1')
     expect(chaveDoPost({ itemId: 'a', leituraId: 'l2' })).not.toBe(chaveDoPost({ itemId: 'a', leituraId: 'l1' }))
+  })
+})
+
+describe('avaliacaoDoPost (0031)', () => {
+  const base = { qtd: 4, nota: null, critica: null, criticaSpoiler: false, notaMedia: null, avaliados: 0, criticaGrupo: null, criticaGrupoSpoiler: false, criticaGrupoVolume: null, serieNota: null, serieCritica: null }
+  it('post de um volume: as do volume, como sempre', () => {
+    expect(avaliacaoDoPost({ ...base, qtd: 1, nota: 4.5, critica: 'Bom', criticaSpoiler: true })).toEqual({ nota: 4.5, rotuloNota: null, critica: 'Bom', rotuloCritica: null, spoiler: true })
+  })
+  it('vários volumes: a avaliação da série vale mais que a média e a crítica dos volumes', () => {
+    const a = avaliacaoDoPost({ ...base, serieNota: 5, serieCritica: 'Série inteira', notaMedia: 3, avaliados: 2, criticaGrupo: 'Volume', criticaGrupoVolume: 2 })
+    expect(a).toMatchObject({ nota: 5, rotuloNota: 'Nota da série', critica: 'Série inteira', rotuloCritica: 'Crítica da série', spoiler: false })
+  })
+  it('vários volumes sem avaliação da série: média dos avaliados e a crítica de um volume (com o número)', () => {
+    const a = avaliacaoDoPost({ ...base, notaMedia: 4.25, avaliados: 4, criticaGrupo: 'Final fraco', criticaGrupoSpoiler: true, criticaGrupoVolume: 3 })
+    expect(a).toEqual({ nota: 4.25, rotuloNota: 'Média de 4 volumes', critica: 'Final fraco', rotuloCritica: 'Crítica do volume #3', spoiler: true })
+    expect(avaliacaoDoPost({ ...base, notaMedia: 3, avaliados: 1 }).rotuloNota).toBe('Nota de 1 volume')
+  })
+  it('vários volumes sem nada visível: sem nota nem crítica', () => {
+    expect(avaliacaoDoPost(base)).toEqual({ nota: null, rotuloNota: null, critica: null, rotuloCritica: null, spoiler: false })
+  })
+  it('o feed repassa as colunas novas; banco sem a 0031 (colunas ausentes) vira vazio', async () => {
+    const nova = { item_id: 'a', titulo: 'T', tipo: 'hq', marcado_em: '2026-11-20T12:00:00Z', qtd: 4, nota_media: '4.50', avaliados: 3, critica_grupo: 'x', critica_grupo_spoiler: true, critica_grupo_volume: '2', serie_nota: '5', serie_critica: 'y' }
+    const antiga = { item_id: 'b', titulo: 'T', tipo: 'hq', marcado_em: '2026-11-20T12:00:00Z' }
+    const supabase = { rpc: vi.fn().mockResolvedValue({ data: [nova, antiga], error: null }) } as never
+    const [n, a] = await carregarFeed(supabase)
+    expect(n).toMatchObject({ notaMedia: 4.5, avaliados: 3, criticaGrupo: 'x', criticaGrupoSpoiler: true, criticaGrupoVolume: 2, serieNota: 5, serieCritica: 'y' })
+    expect(a).toMatchObject({ notaMedia: null, avaliados: 0, criticaGrupo: null, serieNota: null, serieCritica: null })
+  })
+})
+
+describe('tirar do feed: reinserirPost e carregarOcultos (0031)', () => {
+  const post = (id: string, marcadoEm: string) => ({ itemId: id, leituraId: null, marcadoEm }) as PostDoFeed
+  const lista = [post('c', '2026-11-20T12:00:00Z'), post('b', '2026-11-19T12:00:00Z'), post('a', '2026-11-18T12:00:00Z')]
+  it('desfazer devolve o post na posição de antes (ordem do mais recente ao mais antigo)', () => {
+    const sem = lista.filter((p) => p.itemId !== 'b')
+    expect(reinserirPost(sem, lista[1]).map((p) => p.itemId)).toEqual(['c', 'b', 'a'])
+    expect(reinserirPost(sem.slice(1), lista[0]).map((p) => p.itemId)).toEqual(['c', 'a'])
+    expect(reinserirPost(lista.slice(0, 2), lista[2]).map((p) => p.itemId)).toEqual(['c', 'b', 'a'])
+  })
+  it('não duplica quem já está na lista', () => {
+    expect(reinserirPost(lista, lista[1])).toBe(lista)
+  })
+  it('carregarOcultos mapeia a lista; se o banco ainda não tem a função, devolve vazio', async () => {
+    const ok = { rpc: vi.fn().mockResolvedValue({ data: [{ item_ids: ['1', '2'], item_id: '1', serie_nome: 'S', titulo: 'T', numero_volume: '2', qtd: 2, marcado_em: '2026-11-20T12:00:00Z' }], error: null }) } as never
+    expect(await carregarOcultos(ok)).toEqual([{ itemIds: ['1', '2'], serieNome: 'S', titulo: 'T', numeroVolume: 2, qtd: 2, marcadoEm: '2026-11-20T12:00:00Z' }])
+    const falha = { rpc: vi.fn().mockResolvedValue({ data: null, error: { message: 'function does not exist' } }) } as never
+    expect(await carregarOcultos(falha)).toEqual([])
   })
 })

@@ -42,6 +42,27 @@ export type PostDoFeed = {
   releitura: boolean
   /** Leitura que originou o post de releitura; null no post de primeira leitura. */
   leituraId: string | null
+  /** Post de vários volumes (0031): média das notas visíveis dos volumes e quantos têm nota. */
+  notaMedia: number | null
+  avaliados: number
+  /** A crítica visível mais recente entre os volumes do post, o volume dela e se é spoiler. */
+  criticaGrupo: string | null
+  criticaGrupoSpoiler: boolean
+  criticaGrupoVolume: number | null
+  /** Nota e crítica da série como um todo (0031). */
+  serieNota: number | null
+  serieCritica: string | null
+}
+
+/** Item tirado do feed que ainda pode voltar (0031): um por post original (série + dia). */
+export type OcultoDoFeed = {
+  /** Todos os itens do post: é o que "Recolocar" devolve. */
+  itemIds: string[]
+  serieNome: string | null
+  titulo: string
+  numeroVolume: number | null
+  qtd: number
+  marcadoEm: string
 }
 
 export type ComentarioDoFeed = {
@@ -89,7 +110,81 @@ export async function carregarFeed(supabase: Cliente, antes: string | null = nul
     comentarios: Number(r.comentarios ?? 0),
     releitura: r.releitura === true,
     leituraId: (r.leitura_id as string | null) ?? null,
+    notaMedia: num(r.nota_media),
+    avaliados: Number(r.avaliados ?? 0),
+    criticaGrupo: (r.critica_grupo as string | null) ?? null,
+    criticaGrupoSpoiler: r.critica_grupo_spoiler === true,
+    criticaGrupoVolume: num(r.critica_grupo_volume),
+    serieNota: num(r.serie_nota),
+    serieCritica: (r.serie_critica as string | null) ?? null,
   }))
+}
+
+export async function carregarOcultos(supabase: Cliente): Promise<OcultoDoFeed[]> {
+  const { data, error } = await supabase.rpc('feed_ocultos_listar')
+  // A lista dos tirados é um extra (0031): se a migration ainda não foi aplicada, o feed abre sem ela.
+  if (error) return []
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    itemIds: Array.isArray(r.item_ids) ? (r.item_ids as unknown[]).map(String) : [],
+    serieNome: (r.serie_nome as string | null) ?? null,
+    titulo: String(r.titulo),
+    numeroVolume: num(r.numero_volume),
+    qtd: Number(r.qtd ?? 1),
+    marcadoEm: String(r.marcado_em),
+  }))
+}
+
+export type AvaliacaoDoPost = {
+  nota: number | null
+  /** De onde vem a nota: o volume (post de um só), a série ou a média dos volumes. */
+  rotuloNota: string | null
+  critica: string | null
+  rotuloCritica: string | null
+  spoiler: boolean
+}
+
+/**
+ * Nota e crítica que o card mostra. Post de um volume: as do volume. Post de vários: a nota/crítica da série, se
+ * houver; senão a média dos volumes avaliados e a crítica mais recente entre eles (dizendo de qual volume).
+ * Antes da 0031 o card de vários volumes escondia tudo e a avaliação dada ao marcar a série "sumia".
+ */
+export function avaliacaoDoPost(
+  post: Pick<PostDoFeed, 'qtd' | 'nota' | 'critica' | 'criticaSpoiler' | 'notaMedia' | 'avaliados' | 'criticaGrupo' | 'criticaGrupoSpoiler' | 'criticaGrupoVolume' | 'serieNota' | 'serieCritica'>
+): AvaliacaoDoPost {
+  if (post.qtd <= 1) {
+    return { nota: post.nota, rotuloNota: null, critica: post.critica, rotuloCritica: null, spoiler: post.criticaSpoiler }
+  }
+  let nota: number | null = null
+  let rotuloNota: string | null = null
+  if (post.serieNota !== null) {
+    nota = post.serieNota
+    rotuloNota = 'Nota da série'
+  } else if (post.notaMedia !== null && post.avaliados > 0) {
+    nota = post.notaMedia
+    rotuloNota = post.avaliados === 1 ? 'Nota de 1 volume' : `Média de ${post.avaliados} volumes`
+  }
+  if (post.serieCritica) {
+    return { nota, rotuloNota, critica: post.serieCritica, rotuloCritica: 'Crítica da série', spoiler: false }
+  }
+  if (post.criticaGrupo) {
+    const vol = rotuloDeVolume(post.criticaGrupoVolume)
+    return { nota, rotuloNota, critica: post.criticaGrupo, rotuloCritica: vol ? `Crítica do volume ${vol}` : 'Crítica de um volume', spoiler: post.criticaGrupoSpoiler }
+  }
+  return { nota, rotuloNota, critica: null, rotuloCritica: null, spoiler: false }
+}
+
+/** Título de um post tirado do feed (mesma regra do card). */
+export function tituloDoOculto(o: Pick<OcultoDoFeed, 'serieNome' | 'titulo' | 'numeroVolume' | 'qtd'>): string {
+  return tituloDoPost(o)
+}
+
+/** Coloca o post de volta na lista na posição certa (a lista vem ordenada do mais recente para o mais antigo). */
+export function reinserirPost(posts: PostDoFeed[], post: PostDoFeed): PostDoFeed[] {
+  if (posts.some((p) => chaveDoPost(p) === chaveDoPost(post))) return posts
+  const i = posts.findIndex((p) => new Date(p.marcadoEm).getTime() < new Date(post.marcadoEm).getTime())
+  const lista = [...posts]
+  lista.splice(i === -1 ? lista.length : i, 0, post)
+  return lista
 }
 
 export async function carregarComentarios(supabase: Cliente, itemId: string): Promise<ComentarioDoFeed[]> {

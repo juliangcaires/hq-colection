@@ -78,6 +78,35 @@ export async function ocultarDoFeed(item: string, oculto: boolean) {
   return executar(() => ocultarDoFeedImpl(item, oculto))
 }
 
+/**
+ * "Tirar do feed" a partir do card. Sem `revalidatePath`: a lista na tela já se atualiza sozinha (e mantém as páginas
+ * carregadas); quem recoloca pede um `router.refresh()`.
+ * Post de vários volumes sai INTEIRO (todos os volumes da série no mesmo dia);
+ * devolve os ids que saíram para a tela oferecer "Desfazer" com exatamente eles.
+ */
+async function tirarPostDoFeedImpl(item: string, grupo: boolean) {
+  const id = idSchema.parse(item)
+  const { supabase } = await contexto()
+  const { data, error } = await supabase.rpc('feed_ocultar_post', { p_item: id, p_grupo: z.boolean().parse(grupo) })
+  if (error) lancarErroRpc(error)
+  return ((data ?? []) as string[]).map(String)
+}
+export async function tirarPostDoFeed(item: string, grupo: boolean) {
+  return executar(() => tirarPostDoFeedImpl(item, grupo))
+}
+
+/** Desfaz o "tirar" ou recoloca no feed: devolve (ou esconde) vários itens do próprio usuário de uma vez. */
+async function definirOcultosImpl(itens: string[], oculto: boolean) {
+  const ids = z.array(idSchema).min(1).max(500).parse(itens)
+  const { supabase } = await contexto()
+  const { data, error } = await supabase.rpc('feed_ocultar_varios', { p_itens: ids, p_oculto: z.boolean().parse(oculto) })
+  if (error) lancarErroRpc(error)
+  return Number(data ?? 0)
+}
+export async function definirOcultosDoFeed(itens: string[], oculto: boolean) {
+  return executar(() => definirOcultosImpl(itens, oculto))
+}
+
 async function listarComentariosImpl(item: string) {
   const id = idSchema.parse(item)
   const { supabase } = await contexto()

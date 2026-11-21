@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { CardSemanal } from '@/components/feed/card-semanal'
 import { ListaDoFeed } from '@/components/feed/lista-do-feed'
-import { carregarFeed, carregarResumoSemanal } from '@/lib/feed'
+import { carregarFeed, carregarOcultos, carregarResumoSemanal, chaveDoPost } from '@/lib/feed'
 
 export const metadata = { title: 'Feed' }
 
@@ -11,9 +11,10 @@ export default async function FeedPage() {
   const { data: claims } = await supabase.auth.getClaims()
   const userId = claims?.claims.sub
 
-  const [posts, resumo, { data: perfil }] = await Promise.all([
+  const [posts, resumo, ocultos, { data: perfil }] = await Promise.all([
     carregarFeed(supabase),
     carregarResumoSemanal(supabase),
+    carregarOcultos(supabase),
     userId ? supabase.from('perfis').select('feed_ativo').eq('user_id', userId).maybeSingle() : Promise.resolve({ data: null }),
   ])
   const ativo = perfil?.feed_ativo === true
@@ -31,13 +32,8 @@ export default async function FeedPage() {
           .
         </p>
       )}
-      {posts.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-          Nada por aqui ainda. Quando você ou um amigo marcar uma leitura (com o feed ligado), ela aparece aqui.
-        </p>
-      ) : (
-        <ListaDoFeed iniciais={posts} />
-      )}
+      {/* A chave refaz a lista quando o servidor manda posts novos (ex.: depois de recolocar um post tirado). */}
+      <ListaDoFeed key={`${posts.map(chaveDoPost).join('|')}#${ocultos.length}`} iniciais={posts} ocultosIniciais={ocultos} />
     </div>
   )
 }
